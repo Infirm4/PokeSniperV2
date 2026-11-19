@@ -18,6 +18,13 @@
     };
     return [
       check('captura e preservação de IV zero', () => capture('vitrine', [listing]).rows[0].ivs.speed === 0),
+      check('oferta retida aguarda liberação e IV zero aparece no aviso', () => {
+        const record = capture('vitrine', [{ ...listing, compravelEm: now + 1000 }]).rows[0];
+        const offer = { ...record, estimate: { status: 'estimated', discount: .3, median: 100 } };
+        return !PISOpportunities.eligible(offer, now) && PISOpportunities.eligible(offer, now + 1000) &&
+          PISOpportunities.presentation(offer).warning.includes('Velocidade') &&
+          PISMarketCore.isOutland({ name: 'War Heracross' });
+      }),
       check('aviso mostra sprite, desconto, preço e faixa em Mi Coins', () => {
         const record = capture('vitrine', [{ ...listing,
           ficha: { ...listing.ficha, sprite: '/assets/teste-pokemon.png' } }]).rows[0];

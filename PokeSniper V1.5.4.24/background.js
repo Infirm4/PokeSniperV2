@@ -91,12 +91,18 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     return true;
   }
   const history = req?.type === 'PIS_MARKET_HISTORY_EVENT';
-  if (!history && !['PIS_MARKET_CORE_BATCH', 'PIS_MARKET_MONITOR', 'PIS_MARKET_UNAVAILABLE'].includes(req?.type)) return false;
+  if (!history && !['PIS_MARKET_CORE_BATCH', 'PIS_MARKET_MONITOR', 'PIS_MARKET_UNAVAILABLE', 'PIS_COINS_HISTORY_STATUS'].includes(req?.type)) return false;
   if (!sender.tab || !PIS_HOST.test(String(sender.url || sender.tab.url || ''))) {
     reply({ ok: false, error: 'origem inválida' });
     return false;
   }
   PISGameTab.remember(sender.tab.id);
+  if (req.type === 'PIS_COINS_HISTORY_STATUS') {
+    if (!['global', 'espécie'].includes(req.scope) || typeof req.state !== 'string' || req.state.length > 40) return false;
+    chrome.storage.session.set({ ['pisCoinsHistory:' + req.scope]: { state: req.state, at: Date.now() } })
+      .then(() => reply({ ok: true }), () => reply({ ok: false }));
+    return true;
+  }
   if (req.type === 'PIS_MARKET_MONITOR') {
     if (!['aguardando_socket', 'rastreador_desligado', 'recuo', 'varrendo', 'falha_ou_recuo'].includes(req.state)) return false;
     chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now() } })
@@ -115,6 +121,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   const pageReceipt = (status, accepted) => req.kind === 'listing' && req.automatic === true
     ? chrome.storage.session.set({ pisMarketAutomaticPage: { status, accepted,
       page: Number.isSafeInteger(req.page) ? req.page : null,
+      currency: ['gold', 'orb'].includes(req.currency) ? req.currency : null,
       totalRows: Number.isSafeInteger(req.totalRows) ? req.totalRows : null, at: Date.now() } }).catch(() => {})
     : Promise.resolve();
   const traceEvent = history ? req.event : req.kind === 'sale' ? 'legacy_batch' : null;

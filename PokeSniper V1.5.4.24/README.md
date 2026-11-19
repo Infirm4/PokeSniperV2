@@ -1,4 +1,26 @@
-# PokeIdle Market Sniper (v1.2.0)
+# PokeIdle Market Sniper (v1.5.4.24)
+
+## Monitoramento, histórico e testes
+
+Em **Pokémon**, ative **REGISTRAR MERCADO** e mantenha a aba do PokéIdle
+conectada. A coleta busca anúncios recentes de Coins e Gemas na mesma fila.
+Coins mantém o censo completo. Gemas percorre as outras páginas sem inferir
+vendas ou ausências. A extensão também consulta o histórico oficial de Coins.
+O cursor só avança depois da gravação confirmada de todas as páginas.
+
+Os alertas esperam a liberação do anúncio e conferem a revisão atual do preço.
+Ofertas com poucos comparáveis próximos ficam disponíveis para análise.
+O desconto usa a mediana estimada e a liquidez continua separada. A notificação
+indica atributos com IV menor que 10, incluindo zero.
+
+Em **Diagnóstico da versão**, **Testar avisos e gerar relatório** verifica os
+canais e mostra os recibos da coleta. **Testar precisão com vendas locais**
+divide o histórico por data e mede erro de preço, cobertura e falsos alertas
+simulados. O resultado pode ser copiado pelo botão **Copiar resultado**.
+
+O envio automático ao Google Sheets começa desligado. A opção e o link para o
+destino ficam no painel **Pokémon**. A implantação atual do Apps Script pode continuar.
+
 
 ## Históricos separados de Gemas e Coins (v1.5.4.23)
 

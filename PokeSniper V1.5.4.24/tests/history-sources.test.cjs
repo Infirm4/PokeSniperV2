@@ -51,3 +51,32 @@ test('importa um backup do formato Smart Market com IDs deduplicados e sem copia
   assert.equal(coins.cleanSpecies('Mr. Mime'), 'Mr. Mime');
   assert.equal(coins.cleanSpecies('{"busca":""}'), null);
 });
+
+test('suporta IV zero e separa referência pública exploratória do alerta', () => {
+  const central = ctx.PokeIdleCentral.create(ctx);
+  const engine = ctx.PokeIdlePvePricing;
+  const ficha = { nome: 'Gengar', level: 100, potencia: 3, quality: 1.8, nota: 5, shiny: false,
+    ivs: { hp: 20, atk: 20, def: 20, spAtk: 20, spDef: 20, speed: 0 } };
+  const rows = engine.prepare(central, Array.from({ length: 36 }, (_, i) => ({
+    name: 'Gengar', speciesId: 94, currency: 'orb', at: now - 60000 * (i + 1), price: 100, ficha,
+  })), []).rows;
+  assert.equal(rows.length, 36);
+  const snapshot = { geradoEm: new Date(now).toISOString(), itens: [],
+    vendas: ctx.PokeIdleCentral.compactar(rows.map(({ logBase, ...row }) => row)) };
+  assert.equal(ctx.PISPublicGems.validateContent({ ...snapshot, itens: [null] }, now), false);
+  assert.equal(ctx.PISPublicGems.validateContent(snapshot, now), true);
+  const quote = ctx.PISPublicGems.prepare(snapshot, now);
+  assert.equal(quote({ ...target, ivs: { ...target.ivs, speed: 0 } }).alertSupported, true);
+  assert.equal(quote({ ...target, name: 'Rattata', speciesId: '19' })?.alertSupported ?? false, false);
+  assert.equal(quote({ ...target, name: 'War Heracross', speciesId: '2005' }), null);
+});
+
+test('backup preserva atributos de registros repetidos e exclui Outlaws explícitos', () => {
+  const sale = { id: 1, nome: 'Gengar', speciesId: 94, moeda: 'gold', em: now - 60000, preco: 100, level: 100 };
+  const imported = coins.importRows([{ ...sale, ivs: { speed: 0 }, nota: 5 }, sale,
+    { ...sale, id: 2, dex: 2001, isOutland: true }], core, now);
+  assert.equal(imported.length, 1);
+  assert.equal(imported[0].ivs.speed, 0);
+  assert.equal(imported[0].grade, 5);
+  assert.equal(coins.cleanSpecies('Type: Null'), 'Type: Null');
+});

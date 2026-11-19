@@ -27,7 +27,7 @@ function biasFor(correcao,shiny){
 }
 const notaOf=r=>r?.mega&&Number.isFinite(r.notaBase)?r.notaBase:r?.nota;
 function describe(central,p){
- if(!p||!STATS.every(k=>Number.isInteger(p.ivs?.[k])&&p.ivs[k]>=1&&p.ivs[k]<=32)||!Number.isFinite(p.quality)||!Number.isInteger(p.potencia)||!(p.level>0))return null;
+ if(!p||!STATS.every(k=>Number.isInteger(p.ivs?.[k])&&p.ivs[k]>=0&&p.ivs[k]<=32)||!Number.isFinite(p.quality)||!Number.isInteger(p.potencia)||!(p.level>0))return null;
  if(STATS.some(k=>Number(p.refino?.[k])>0))return null;
  const e=central.species.get(Number(p.speciesId));if(!e)return null;
  const base=megaBase(central,e),mega=central.species.has(base);

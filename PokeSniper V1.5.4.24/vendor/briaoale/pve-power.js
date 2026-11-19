@@ -6,7 +6,7 @@
  const legendary=id=>LEGENDARY.has(id>=13000?id%1000:id>=3000&&id<4000?id-3000:id);
  const on=v=>v===true||v===1||v==='true';
  function calcular(p,e,price,currency){
-  if(!p||!e||!Array.isArray(e.b)||e.b.length!==6||!e.b.every(Number.isFinite)||!Number.isInteger(p.level)||p.level<1||p.level>9999||!Number.isInteger(p.potencia)||p.potencia<1||p.potencia>5||!Number.isFinite(p.quality)||p.quality<.8||p.quality>1.8||!KEYS.every(k=>Number.isInteger(p.ivs?.[k])&&p.ivs[k]>=1&&p.ivs[k]<=32))return null;
+  if(!p||!e||!Array.isArray(e.b)||e.b.length!==6||!e.b.every(Number.isFinite)||!Number.isInteger(p.level)||p.level<1||p.level>9999||!Number.isInteger(p.potencia)||p.potencia<1||p.potencia>5||!Number.isFinite(p.quality)||p.quality<.8||p.quality>1.8||!KEYS.every(k=>Number.isInteger(p.ivs?.[k])&&p.ivs[k]>=0&&p.ivs[k]<=32))return null;
   let refino=p.refino;
   if(typeof refino==='string'){try{refino=JSON.parse(refino);}catch{return null;}}
   const multiplier=[1,1.05,1.1,1.25,2][p.potencia-1]*(on(p.shiny)?3:1)*(legendary(e.id)?4:1),stats={};

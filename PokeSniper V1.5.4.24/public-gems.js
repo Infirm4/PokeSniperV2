@@ -14,18 +14,45 @@
       Array.isArray(snapshot.itens);
   }
 
+  function validateContent(snapshot, now = Date.now()) {
+    if (!valid(snapshot, now)) return false;
+    const { campos, nomes } = snapshot.vendas;
+    const published = Date.parse(snapshot.geradoEm);
+    if (snapshot.vendas.tipos?.at !== 't' || snapshot.vendas.tipos?.name !== 's') return false;
+    let minute = 0;
+    return campos.at.every((delta, i) => Number.isSafeInteger(delta) &&
+      (minute += delta) * 60000 >= 1e12 && minute * 60000 <= published &&
+      [0, 1].includes(campos.shiny[i]) && (campos.nota[i] === null || Number.isFinite(campos.nota[i])) &&
+      ['price', 'base', 'pve', 'level', 'speciesId', 'family'].every(key =>
+        Number.isFinite(campos[key][i]) && campos[key][i] > 0) &&
+      Number.isInteger(campos.name[i]) && typeof nomes[campos.name[i]] === 'string') &&
+      snapshot.itens.every(row => row && ['orb', 'gold'].includes(row.currency) &&
+        Number.isFinite(row.price) && row.price > 0 && Number.isFinite(Date.parse(row.day)) &&
+        Number.isSafeInteger(Number(row.itemId)));
+  }
+
   function prepare(snapshot, now = Date.now()) {
     const engine = globalThis.PokeIdlePvePricing;
     if (!engine || !globalThis.PokeIdleCentral || !valid(snapshot, now)) return () => null;
     if (cached?.stamp !== snapshot.geradoEm) {
+      if (!validateContent(snapshot, now)) return () => null;
       const central = globalThis.PokeIdleCentral.create(globalThis);
       const rows = globalThis.PokeIdleCentral.linhas(snapshot).filter(row =>
         row.at <= Date.parse(snapshot.geradoEm) && row.pve > 0 && row.level > 0 && row.base > 0 &&
         !PISMarketCore.isOutland({ name: row.name }) && !(row.speciesId >= 2001 && row.speciesId < 3000));
       const catalog = new Map([...central.species].map(([id, entry]) => [keyName(entry.n), id]));
-      cached = { stamp: snapshot.geradoEm, central, rows, catalog, fits: new Map() };
+      for (const row of rows) row.ivAtaque = null;
+      const markets = new Map();
+      for (const row of rows) {
+        if (!markets.has(row.shiny)) markets.set(row.shiny, { rows: [], bySpecies: new Map() });
+        const market = markets.get(row.shiny);
+        market.rows.push(row);
+        if (!market.bySpecies.has(row.speciesId)) market.bySpecies.set(row.speciesId, []);
+        market.bySpecies.get(row.speciesId).push(row);
+      }
+      cached = { stamp: snapshot.geradoEm, central, catalog, markets, fits: new Map() };
     }
-    const { central, rows, catalog, fits } = cached;
+    const { central, catalog, markets, fits } = cached;
     const at = Date.parse(snapshot.geradoEm);
     const quote = engine.itemQuotes(snapshot.itens);
     const typesOf = id => central.species.get(id)?.t || [];
@@ -48,8 +75,13 @@
         addons += Math.round(unit * item.quantity);
       }
       const shiny = profile.shiny;
-      if (!fits.has(shiny)) fits.set(shiny, engine.marketFit(rows.filter(row => row.shiny === shiny)));
-      const result = engine.neighbors({ ...profile, at, nota: target.grade }, rows, {
+      const market = markets.get(shiny);
+      if (!market) return null;
+      const local = (market.bySpecies.get(speciesId) || []).filter(row =>
+        Number.isFinite(row.nota) && Math.abs(row.nota - target.grade) <= 0.75 &&
+        Math.abs(Math.log2(row.level / target.level)) <= 0.5 && Math.abs(Math.log(row.pve / profile.pve)) <= 0.5);
+      if (!fits.has(shiny)) fits.set(shiny, engine.marketFit(market.rows));
+      const result = engine.neighbors({ ...profile, at, nota: target.grade, ivAtaque: null }, market.rows, {
         addons, fit: fits.get(shiny), typesOf, bias: engine.biasFor(snapshot.correcao, shiny) ?? 0,
         megaUnit: (special, time) => quote(special ? engine.MEGA_SHINY : engine.MEGA, time) ?? 0,
       });
@@ -60,7 +92,8 @@
       return {
         status: 'estimated', method: 'briaoale_public', median: result.median,
         lower: result.low, upper: result.high, discount: 1 - target.price / result.median,
-        count: result.familyCount, profileSales: result.familyCount, marketCount: result.marketCount,
+        count: local.length, profileSales: local.length, marketCount: result.marketCount,
+        alertSupported: local.length >= 5 && result.parts.proximidade >= 4 / 9,
         sourceAt: at, comparables: comparable,
       };
     };
@@ -71,7 +104,7 @@
       .replace(/^✨\s*/u, '').replace(/^shiny\s+/i, '').trim().toLowerCase();
   }
 
-  const api = { prepare, valid };
+  const api = { prepare, valid, validateContent };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.PISPublicGems = api;
 })();

@@ -58,7 +58,8 @@
       // Sem cotação de adicionais, usa preços pagos do mesmo conjunto de especiais.
       // Exige suporte direto na espécie, além do conjunto usado para ajustar a curva.
       const nearby = rows.filter(row => row.speciesId === profile.speciesId &&
-        Math.abs(row.nota - target.grade) <= 0.75 && Math.abs(Math.log2(row.level / target.level)) <= 0.5);
+        Math.abs(row.nota - target.grade) <= 0.75 && Math.abs(Math.log2(row.level / target.level)) <= 0.5 &&
+        Math.abs(Math.log(row.pve / profile.pve)) <= 0.5);
       if (rows.length < 30 || nearby.length < 5) return null;
       if (!fitted.has(key)) {
         const signature = JSON.stringify(rows.map(row => [row.id, row.at, row.price, row.pve, row.nota, row.notaBase, row.level, row.speciesId]));
@@ -76,7 +77,7 @@
       if (!result || ![result.low, result.median, result.high].every(n => Number.isFinite(n) && n > 0)) return null;
       return { status: 'estimated', method: 'briaoale_pve', lower: result.low, median: result.median, upper: result.high,
         discount: 1 - target.price / result.median, count: nearby.length, profileSales: nearby.length,
-        marketCount: rows.length, comparables: result.influence.slice(0, 5).map(({ r }) => ({
+        marketCount: rows.length, alertSupported: result.parts.proximidade >= 4 / 9, comparables: result.influence.slice(0, 5).map(({ r }) => ({
           id: r.id, price: r.price, soldAt: r.at, grade: r.nota, level: r.level, power: r.power, speed: r.speed,
         })) };
     };

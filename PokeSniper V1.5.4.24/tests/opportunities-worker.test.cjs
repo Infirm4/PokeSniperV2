@@ -26,7 +26,7 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
     runtime: { getURL: file => file },
   };
   const PISMarketStore = {
-    recentOpportunities: async () => rows,
+    recentOpportunities: async () => rows, currentOpportunity: async key => rows.find(row => row.key === key),
     markDelivery: async (key, delivered, _time, channels) => { results.push([key, delivered, channels.desktop, channels.game]); },
   };
   const PISGameTab = { show: async (_title, message) => {
@@ -69,11 +69,37 @@ test('tenta a sprite verificada nos dois canais e recupera o ícone fixo se o Ch
       return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': 'image/png' } });
     },
     PISGameTab: { async show(...args) { game = args; return true; } },
-    PISMarketStore: { recentOpportunities: async () => [row], markDelivery: async () => {} },
+    PISMarketStore: { recentOpportunities: async () => [row], currentOpportunity: async () => row, markDelivery: async () => {} },
   });
   await alerts.wake();
   assert.match(notices[0].iconUrl, /^data:image\/png;base64,/);
   assert.equal(notices[1].iconUrl, 'opportunity-icon.png');
   assert.equal(game[3], sprite);
   assert.equal(notices[0].message, '21,5% de desconto · 78,5 Mi Coins\nFaixa justa estimada · 90–120 Mi Coins');
+});
+
+test('revalida a oferta seguinte e processa novas chegadas durante o envio', async () => {
+  const row = key => ({ id: key, key, price: 75, estimate: { discount: .25 }, delivery: 'pending', nextAttemptAt: 0 });
+  let rows = [row('first'), row('closed')];
+  const attempts = [];
+  const event = { addListener() {} };
+  const chrome = {
+    storage: { local: { get: async () => ({ opportunitySettings: { notify: true } }) }, onChanged: event },
+    alarms: { get: async () => true, onAlarm: event },
+    notifications: { onClicked: event, async create(id) {
+      attempts.push(id);
+      if (id === 'pis:first') {
+        rows = [row('new')];
+        alerts.wake();
+      }
+    } },
+    runtime: { getURL: file => file },
+  };
+  const alerts = runInNewContext(worker + '\nPISOpportunityAlerts;', {
+    chrome, PISMarketCore, PISOpportunities: rules, console, PISGameTab: { show: async () => false },
+    PISMarketStore: { recentOpportunities: async () => rows,
+      currentOpportunity: async key => rows.find(row => row.key === key), markDelivery: async () => {} },
+  });
+  await alerts.wake();
+  assert.deepEqual(attempts, ['pis:first', 'pis:new']);
 });

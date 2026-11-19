@@ -6,4 +6,4 @@ Origem: https://github.com/briaoale/precificador-pokemon/tree/eea807bfa264999438
 
 A adaptação dos arquivos importados usa `globalThis` no lugar de `window` nos pontos em que
 o motor e o catálogo precisam carregar tanto no service worker quanto na página da extensão.
-O Sniper usa seu próprio histórico. A base de vendas publicada pelo projeto não é incluída.
+A adaptação também aceita IV zero na validação do perfil e do PvE. O snapshot público de Gemas é baixado em tempo de execução.

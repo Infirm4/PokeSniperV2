@@ -25,12 +25,11 @@
         data += decoder.decode(value, { stream: true });
       }
       const snapshot = JSON.parse(data + decoder.decode());
-      if (!PISPublicGems.valid(snapshot)) throw new Error('formato');
-      await PISMarketStore.savePublicGems(snapshot);
-      await chrome.storage.local.set({ pisPublicGemsCheck: { at, ok: true, sourceAt: snapshot.geradoEm } });
+      const sourceAt = await PISMarketStore.savePublicGems(snapshot);
+      await chrome.storage.local.set({ pisPublicGemsCheck: { at, ok: true, sourceAt, attempted: snapshot.geradoEm } });
       PISOpportunityAlerts.wake();
-    } catch {
-      await chrome.storage.local.set({ pisPublicGemsCheck: { at, ok: false } });
+    } catch (error) {
+      await chrome.storage.local.set({ pisPublicGemsCheck: { at, ok: false, sourceAt: pisPublicGemsCheck?.sourceAt, error: error.message } });
       // O último snapshot válido continua disponível até vencer sua janela de frescor.
     }
   }

@@ -1,6 +1,8 @@
 const PISOpportunityAlerts = (() => {
   const ALARM = 'pis-opportunity-alerts';
   let draining;
+  let delivering = false;
+  let refreshRequested = false;
 
   const icons = new Map();
   const maxBytes = 128 * 1024;
@@ -56,7 +58,13 @@ const PISOpportunityAlerts = (() => {
     const recent = await PISMarketStore.recentOpportunities(config);
     const pending = recent.filter(row => row.delivery === 'pending' && row.nextAttemptAt <= Date.now() &&
       PISOpportunities.notificationEligible(row));
-    for (const row of pending.slice(0, 5)) {
+    delivering = true;
+    for (const candidate of pending.slice(0, 5)) {
+      const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
+      const current = PISOpportunities.settings(opportunitySettings);
+      if (!current.notify) break;
+      const row = await PISMarketStore.currentOpportunity(candidate.key, candidate.id, current);
+      if (!row) continue;
       // ID determinístico mantém apenas uma notificação para a mesma revisão após uma retomada.
       const title = row.name || 'Pokémon #' + row.speciesId;
       const { message } = PISOpportunities.presentation(row);
@@ -77,8 +85,15 @@ const PISOpportunityAlerts = (() => {
   function wake() {
     if (!draining) {
       draining = sendPending().catch(error => console.warn('[PIS] Fila de oportunidades:', error.message))
-        .finally(() => { draining = null; });
-    }
+        .finally(() => {
+          draining = null;
+          delivering = false;
+          if (refreshRequested) {
+            refreshRequested = false;
+            return wake();
+          }
+        });
+    } else if (delivering) refreshRequested = true;
     return draining;
   }
 

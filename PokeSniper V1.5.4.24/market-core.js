@@ -54,6 +54,25 @@
 
   const outlandPrefix = /^(?:trickmaster|trickamaster|enraged|enrage|furious|brave|outlaw|outland)\s+\S/i;
 
+  // Nomes do catálogo de Outlaws do PokéIdle. IDs internos da vitrine não são números Dex.
+  const outlandNames = new Set([
+    "ancient dragonair", "ancient dragonite", "ancient granbull", "ancient hypno",
+    "ancient marowak", "ancient meganium", "ancient pinsir", "ancient pupitar",
+    "ancient xatu", "banshee misdreavus", "banshee mismagius", "brave aerodactyl",
+    "brave alakazam", "brave arcanine", "brave blastoise", "brave charizard",
+    "brave clefable", "brave mantine", "brave nidoking", "brave nidoqueen",
+    "brave noctowl", "brave steelix", "brave tyranitar", "brave venusaur",
+    "brute rhydon", "charged raichu", "dark crobat", "enigmatic girafarig",
+    "enraged typhlosion", "evil cloyster", "freezing aurorus", "freezing dewgong",
+    "furious ampharos", "furious gyarados", "furious magmar", "furious pidgeot",
+    "furious sandslash", "furious scizor", "furious scyther", "furious skarmory",
+    "furious whimsicott", "furious wigglytuff", "hard golem", "heavy piloswine",
+    "magma magcargo", "magnetic electabuzz", "milch-miltank", "psy exeggutor",
+    "psy jynx", "roll donphan", "taekwondo hitmonchan", "taekwondo hitmonlee",
+    "taekwondo hitmontop", "toxic toxicroak", "tribal feraligatr", "trickmaster gengar",
+    "war heracross", "war scrafty",
+  ]);
+
   function isOutland(row) {
     const ficha = row?.ficha;
     const explicit = [row?.outland, row?.outlaw, row?.isOutland, ficha?.outland, ficha?.outlaw, ficha?.isOutland];
@@ -62,8 +81,9 @@
     const dex = number(ficha?.dex ?? ficha?.dexId ?? ficha?.numeroNacional ?? row?.dex);
     if (Number.isSafeInteger(dex) && dex >= 2001) return true;
     const name = ficha?.nome ?? row?.name ?? row?.nome;
-    return typeof name === 'string' &&
-      outlandPrefix.test(name.trim().replace(/^✨\s*/u, '').replace(/^shiny\s+/i, ''));
+    if (typeof name !== 'string') return false;
+    const clean = name.trim().replace(/^✨\s*/u, '').replace(/^shiny\s+/i, '');
+    return outlandNames.has(clean.toLowerCase()) || outlandPrefix.test(clean);
   }
 
   function safeSprite(value) {
@@ -126,7 +146,7 @@
     if (sale) {
       const soldAt = timestamp(row.em);
       if (!soldAt) return null;
-      return { ...profile, source: 'game', soldAt, listingId: id(row.listingId ?? row.anuncioId) };
+      return { ...profile, source: 'game', soldAt, listingId: linkageFields.map(field => id(row[field])).find(Boolean) ?? null };
     }
     const closed = ['cancelado', 'expirado'].includes(row.estado) ? row.estado : null;
     if ((!closed && row.estado != null && row.estado !== 'aberto') || row.comprador) return null;
@@ -237,11 +257,14 @@
     const weight = comparable.reduce((sum, sale) => sum + sale.weight, 0);
     const effectiveCount = weight ** 2 / [...entityWeights.values()].reduce((sum, value) => sum + value ** 2, 0);
     if (effectiveCount < 4) return { status: 'insufficient_sales', count, independentCount, effectiveCount };
+    const close = comparable.filter(({ sale }) => Math.abs(sale.grade - target.grade) <= 0.5 &&
+      Math.abs(Math.log2(sale.level / target.level)) <= 0.5);
+    const closeEntities = new Set(close.map(({ sale }) => sale.pokemonId ? 'p:' + sale.pokemonId : 's:' + sale.id));
     const lower = quantile(comparable, weight, 0.25);
     const median = quantile(comparable, weight, 0.5);
     const upper = quantile(comparable, weight, 0.75);
     return { status: 'estimated', count, independentCount, effectiveCount, lower, median, upper,
-      discount: 1 - target.price / median, method: 'baseline',
+      discount: 1 - target.price / median, method: 'baseline', alertSupported: closeEntities.size >= 5,
       comparables: [...comparable].sort((a, b) => b.weight - a.weight).slice(0, 5).map(({ sale }) => ({
         id: sale.id, price: sale.price, soldAt: sale.soldAt, grade: sale.grade, level: sale.level,
         power: sale.power, speed: sale.ivs?.speed,

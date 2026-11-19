@@ -112,6 +112,7 @@ function card(row, showLiquidity = false) {
       text('div', `Faixa ${format.format(estimate.lower)}–${format.format(estimate.upper)} · ${sample}`, 'offer-meta'),
       text('div', limit == null ? 'Informe a taxa e selecione uma moeda para calcular o teto de revenda.' :
         `Teto de preço para alerta ${format.format(limit)} ${unit}`, 'offer-meta'));
+    if (estimate.alertSupported === false) item.append(text('div', 'Referência com poucos comparáveis próximos. Alerta suspenso.', 'offer-meta'));
     if (estimate.sourceAt) {
       item.append(text('div', 'Base de Gemas atualizada em ' + new Date(estimate.sourceAt).toLocaleString('pt-BR'), 'offer-meta'));
     }
@@ -156,6 +157,7 @@ function opportunityCard(row) {
   block.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')),
     text('span', `${offer.discount} · ${offer.asking}`, 'opportunity-price'));
   if (offer.range) block.append(text('span', offer.range, 'offer-meta'));
+  if (offer.warning) block.append(text('span', offer.warning, 'offer-meta'));
   const sprite = PISMarketCore.safeSprite(row.sprite);
   if (sprite) {
     const img = document.createElement('img');
@@ -305,7 +307,7 @@ const testStatus = document.querySelector('#test-status');
 
 
 runDiagnostics.addEventListener('click', async () => {
-  runDiagnostics.disabled = true;
+  runDiagnostics.disabled = runBacktest.disabled = true;
   copyDiagnostics.disabled = true;
   testStatus.textContent = 'Testando os dois avisos e lendo o banco local…';
   try {
@@ -325,7 +327,7 @@ runDiagnostics.addEventListener('click', async () => {
           result: response ? (response.storageError ? 'falha ao salvar o teste' : null) : 'sem resposta' };
       } catch { return { ok: false, at: Date.now(), result: 'sem resposta' }; }
     }));
-    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage']).catch(() => ({}));
+    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie']).catch(() => ({}));
     const [notificationPermission, database, alerts, history, [desktopTest, gameTest], automatic, publicSource] =
       await Promise.all([permission, snapshot, pipeline, trace, testResults, monitor, sourceCheck]);
     const tests = PISMarketSmoke.run();
@@ -334,6 +336,7 @@ runDiagnostics.addEventListener('click', async () => {
       testes: tests,
       banco: database,
       histórico_na_sessão: history,
+      atualização_coins: { global: automatic['pisCoinsHistory:global'], espécie: automatic['pisCoinsHistory:espécie'] },
       fonte_pública_de_gemas: publicSource.pisPublicGemsCheck ?? null,
       varredura_automática: { estado: automatic.pisMarketMonitor ?? null, última_página: automatic.pisMarketAutomaticPage ?? null },
       alertas: {
@@ -353,7 +356,22 @@ runDiagnostics.addEventListener('click', async () => {
     testStatus.textContent = `${passed}/${tests.length} testes locais passaram. Copie o resultado para compartilhar.`;
   } catch {
     testStatus.textContent = 'O diagnóstico não pôde ser concluído. Reabra o painel e tente novamente.';
-  } finally { runDiagnostics.disabled = false; }
+  } finally { runDiagnostics.disabled = runBacktest.disabled = false; }
+});
+
+const runBacktest = document.querySelector('#run-backtest');
+runBacktest.addEventListener('click', async () => {
+  runBacktest.disabled = runDiagnostics.disabled = true;
+  copyDiagnostics.disabled = true;
+  testStatus.textContent = 'Separando treino e teste por data no banco local…';
+  try {
+    const result = await PISMarketStore.backtest(config ?? PISOpportunities.settings());
+    reportBox.value = JSON.stringify(result, null, 2);
+    reportBox.hidden = false;
+    copyDiagnostics.disabled = false;
+    testStatus.textContent = 'Teste de precisão concluído.';
+  } catch { testStatus.textContent = 'Falha ao avaliar o histórico local.'; }
+  finally { runBacktest.disabled = runDiagnostics.disabled = false; }
 });
 
 copyDiagnostics.addEventListener('click', async () => {

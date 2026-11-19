@@ -19,10 +19,18 @@
   window.addEventListener('message', event => {
     if (event.source !== window || event.origin !== location.origin) return;
     const msg = event.data;
+    if (msg?.source === 'PIS_MAIN' && msg.type === 'COINS_HISTORY_STATUS') {
+      chrome.runtime.sendMessage({ type: 'PIS_COINS_HISTORY_STATUS', state: msg.state, scope: msg.scope }).catch(() => {});
+      return;
+    }
     if (msg?.source === 'PIS_MAIN' && msg.type === 'MARKET_HISTORY_EVENT') {
       if (!['request', 'response', 'invalid_json', 'ignored_socket'].includes(msg.event) ||
           !Array.isArray(msg.rows) || msg.rows.length > 100) return;
       chrome.runtime.sendMessage({ type: 'PIS_MARKET_HISTORY_EVENT', event: msg.event, trace: msg.trace, rows: msg.rows })
+        .then(receipt => {
+          if (Number.isSafeInteger(msg.seq)) window.postMessage({ source: 'PIS_BRIDGE',
+            type: 'COINS_HISTORY_RECEIPT', seq: msg.seq, ok: receipt?.ok === true }, location.origin);
+        })
         .catch(error => console.warn('[PIS] Histórico de mercado:', error.message));
       return;
     }
@@ -36,7 +44,7 @@
           (msg.rows.length === 0 && !msg.automatic) || msg.rows.length > 100) return;
       try {
         chrome.runtime.sendMessage({ type: 'PIS_MARKET_CORE_BATCH', kind: msg.kind, rows: msg.rows,
-          automatic: msg.automatic === true, page: msg.page, totalRows: msg.totalRows }, reply => {
+          automatic: msg.automatic === true, page: msg.page, currency: msg.currency, totalRows: msg.totalRows }, reply => {
           const error = chrome.runtime.lastError;
           if (error || !reply?.ok) console.warn('[PIS] Observação de mercado não gravada:', error?.message || reply?.error);
         });

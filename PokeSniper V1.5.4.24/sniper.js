@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.23
+// PokeIdle Market Sniper v1.5.4.24
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.23'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.24'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -102,6 +102,7 @@
     // a mensagem que o jogo envia (ex.: { t: 'market.pokemons', pagina: 0 }) e a 'aba' da resposta.
     pokeReq: null, pokeAba: null,
     // URL do app da web do Google Apps Script (veja google-apps-script.gs). Vazio = só banco local + CSV.
+    sheetsOptInKey: 'pis_sheets_opt_in',
     sheetsUrl: 'https://script.google.com/macros/s/AKfycbwPXSeG3xL5PUwDwsuCp-XWJ8s8w3qmlGxECTJo_haREmZbeKOOnr_5qTfVZtH5xmDS/exec',
     // Salva sozinho uma cópia completa (CSV) na pasta Downloads a cada N horas, se houver registros novos. 0 = desligado.
     csvAutoHoras: 6
@@ -567,7 +568,7 @@
     const batch = request ? core.captureAutomatic(frame, request) : core.capture(frame);
     if (batch || request) window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_CORE_BATCH',
       kind: 'listing', rows: batch?.rows ?? [], automatic: !!request,
-      page: request?.pagina, totalRows: frame.linhas?.length }, location.origin);
+      page: request?.pagina, currency: request?.moeda, totalRows: frame.linhas?.length }, location.origin);
   }
 
   let lastMonitorState;
@@ -593,8 +594,9 @@
       const trace = marketCore.historyTrace(j);
       const page = ws === st.sock && coinHistorySeq != null && Number(j.seq) === coinHistorySeq && j.moeda == null
         ? { ...j, moeda: 'gold' } : j;
-      if (isCurrentGameSocket(ws)) postHistory('response', trace, marketCore.capture(page)?.rows);
-      else postHistory('ignored_socket', trace);
+      if (isCurrentGameSocket(ws) && !(ws === st.sock && coinHistorySeq != null && Number(j.seq) === coinHistorySeq))
+        postHistory('response', trace, marketCore.capture(page)?.rows);
+      else if (!isCurrentGameSocket(ws)) postHistory('ignored_socket', trace);
     }
     if (j.t === 'estado' && j.estado) {
       const primeiraConexao = st.sock !== ws;
@@ -764,7 +766,7 @@
         if (Date.now() >= st.marketPausaAte) st.marketFalhas = 0;
         return resposta;
       } catch(e) {
-        if (/^sem resposta a market\./.test(String(e && e.message || '')))
+        if (msg.t !== 'market.historicoGlobal' && msg.ordem !== 'recentes' && /^sem resposta a market\./.test(String(e && e.message || '')))
           registrarSobrecargaDoServidor('sem resposta do servidor');
         throw e;
       }
@@ -1482,31 +1484,57 @@
     st.pokeAprender = { req: j, ate: Date.now() + 10000 };
   }
 
-  const COINS_HISTORY_CHECKS = 'pis_coins_history_checks';
+  const COINS_HISTORY_CHECKS = 'pis_coins_history_committed_v24';
   let coinHistoryActive = false;
   let coinHistorySeq = null;
 
-  // A busca focada usa a mesma fila/recuo do jogo e nunca varre todas as espécies.
+  function persistHistoryPage(seq, page, rows) {
+    return new Promise((resolve, reject) => {
+      const receive = event => {
+        if (event.source === window && event.origin === location.origin &&
+            event.data?.source === 'PIS_BRIDGE' && event.data.type === 'COINS_HISTORY_RECEIPT' &&
+            event.data.seq === seq) finish(event.data.ok);
+      };
+      const finish = ok => {
+        clearTimeout(timer);
+        window.removeEventListener('message', receive);
+        if (ok) resolve();
+        else reject(new Error('Página sem confirmação de gravação'));
+      };
+      const timer = setTimeout(() => finish(false), 20000);
+      window.addEventListener('message', receive);
+      window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_HISTORY_EVENT',
+        event: 'response', seq, trace: globalThis.PISMarketCore.historyTrace(page), rows }, location.origin);
+    });
+  }
+
+  // Uma lacuna nunca avança o cursor. Uma nova tentativa repete o trecho por ID.
   async function syncCoinsHistory(value) {
-    const name = globalThis.PISCoinsHistory?.cleanSpecies(value);
-    if (!name || coinHistoryActive || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) return;
-    const key = name.toLowerCase();
-    const checks = lsGet(COINS_HISTORY_CHECKS, {});
-    const last = Object.hasOwn(checks, key) ? checks[key] : null;
+    const globalHistory = value == null;
+    const name = globalHistory ? '' : globalThis.PISCoinsHistory?.cleanSpecies(value);
+    const key = globalHistory ? '*' : name?.toLowerCase();
+    const report = state => window.postMessage({ source: 'PIS_MAIN', type: 'COINS_HISTORY_STATUS',
+      state, scope: globalHistory ? 'global' : 'espécie' }, location.origin);
+    if (key == null || coinHistoryActive || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) {
+      if (!globalHistory) report('indisponível');
+      return;
+    }
+    const last = lsGet(COINS_HISTORY_CHECKS, {})[key];
     const started = Date.now();
-    if (started - (last?.at ?? 0) < 10 * 60000) return;
-    const save = newest => {
-      const entries = Object.entries({ ...checks, [key]: { at: started, newest } }).sort((a, b) => b[1].at - a[1].at);
-      lsSet(COINS_HISTORY_CHECKS, Object.fromEntries(entries.slice(0, 120)));
-    };
-    save(last?.newest ?? 0);
-    coinHistoryActive = true;
+    if (started - (last?.at ?? 0) < (globalHistory ? 5 : 10) * 60000) {
+      if (!globalHistory) report('atualizado recentemente');
+      return;
+    }
+    const core = globalThis.PISMarketCore;
     const live = st.sock;
     const allowed = () => st.sock === live && live.readyState === 1 && Date.now() >= st.marketPausaAte;
+    const since = last?.newest || started - (globalHistory ? 6 * 3600000 : core.WINDOW_MS);
     let newest = last?.newest ?? 0;
     const visited = new Set();
+    coinHistoryActive = true;
+    report('consultando');
     try {
-      for (let pagina = 0; pagina < 25 && allowed(); pagina++) {
+      for (let pagina = 0; pagina < 120 && allowed(); pagina++) {
         if (pagina) await sleep(5000);
         if (!allowed()) break;
         const seq = ++st.seq;
@@ -1521,20 +1549,32 @@
         const signature = JSON.stringify(page.linhas.map(row => row?.id ?? null));
         if (page.linhas.length && visited.has(signature)) break;
         visited.add(signature);
-        const times = page.linhas.filter(row => row && (row.moeda == null || row.moeda === 'gold') &&
-          typeof row.ficha?.nome === 'string' && row.ficha.nome.trim().toLowerCase() === key)
-          .map(row => Number(row.em)).filter(value => Number.isSafeInteger(value) && value >= 1e12);
+        if (page.linhas.length > core.MAX_BATCH) throw new Error('Página acima do limite de gravação');
+        const rows = core.capture({ ...page, moeda: 'gold' })?.rows.filter(row =>
+          row.currency === 'gold' && (globalHistory || row.name?.toLowerCase() === key)) ?? [];
+        await persistHistoryPage(seq, page, rows);
+        const times = rows.map(row => row.soldAt).filter(at => at <= started);
         newest = Math.max(newest, ...times);
-        const oldest = times.length ? Math.min(...times) : Infinity;
-        if (page.temMais === false || page.linhas.length === 0 ||
-            oldest <= (last?.newest || started - globalThis.PISMarketCore.WINDOW_MS)) {
-          save(newest);
-          break;
+        if (page.temMais === false || page.linhas.length === 0 || (times.length && Math.max(...times) < since)) {
+          const checks = lsGet(COINS_HISTORY_CHECKS, {});
+          const entries = Object.entries({ ...checks, [key]: { at: started, newest: newest || since } })
+            .sort((a, b) => b[1].at - a[1].at);
+          lsSet(COINS_HISTORY_CHECKS, Object.fromEntries(entries.slice(0, 120)));
+          report('gravado');
+          return;
         }
       }
-    } catch (error) { dbg('Histórico em Coins:', error.message); }
-    finally { coinHistoryActive = false; coinHistorySeq = null; }
+      report('parcial · cursor preservado');
+    } catch (error) {
+      report('falha · cursor preservado');
+      dbg('Histórico em Coins:', error.message);
+    } finally {
+      coinHistoryActive = false;
+      coinHistorySeq = null;
+    }
   }
+
+  setInterval(() => { if (trackAtivo()) syncCoinsHistory(null); }, 60000);
 
   window.addEventListener('message', event => {
     if (event.source === window && event.origin === location.origin &&
@@ -2088,11 +2128,11 @@
 
   // Para rastrear todas as páginas usamos a consulta oficial da vitrine, sem filtros
   // da aba que o jogador deixou aberta (busca, espécie, nível, Shiny etc.).
-  function pedidoPaginaRastreador(pagina) {
+  function pedidoPaginaRastreador(pagina, moeda, ordem) {
     const tpl = pokeTemplate();
     const salvo = tpl && tpl.req && tpl.req.t === 'market.listar' ? tpl.req : {};
     const req = { ...salvo,
-      t: 'market.listar', tipo: 'pokemon', moeda: 'gold', ordem: 'baratos', pagina,
+      t: 'market.listar', tipo: 'pokemon', moeda, ordem, pagina,
       especieId: 0, busca: '', criterios: [], elementos: [], tiposUnidos: true, categoria: '',
       soShiny: false, soP5: false, soMega: false, soLendario: false,
       soTmElemental: false, soTmAoe: false, semOutland: false,
@@ -2100,18 +2140,19 @@
       ivMin: '', ivMax: '', qualidadeMin: '', qualidadeMax: '',
       notaMin: '', notaMax: '', precoMin: '', precoMax: ''
     };
-    if ('seq' in req) req.seq = ++st.seq;
+    if ('seq' in req || ordem === 'recentes') req.seq = ++st.seq;
     return req;
   }
 
-  async function consultarPaginaRastreador(pagina) {
-    const req = pedidoPaginaRastreador(pagina);
+  async function consultarPaginaRastreador(pagina, moeda = 'gold', ordem = 'baratos') {
+    const req = pedidoPaginaRastreador(pagina, moeda, ordem);
     // Uma consulta POR VEZ, com filtro EXATO da página da resposta. A fila é liberada
     // a cada página para não bloquear as compras e as liberações dos retidos.
     return naFilaItem(() => ask(req, j => j.t === 'market' && j.aba === 'vitrine' &&
       Array.isArray(j.linhas) && Number(j.pagina) === pagina &&
-      (j.ordem == null || j.ordem === 'baratos') &&
-      (j.moeda == null || j.moeda === 'gold') &&
+      (j.ordem == null || j.ordem === ordem) &&
+      (j.moeda == null || j.moeda === moeda) &&
+      (ordem !== 'recentes' || Number(j.seq) === req.seq || (j.ordem === ordem && j.moeda === moeda)) &&
       (j.especieId == null || Number(j.especieId) === 0) &&
       (req.seq == null || j.seq == null || Number(j.seq) === Number(req.seq)),
       15000, () => trackAtivo(), req));
@@ -2796,7 +2837,7 @@
   }
 
   async function enviarParaPlanilha() {
-    if (!FIXO.sheetsUrl || st.pkEnviando || !st.pkPronto) return;
+    if (!FIXO.sheetsUrl || !lsGet(FIXO.sheetsOptInKey, false) || st.pkEnviando || !st.pkPronto) return;
     const pend = [];
     for (const r of st.pkObs.values()) for (const e of r.eventos || [])
       if (!e.enviado) pend.push({ rec: r, evento: e });
@@ -3146,6 +3187,28 @@
       paginasIncompletas,menorTotal,maiorTotal,tolerancia,
       densidade,deslocamentoPct,duracaoMs:Math.max(0,nowSrv()-inicio)};
   }
+
+  // Primeiro acompanha lançamentos; o censo de Coins continua na mesma fila de rede.
+  let recentPage = 0;
+  let recentBusy = false;
+  let nextGemPage = 1;
+  setInterval(async () => {
+    if (recentBusy || !trackAtivo() || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) return;
+    recentBusy = true;
+    const index = recentPage++ % 3;
+    try {
+      if (index < 2) await consultarPaginaRastreador(0, index ? 'orb' : 'gold', 'recentes');
+      else {
+        const page = await consultarPaginaRastreador(nextGemPage, 'orb', 'recentes');
+        const size = Number(page.porPagina) || page.linhas.length;
+        const total = size > 0 && Number.isFinite(Number(page.total)) ? Math.ceil(Number(page.total) / size) : null;
+        nextGemPage = !page.linhas.length || (total != null && nextGemPage + 1 >= total)
+          ? 1 : nextGemPage + 1;
+      }
+    }
+    catch (error) { dbg('Ofertas recentes:', error.message); }
+    finally { recentBusy = false; }
+  }, 12000);
 
   (async function coletaContinua() {
     for (;;) {
@@ -3911,6 +3974,14 @@
       botaoTrack.style.border = ativo ? '2px solid #65e99c' : '2px solid #fc7b87';
     };
     botaoTrack.onclick = () => { setTrackAtivo(!trackAtivo()); pintarTrack(); };
+    const sheetToggle = h('input', {}, { type: 'checkbox', checked: lsGet(FIXO.sheetsOptInKey, false) });
+    sheetToggle.onchange = () => lsSet(FIXO.sheetsOptInKey, sheetToggle.checked);
+    const sheetLabel = h('label', { display: 'block' }, { title: FIXO.sheetsUrl });
+    sheetLabel.append(sheetToggle, document.createTextNode(' Sincronizar com Google Sheets automaticamente'));
+    const sheetDestination = h('a', { display: 'block' }, { href: FIXO.sheetsUrl, target: '_blank',
+      rel: 'noopener noreferrer', textContent: 'Ver destino do Apps Script' });
+    sheetLabel.append(sheetDestination);
+    body.append(sheetLabel);
     const textoBanco = h('span', { flex: '1', fontSize: '11px', minWidth: '180px' });
     const btnCsv = h('button', {
       padding: '5px 8px', cursor: 'pointer', background: '#423047', color: '#fff',
@@ -3982,7 +4053,7 @@
         : ' · sem censo de cobertura validada';
       const sheetsVisto = st.pkAvisos.ultimaConfirmacaoSheets ?
         ` · Sheets OK ${new Date(st.pkAvisos.ultimaConfirmacaoSheets).toLocaleTimeString('pt-BR')}` :
-        (FIXO.sheetsUrl ? ' · Sheets configurado (sem confirmação nesta sessão)' : '');
+        (lsGet(FIXO.sheetsOptInKey, false) ? ' · Sheets aguardando confirmação' : ' · Sheets automático desligado');
       const pausaRede = Date.now() < st.marketPausaAte
         ? ` · consultas em pausa (${Math.ceil((st.marketPausaAte-Date.now())/1000)} s)` : '';
       const intervaloMercadoSeg = intervaloMinMercadoAtualMs()/1000;

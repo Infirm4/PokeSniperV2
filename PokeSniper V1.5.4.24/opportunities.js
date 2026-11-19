@@ -24,7 +24,7 @@
   }
 
   // Indexa ofertas no preço de referência ou abaixo dele. O filtro aplica o desconto salvo.
-  const eligible = (row, now = Date.now()) => !row.closed && !isOutland(row) && (!row.expiresAt || row.expiresAt > now) && row.estimate?.status === 'estimated' && row.estimate.profileReason !== 'rare_profile' && row.estimate.median > 0 && row.price <= row.estimate.median;
+  const eligible = (row, now = Date.now()) => !row.closed && (!row.availableAt || row.availableAt <= now) && !isOutland(row) && (!row.expiresAt || row.expiresAt > now) && row.estimate?.status === 'estimated' && row.estimate.profileReason !== 'rare_profile' && row.estimate.median > 0 && row.price <= row.estimate.median;
   const key = row => JSON.stringify([row.currency, row.id, row.price]);
 
   // O preço limite deriva do desconto e, quando ativo, do filtro de margem de revenda.
@@ -41,7 +41,9 @@
   }
 
   function notificationEligible(row) {
-    return row.estimate?.profileReason !== 'rare_profile' &&
+    return row.estimate?.alertSupported !== false &&
+      (!row.estimate?.sourceAt || Date.now() - row.estimate.sourceAt <= 72 * 3600000) &&
+      row.estimate?.profileReason !== 'rare_profile' &&
       (row.estimate?.method !== 'baseline' || ![row.aoe, row.zMove, row.mega].includes(1));
   }
 
@@ -68,8 +70,12 @@
     const { lower, upper } = row.estimate;
     const range = Number.isFinite(lower) && Number.isFinite(upper)
       ? `Faixa justa estimada · ${money(lower)}–${money(upper)} ${unit}` : '';
-    return { discount, asking, range,
-      message: [`${discount} · ${asking}`, range].filter(Boolean).join('\n') };
+    const stats = { hp: 'HP', attack: 'Ataque', defense: 'Defesa', specialAttack: 'Atq. Esp.', specialDefense: 'Def. Esp.', speed: 'Velocidade' };
+    const lowIvs = Object.entries(stats).filter(([key]) => Number.isInteger(row.ivs?.[key]) && row.ivs[key] < 10)
+      .map(([, label]) => label);
+    const warning = lowIvs.length ? 'IV baixo: ' + lowIvs.join(', ') : '';
+    return { discount, asking, range, warning,
+      message: [`${discount} · ${asking}`, range, warning].filter(Boolean).join('\n') };
   }
 
   const core = { TTL, settings, eligible, key, matches, priceLimit, notificationEligible, presentation };
