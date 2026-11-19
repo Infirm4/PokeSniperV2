@@ -119,12 +119,22 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     return true;
   }
   const history = req?.type === 'PIS_MARKET_HISTORY_EVENT';
-  if (!history && !['PIS_MARKET_CORE_BATCH', 'PIS_MARKET_MONITOR', 'PIS_MARKET_UNAVAILABLE', 'PIS_COINS_HISTORY_STATUS'].includes(req?.type)) return false;
+  if (!history && !['PIS_MARKET_CORE_BATCH', 'PIS_MARKET_MONITOR', 'PIS_MARKET_UNAVAILABLE', 'PIS_MARKET_QUERY', 'PIS_COINS_HISTORY_STATUS'].includes(req?.type)) return false;
   if (!sender.tab || !PIS_HOST.test(String(sender.url || sender.tab.url || ''))) {
     reply({ ok: false, error: 'origem inválida' });
     return false;
   }
   PISGameTab.remember(sender.tab.id);
+  if (req.type === 'PIS_MARKET_QUERY') {
+    if (!['gold', 'orb', 'history'].includes(req.route) || !['enviada', 'resposta', 'recuo', 'recusada',
+      'cancelada', 'sem_resposta', 'falha_de_envio'].includes(req.status)) return false;
+    const query = { status: req.status, at: Date.now(),
+      page: Number.isSafeInteger(req.page) && req.page >= 0 ? req.page : null,
+      order: ['recentes', 'baratos'].includes(req.order) ? req.order : null };
+    chrome.storage.session.set({ ['pisMarketQuery:' + req.route]: query })
+      .then(() => reply({ ok: true }), () => reply({ ok: false }));
+    return true;
+  }
   if (req.type === 'PIS_COINS_HISTORY_STATUS') {
     if (!['global', 'espécie', 'backfill'].includes(req.scope) || typeof req.state !== 'string' || req.state.length > 40) return false;
     chrome.storage.session.set({ ['pisCoinsHistory:' + req.scope]: { state: req.state, at: Date.now(),

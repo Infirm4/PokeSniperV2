@@ -180,9 +180,31 @@
     return rows.length ? { kind, rows } : null;
   }
 
+  function decodeGameFrame(text) {
+    if (typeof text !== 'string' || !/"t"\s*:\s*"(estado|market|batalha|erro)"/.test(text)) return null;
+    try {
+      const frame = JSON.parse(text);
+      return ['estado', 'market', 'batalha', 'erro'].includes(frame?.t) ? frame : null;
+    } catch { return null; }
+  }
+
+  function matchesMarketPage(frame, request) {
+    if (frame?.t !== 'market' || frame.aba !== 'vitrine' || !Array.isArray(frame.linhas) ||
+        !money(request.moeda) || (frame.moeda != null && frame.moeda !== request.moeda) ||
+        (frame.especieId != null && Number(frame.especieId) !== Number(request.especieId ?? 0))) return false;
+    const exact = request.seq != null && frame.seq != null && Number(frame.seq) === Number(request.seq);
+    if (frame.seq != null && request.seq != null && !exact) return false;
+    if (frame.pagina != null ? Number(frame.pagina) !== request.pagina : !exact) return false;
+    if (frame.ordem != null && request.ordem != null && frame.ordem !== request.ordem) return false;
+    if (request.ordem == null || exact) return true;
+    // A moeda da linha pode servir de confirmação se o cabeçalho não a repetir.
+    const hasCurrency = frame.moeda === request.moeda || (frame.linhas.length > 0 &&
+      frame.linhas.every(row => row?.moeda === request.moeda));
+    return hasCurrency || (request.moeda === 'gold' && request.ordem === 'baratos');
+  }
+
   function captureAutomatic(frame, request) {
-    if (frame.aba !== 'vitrine' || frame.pagina == null || Number(frame.pagina) !== request.pagina ||
-        (frame.moeda != null && frame.moeda !== request.moeda) || !money(request.moeda)) return null;
+    if (!matchesMarketPage(frame, request)) return null;
     // Nunca atribui a moeda solicitada quando o servidor identificou outra moeda na linha.
     return capture({ ...frame, moeda: request.moeda,
       linhas: frame.linhas.filter(row => row && (row.moeda == null || row.moeda === request.moeda)) });
@@ -286,7 +308,7 @@
       (!row.availableAt || row.availableAt <= now) && (!row.expiresAt || row.expiresAt > now));
   }
 
-  const core = { purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
+  const core = { decodeGameFrame, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
     WINDOW_MS, MAX_BATCH };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;

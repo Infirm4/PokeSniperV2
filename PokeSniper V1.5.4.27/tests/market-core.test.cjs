@@ -104,3 +104,18 @@ test('prioriza a sprite exata do anúncio e valida o domínio antes de avisar', 
   assert.equal(fallback.rows[0].spriteSource, 'dex');
   assert.equal(validate('listing', fallback.rows)[0].spriteSource, 'dex');
 });
+
+test('correlaciona a vitrine por sequência ou moeda explícita independente da ordem das chaves', () => {
+  const { decodeGameFrame, matchesMarketPage } = require('../market-core');
+  const request = { pagina: 2, moeda: 'orb', ordem: 'recentes', seq: 8123456 };
+  const raw = '{"aba":"vitrine","seq":8123456,"t":"market","linhas":[]}';
+  const received = decodeGameFrame(raw);
+  assert.equal(matchesMarketPage(received, request), true);
+  assert.equal(matchesMarketPage({ ...received, pagina: 3 }, request), false);
+  assert.equal(matchesMarketPage({ ...received, seq: 42 }, request), false);
+  assert.equal(matchesMarketPage({ ...received, moeda: 'gold' }, request), false);
+  const withCurrency = { t: 'market', aba: 'vitrine', pagina: 2, linhas: [{ moeda: 'orb' }] };
+  assert.equal(matchesMarketPage(withCurrency, request), true);
+  assert.equal(matchesMarketPage({ ...withCurrency, linhas: [{ moeda: 'gold' }] }, request), false);
+  assert.equal(decodeGameFrame('{"t":"chat","msg":"Devagar aí — muitas mensagens."}'), null);
+});

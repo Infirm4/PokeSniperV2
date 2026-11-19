@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.26
+// PokeIdle Market Sniper v1.5.4.27
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.26'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.27'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -390,7 +390,7 @@
   }
 
   const st = {
-    running: false, loopId: 0, sock: null, gold: null, off: 0, fails: 0, errs: 0, seq: 1000,
+    running: false, loopId: 0, sock: null, gold: null, off: 0, fails: 0, errs: 0, seq: 8000000 + Math.floor(Math.random() * 100000),
     skip: {}, seen: {}, log: Array.isArray(lsGet(K_LOG, [])) ? lsGet(K_LOG, []).slice(0, 500) : [], lastScan: '',
     spent: 0,        // gold gasto na sessão (zera ao clicar em Ligar ou recarregar a página)
     excl: new Set(), // itemIds das pedras excluídas (descobertos pelo nome na 1ª varredura)
@@ -588,15 +588,26 @@
   function onMsg(ws, e) {
     const d = e.data;
     if (typeof d !== 'string') return;
-    // Resposta de limite pode vir em uma notificação fora de market/estado/batalha.
-    if (d.length < 12000 && /devagar\s*a[ií]|muitas mensagens|too many (?:messages|requests)/i.test(d))
-      registrarSobrecargaDoServidor('aviso do jogo: excesso de mensagens');
     const marketCore = globalThis.PISMarketCore;
-    const history = marketCore?.historyReply.test(d);
-    if (!history && !/^\s*\{\s*"t"\s*:\s*"(estado|market|batalha)"/.test(d)) return;
-    let j;
-    try { j = JSON.parse(d); }
-    catch { if (history) postHistory('invalid_json', {}); return; }
+    const j = marketCore?.decodeGameFrame(d);
+    if (!j) {
+      if (marketCore?.historyReply.test(d)) postHistory('invalid_json', {});
+      return;
+    }
+    if (j.t === 'erro' && ws === st.sock) {
+      const message = typeof j.msg === 'string' ? j.msg : '';
+      const rateLimit = /devagar|desacelera|slow down|rate.?limit|too many|muitas mensagens/i.test(message);
+      if (rateLimit) registrarSobrecargaDoServidor('aviso do jogo: excesso de mensagens');
+      const index = waiters.findIndex(w => w.ws === ws &&
+        (rateLimit || (j.seq != null && w.seq != null && Number(j.seq) === Number(w.seq))));
+      if (index >= 0) {
+        const [waiter] = waiters.splice(index, 1);
+        clearTimeout(waiter.t);
+        waiter.reject(Object.assign(new Error(rateLimit ? 'limite do servidor' : 'consulta recusada pelo servidor'),
+          { queryStatus: rateLimit ? 'recuo' : 'recusada' }));
+      }
+      return;
+    }
     if (j?.t === 'market' && j.aba === 'historicoGlobal' && marketCore) {
       const trace = marketCore.historyTrace(j);
       const page = ws === st.sock && coinHistorySeq != null && Number(j.seq) === coinHistorySeq && j.moeda == null
@@ -619,7 +630,6 @@
         if (ev && ev.k === 'marketVendido') agendarConferenciaVendas(1500);
       }
     }
-    if (j.t === 'market') aprenderRespostaPokemon(j);
     let censusRequest;
     for (let i = waiters.length - 1; i >= 0; i--) {
       if (waiters[i].ws === ws && waiters[i].p(j)) {
@@ -632,6 +642,8 @@
     if (ws === st.sock && j.t === 'market') {
       try { publishMarketPage(j, censusRequest); }
       catch (error) { dbg('Captura de mercado:', error.message); }
+      try { if (!censusRequest) aprenderRespostaPokemon(j); }
+      catch (error) { dbg('Aprendizado da vitrine:', error.message); }
     }
   }
 
@@ -658,6 +670,8 @@
         if (request.t === 'market.historicoGlobal') postHistory('request', { page: request.pagina, pokemon: request.tipo === 'pokemon' });
       } catch { /* A captura não interfere no envio do jogo. */ }
     }
+    if (this === st.sock && typeof d === 'string' && /"t"\s*:\s*"market\./.test(d.slice(0, 120)))
+      st.marketUltimoEnvio = Date.now();
     aprenderConsultaPokemon(d);
     return osend.apply(this, arguments);
   };
@@ -734,7 +748,10 @@
 
   async function esperarPermissaoDeConsulta(permitir) {
     while (true) {
-      if (permitir && !permitir()) throw new Error('consulta cancelada: módulo desativado');
+      if (permitir && !permitir()) {
+        const status = Date.now() < st.marketPausaAte ? 'recuo' : 'cancelada';
+        throw Object.assign(new Error('consulta cancelada antes do envio'), { queryStatus: status });
+      }
       const agora = Date.now();
       const atraso = Math.max(0, st.marketUltimoEnvio + intervaloMinMercadoAtualMs() - agora,
         st.marketPausaAte - agora);
@@ -746,6 +763,13 @@
   // O lock inclui a RESPOSTA, não apenas o envio. Isso impede duas consultas do
   // próprio bot em paralelo e evita confundir respostas de paginação ou mercado.
   // 'permitir' é reavaliado após qualquer espera: desligar rastreador/bot cancela a consulta.
+  function reportQuery(msg, censusRequest, status) {
+    const route = msg.t === 'market.historicoGlobal' ? 'history' : censusRequest?.moeda;
+    if (!route) return;
+    window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_QUERY', route, page: msg.pagina,
+      order: censusRequest?.ordem, status }, location.origin);
+  }
+
   function ask(msg, pred, ms = 12000, permitir = null, censusRequest = null) {
     const executar = async () => {
       await esperarPermissaoDeConsulta(permitir);
@@ -754,14 +778,14 @@
       st.marketUltimoEnvio = Date.now();
       try {
         const resposta = await new Promise((res, rej) => {
-          const w = { p: pred, r: res, t: null, ws: s, censusRequest };
+          const w = { p: pred, r: res, reject: rej, seq: msg.seq, t: null, ws: s, censusRequest };
           w.t = setTimeout(() => {
             const i = waiters.indexOf(w);
             if (i >= 0) waiters.splice(i, 1);
-            rej(new Error('sem resposta a ' + msg.t));
+            rej(Object.assign(new Error('sem resposta a ' + msg.t), { queryStatus: 'sem_resposta' }));
           }, ms);
           waiters.push(w);
-          try { osend.call(s, JSON.stringify(msg)); }
+          try { osend.call(s, JSON.stringify(msg)); reportQuery(msg, censusRequest, 'enviada'); }
           catch(e) {
             clearTimeout(w.t);
             const i=waiters.indexOf(w);
@@ -771,16 +795,20 @@
         });
         // Não remove a pausa explícita disparada por aviso de limite.
         if (Date.now() >= st.marketPausaAte) st.marketFalhas = 0;
+        reportQuery(msg, censusRequest, 'resposta');
         return resposta;
       } catch(e) {
-        if (msg.t !== 'market.historicoGlobal' && msg.ordem !== 'recentes' && /^sem resposta a market\./.test(String(e && e.message || '')))
+        if (msg.t !== 'market.historicoGlobal' && msg.ordem !== 'recentes' && censusRequest?.moeda !== 'orb' && /^sem resposta a market\./.test(String(e && e.message || '')))
           registrarSobrecargaDoServidor('sem resposta do servidor');
         throw e;
       }
     };
     const tentativa = st.marketFila.then(executar, executar);
     st.marketFila = tentativa.catch(() => {});
-    return tentativa;
+    return tentativa.catch(error => {
+      reportQuery(msg, censusRequest, error.queryStatus ?? 'falha_de_envio');
+      throw error;
+    });
   }
 
   const hist = () => ask(
@@ -1519,7 +1547,7 @@
     const core = globalThis.PISMarketCore;
     const seq = ++st.seq;
     coinHistorySeq = seq;
-    const request = { t: 'market.historicoGlobal', tipo: 'pokemon', moeda: 'gold', busca: name, pagina, seq };
+    const request = { t: 'market.historicoGlobal', tipo: 'pokemon', moeda: 'gold', pagina, seq, ...(name ? { busca: name } : {}) };
     postHistory('request', { page: pagina, pokemon: true });
     const page = await ask(request, j => j.t === 'market' && j.aba === 'historicoGlobal' &&
       Number(j.seq) === seq && (j.moeda == null || j.moeda === 'gold') &&
@@ -2368,14 +2396,8 @@
     const req = pedidoPaginaRastreador(pagina, moeda, ordem);
     // Uma consulta POR VEZ, com filtro EXATO da página da resposta. A fila é liberada
     // a cada página para não bloquear as compras e as liberações dos retidos.
-    return naFilaItem(() => ask(req, j => j.t === 'market' && j.aba === 'vitrine' &&
-      Array.isArray(j.linhas) && Number(j.pagina) === pagina &&
-      (j.ordem == null || j.ordem === ordem) &&
-      (j.moeda == null || j.moeda === moeda) &&
-      (ordem !== 'recentes' || Number(j.seq) === req.seq || (j.ordem === ordem && j.moeda === moeda)) &&
-      (j.especieId == null || Number(j.especieId) === 0) &&
-      (req.seq == null || j.seq == null || Number(j.seq) === Number(req.seq)),
-      15000, () => monitorAtivo(), req));
+    return naFilaItem(() => ask(req, j => globalThis.PISMarketCore.matchesMarketPage(j, req),
+      15000, () => monitorAtivo() && Date.now() >= st.marketPausaAte, req));
   }
 
   function numeroInteiroNaoNegativo(v) {

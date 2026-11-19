@@ -1,4 +1,14 @@
-# PokeIdle Market Sniper (v1.5.4.26)
+# PokeIdle Market Sniper (v1.5.4.27)
+
+O monitor aceita respostas mesmo quando o campo de tipo muda de posição no
+JSON. A correlação da vitrine usa página, moeda e sequência quando presentes.
+Um aviso de limite precisa vir de um erro do jogo. A fila também conta o envio
+das consultas que o jogo fez pela mesma conexão.
+
+Em **Testar avisos e gerar relatório**, confira **últimas consultas** em
+Coins, Gemas e histórico. O estado distingue envio, resposta, recusa, recuo
+e ausência de resposta. A seção da última página confirma se houve gravação.
+
 
 Ao salvar **Avisos dentro do jogo e no Chrome**, o monitor de oportunidades
 começa a coletar anúncios em Coins e Gemas com a aba do jogo conectada.

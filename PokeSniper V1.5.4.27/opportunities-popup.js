@@ -346,7 +346,7 @@ runDiagnostics.addEventListener('click', async () => {
           result: response ? (response.storageError ? 'falha ao salvar o teste' : null) : 'sem resposta' };
       } catch { return { ok: false, at: Date.now(), result: 'sem resposta' }; }
     }));
-    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisMarketPage:gold', 'pisMarketPage:orb', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie', 'pisCoinsHistory:backfill']).catch(() => ({}));
+    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisMarketPage:gold', 'pisMarketPage:orb', 'pisMarketQuery:gold', 'pisMarketQuery:orb', 'pisMarketQuery:history', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie', 'pisCoinsHistory:backfill']).catch(() => ({}));
     const [notificationPermission, database, alerts, history, [desktopTest, gameTest], automatic, publicSource] =
       await Promise.all([permission, snapshot, pipeline, trace, testResults, monitor, sourceCheck]);
     const tests = PISMarketSmoke.run();
@@ -359,7 +359,9 @@ runDiagnostics.addEventListener('click', async () => {
         histórico_anterior: automatic['pisCoinsHistory:backfill'] },
       fonte_pública_de_gemas: publicSource.pisPublicGemsCheck ?? null,
       varredura_automática: { estado: automatic.pisMarketMonitor ?? null, última_página: automatic.pisMarketAutomaticPage ?? null,
-        coins: automatic['pisMarketPage:gold'] ?? null, gemas: automatic['pisMarketPage:orb'] ?? null },
+        coins: automatic['pisMarketPage:gold'] ?? null, gemas: automatic['pisMarketPage:orb'] ?? null,
+        últimas_consultas: { coins: automatic['pisMarketQuery:gold'] ?? null, gemas: automatic['pisMarketQuery:orb'] ?? null,
+          histórico: automatic['pisMarketQuery:history'] ?? null } },
       alertas: {
         ...alerts,
         notificações_ativadas: settings.notify,
