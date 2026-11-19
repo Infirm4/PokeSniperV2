@@ -24,10 +24,11 @@
         const estimate = PISMarketCore.estimate(target, history, now);
         return estimate.lower === 100 && estimate.median === 110 && estimate.upper === 120;
       }),
-      check('regra de oportunidade e desconto', () => {
+      check('desconto dentro da faixa e sem teto antigo', () => {
         const row = { ...capture('vitrine', [listing]).rows[0],
-          estimate: { status: 'estimated', lower: 90, median: 100 } };
-        return PISOpportunities.eligible(row) && PISOpportunities.matches(row, PISOpportunities.settings());
+          price: 95, estimate: { status: 'estimated', lower: 90, median: 100 } };
+        return PISOpportunities.eligible(row) &&
+          PISOpportunities.matches(row, PISOpportunities.settings({ discount: 5, maxPrice: 1 }));
       }),
       check('página de histórico reconhecida sem expor identificadores', () => {
         const frame = { pagina: 2, aba: 'historicoGlobal', t: 'market', linhas: sales };

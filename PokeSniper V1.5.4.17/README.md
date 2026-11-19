@@ -1,5 +1,11 @@
 # PokeIdle Market Sniper (v1.2.0)
 
+## Filtro por desconto (v1.5.4.17)
+
+O painel usa o desconto mínimo sobre a mediana. Anúncios dentro da faixa estimada podem
+aparecer se atingirem o percentual. A configuração antiga de preço máximo foi retirada.
+A margem de revenda opcional continua disponível em **Filtros e notificações**.
+
 ## Diagnóstico em um clique (v1.5.4.16)
 
 Com o jogo aberto, use **Diagnóstico da versão → Testar avisos e gerar relatório → Copiar resultado**.

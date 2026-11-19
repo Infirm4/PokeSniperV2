@@ -7,7 +7,7 @@ const PISMarketStore = (() => {
   function open() {
     if (opening) return opening;
     opening = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, 4);
+      const request = indexedDB.open(DB_NAME, 5);
       request.onupgradeneeded = event => {
         const db = request.result;
         const tx = request.transaction;
@@ -22,10 +22,23 @@ const PISMarketStore = (() => {
           const opportunities = db.createObjectStore('opportunities', { keyPath: 'key' });
           opportunities.createIndex('observedAt', 'observedAt');
         }
-        listings.createIndex('observedAt', 'observedAt');
-        const exposures = db.createObjectStore('exposures', { keyPath: 'key' });
-        exposures.createIndex('cohort', ['currency', 'speciesId', 'shiny', 'startAt']);
-        exposures.createIndex('byPokemon', ['pokemonId', 'currency', 'lastSeen']);
+        if (event.oldVersion < 4) {
+          listings.createIndex('observedAt', 'observedAt');
+          const exposures = db.createObjectStore('exposures', { keyPath: 'key' });
+          exposures.createIndex('cohort', ['currency', 'speciesId', 'shiny', 'startAt']);
+          exposures.createIndex('byPokemon', ['pokemonId', 'currency', 'lastSeen']);
+        }
+        if (event.oldVersion === 4) {
+          // Inclui as ofertas recentes que a regra anterior deixou fora da fila, preservando os recibos.
+          const range = IDBKeyRange.lowerBound(Date.now() - PISOpportunities.TTL);
+          result(listings.index('observedAt').getAll(range))
+            .then(async rows => {
+              for (const row of rows) {
+                if (PISOpportunities.eligible(row)) await saveOpportunity(tx, row);
+              }
+            })
+            .catch(() => { try { tx.abort(); } catch { /* já encerrada */ } });
+        }
         // Atualiza as estimativas legadas na mesma transação que instala o índice.
         if (event.oldVersion === 1) {
           result(listings.getAll())
@@ -70,6 +83,14 @@ const PISMarketStore = (() => {
     });
   }
 
+  async function saveOpportunity(tx, priced) {
+    const store = tx.objectStore('opportunities');
+    const key = PISOpportunities.key(priced);
+    const previous = await result(store.get(key));
+    store.put({ ...priced, key, delivery: previous?.delivery ?? 'pending',
+      attempts: previous?.attempts ?? 0, nextAttemptAt: previous?.nextAttemptAt ?? 0, deliveryChannels: previous?.deliveryChannels });
+  }
+
   async function reprice(tx, rows, now, recordOpportunities = false) {
     const groups = new Map();
     for (const row of rows) {
@@ -87,11 +108,7 @@ const PISMarketStore = (() => {
         listings.put(priced);
         if (recordOpportunities && priced.observedAt >= now - PISOpportunities.TTL &&
             PISOpportunities.eligible(priced)) {
-          const store = tx.objectStore('opportunities');
-          const key = PISOpportunities.key(priced);
-          const previous = await result(store.get(key));
-          store.put({ ...priced, key, delivery: previous?.delivery ?? 'pending',
-            attempts: previous?.attempts ?? 0, nextAttemptAt: previous?.nextAttemptAt ?? 0, deliveryChannels: previous?.deliveryChannels });
+          await saveOpportunity(tx, priced);
         }
       }
     }
