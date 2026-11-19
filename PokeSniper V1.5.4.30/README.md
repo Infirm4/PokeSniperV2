@@ -1,4 +1,16 @@
-# PokeIdle Market Sniper (v1.5.4.29)
+# PokeIdle Market Sniper (v1.5.4.30)
+
+O monitor espera um sinal de atividade do jogo antes de enviar consultas por
+uma conexão recém-aberta. O diagnóstico inclui contagens de mensagens, sem
+gravar o conteúdo delas. Um timeout recuperável da vitrine usa retentativa
+local, enquanto o recuo global permanece reservado para avisos explícitos de
+limite do servidor.
+
+Para conferir a coleta, rode **Testar avisos e gerar relatório** depois de
+deixar o jogo conectado por alguns minutos com o Mercado fechado. Se o
+diagnóstico continuar em `aguardando_tráfego`, abra a vitrine uma vez, veja
+se os anúncios carregam normalmente, feche-a e repita o diagnóstico.
+
 
 ## Monitoramento e precificação
 

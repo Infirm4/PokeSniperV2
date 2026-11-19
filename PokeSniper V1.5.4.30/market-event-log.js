@@ -4,7 +4,7 @@
   const routes = new Set(['gold', 'orb', 'history', 'monitor']);
   const codes = new Set(['resposta', 'recuo', 'recusada', 'cancelada', 'sem_resposta', 'falha_de_envio',
     'desconectada', 'fila_cheia', 'sem_registros_validos', 'falha_na_gravação', 'lote_inválido',
-    'conflito_de_transação', 'aguardando_socket', 'gravado']);
+    'conflito_de_transação', 'aguardando_socket', 'aguardando_tráfego', 'enviada', 'gravado']);
   let pending = Promise.resolve();
   function record(storage, route, status, page, at = Date.now()) {
     if (!routes.has(route) || !codes.has(status)) return Promise.resolve();

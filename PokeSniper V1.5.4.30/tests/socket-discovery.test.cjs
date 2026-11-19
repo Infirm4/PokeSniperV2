@@ -20,7 +20,7 @@ test('descobre conexão preexistente pelo envio do jogo e libera uma substituta 
   const waiters = [];
   const updates = [];
   const window = { WebSocket: Socket };
-  const bound = runInNewContext(pieces.join('\n') + '\n() => gameSocketSource', {
+  const result = runInNewContext(pieces.join('\n') + '\n({ source: () => gameSocketSource, ready: socketReadyForMarket, bind: bindGameSocket })', {
     st, waiters, window, OWS: Socket, osend: Socket.prototype.send, URL, clearTimeout,
     monitorAtivo: () => true, reportAutomatic: value => updates.push(value), onMsg() {},
     dbg() {}, aprenderConsultaPokemon() {},
@@ -29,15 +29,22 @@ test('descobre conexão preexistente pelo envio do jogo e libera uma substituta 
   assert.equal(st.sock, undefined);
   existing.send('{"t":"ping"}');
   assert.equal(st.sock, existing);
-  assert.equal(bound(), 'envio do jogo');
+  assert.equal(result.source(), 'envio do jogo');
+  assert.equal(result.ready(), false);
   assert.equal(st.gold, null);
-  const pending = new Promise((resolve, reject) => waiters.push({ ws: existing, reject }));
-  existing.readyState = 3;
-  existing.dispatchEvent(new Event('close'));
+  const market = new window.WebSocket('wss://pokeidle.io/');
+  assert.equal(st.sock, existing);
+  result.bind(market, 'tráfego');
+  assert.equal(st.sock, market);
+  assert.equal(result.ready(), true);
+  const pending = new Promise((resolve, reject) => waiters.push({ ws: market, reject }));
+  market.readyState = 3;
+  market.dispatchEvent(new Event('close'));
   await assert.rejects(pending, /fechada/);
   assert.equal(st.sock, null);
   assert.deepEqual(updates, ['aguardando_socket']);
   const replacement = new window.WebSocket('wss://pokeidle.io/');
   assert.equal(st.sock, replacement);
-  assert.equal(bound(), 'abertura');
+  assert.equal(result.source(), 'abertura');
+  assert.equal(result.ready(), false);
 });

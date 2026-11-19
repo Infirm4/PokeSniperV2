@@ -166,10 +166,12 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     return true;
   }
   if (req.type === 'PIS_MARKET_MONITOR') {
-    if (!['aguardando_socket', 'rastreador_desligado', 'recuo', 'varrendo', 'falha_ou_recuo'].includes(req.state)) return false;
+    if (!['aguardando_socket', 'rastreador_desligado', 'aguardando_tráfego', 'recuo', 'varrendo', 'falha_ou_recuo'].includes(req.state)) return false;
     recordMarket('monitor', req.state);
     chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now(),
-      socket: ['abertura', 'envio do jogo', 'tráfego', 'estado'].includes(req.socket) ? req.socket : null } })
+      socket: ['abertura', 'envio do jogo', 'consulta do jogo', 'tráfego', 'estado'].includes(req.socket) ? req.socket : null,
+      tráfego: Object.fromEntries(['recebidos', 'estados', 'vitrine', 'histórico', 'outros', 'binários']
+        .map(key => [key, Number.isSafeInteger(req.wire?.[key]) && req.wire[key] >= 0 ? req.wire[key] : 0])) } })
       .then(() => reply({ ok: true }), () => reply({ ok: false }));
     return true;
   }

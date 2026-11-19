@@ -217,6 +217,7 @@ async function refresh() {
       : !stats.listings ? (pisMarketMonitor?.state === 'varrendo'
         ? 'Aguardando as primeiras páginas do mercado.'
         : pisMarketMonitor?.state === 'aguardando_socket' ? 'Aguardando a conexão do PokéIdle.'
+          : pisMarketMonitor?.state === 'aguardando_tráfego' ? 'Conexão aberta. Aguardando dados do jogo.'
           : 'Sem páginas recentes. Deixe os avisos ligados e o PokéIdle aberto e conectado.')
         : 'Nenhuma oportunidade recente atende aos filtros.';
     diagnostics.textContent = `${stats.listings} anúncios recentes · ${stats.sales} vendas no banco · ${stats.detailed} avaliados pelo perfil · ${stats.noEstimate} sem avaliação · ${stats.price} acima do preço de referência · ${stats.filters} barrados pelos filtros · ${stats.matched} oportunidades. Notificações ${config.notify ? 'ligadas' : 'desligadas'} · ${stats.pending} pendentes · ${stats.held} retidas · ${stats.sent} enviadas (${stats.sentInGame} no jogo · ${stats.sentDesktop} aceitas pelo Chrome) · ${stats.failed} com falha.`;

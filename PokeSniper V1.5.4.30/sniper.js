@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.29
+// PokeIdle Market Sniper v1.5.4.30
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.29'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.30'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -555,6 +555,10 @@
   }
 
   const observedGameSockets = new WeakSet();
+  const confirmedGameSockets = new WeakSet();
+  const wire = { recebidos: 0, estados: 0, vitrine: 0, histórico: 0, outros: 0, binários: 0 };
+  const socketReadyForMarket = () => st.sock?.readyState === 1 && confirmedGameSockets.has(st.sock);
+  const confirmSocket = source => ['estado', 'tráfego', 'consulta do jogo'].includes(source);
   let gameSocketSource = null;
 
   function isPokeIdleSocket(ws) {
@@ -566,11 +570,14 @@
 
   function bindGameSocket(ws, source) {
     if (!isPokeIdleSocket(ws) || ws.readyState !== 1) return false;
+    const confirmed = confirmSocket(source);
+    if (confirmed) confirmedGameSockets.add(ws);
     if (st.sock === ws) {
-      if (source === 'estado') gameSocketSource = source;
+      if (source === 'estado' || (confirmed && !confirmSocket(gameSocketSource))) gameSocketSource = source;
       return false;
     }
-    if (st.sock?.readyState === 1 && source !== 'estado') return false;
+    if (st.sock?.readyState === 1 && source !== 'estado' &&
+        (!confirmed || confirmedGameSockets.has(st.sock))) return false;
     st.sock = ws;
     // Nunca reaproveite o saldo da conta/conexão anterior para autorizar compras.
     st.gold = null;
@@ -596,24 +603,43 @@
         event.data.type !== 'WATCH_OPPORTUNITIES' || typeof event.data.enabled !== 'boolean') return;
     watchOpportunities = event.data.enabled;
   });
+  let lastMonitorReportAt = 0;
   function reportAutomatic(state) {
     const key = state + '|' + gameSocketSource;
-    if (key === lastMonitorState) return;
+    if (key === lastMonitorState && Date.now() - lastMonitorReportAt < 30000) return;
     lastMonitorState = key;
+    lastMonitorReportAt = Date.now();
     window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_MONITOR', state,
-      socket: gameSocketSource }, location.origin);
+      socket: gameSocketSource, wire }, location.origin);
   }
 
   function onMsg(ws, e) {
-    const d = e.data;
-    if (typeof d !== 'string') return;
+    let d = e.data;
+    wire.recebidos++;
+    if (typeof d !== 'string') {
+      wire.binários++;
+      if (typeof Blob !== 'undefined' && d instanceof Blob && d.size < 2 * 1024 * 1024) {
+        d.text().then(text => {
+          wire.recebidos--;
+          onMsg(ws, { data: text });
+        }).catch(() => {});
+        return;
+      }
+      if (!(d instanceof ArrayBuffer) || d.byteLength >= 2 * 1024 * 1024) return;
+      d = new TextDecoder().decode(d);
+    }
     const marketCore = globalThis.PISMarketCore;
     const j = marketCore?.decodeGameFrame(d);
     if (!j) {
+      wire.outros++;
       if (marketCore?.historyReply.test(d)) postHistory('invalid_json', {});
       return;
     }
-    if (j.t === 'market' || j.t === 'batalha') bindGameSocket(ws, 'tráfego');
+    if (j.t === 'estado' && j.estado) wire.estados++;
+    if (j.t === 'market' && j.aba === 'vitrine') wire.vitrine++;
+    if (j.t === 'market' && j.aba === 'historicoGlobal') wire.histórico++;
+    if ((j.t === 'market' && Array.isArray(j.linhas)) || (j.t === 'batalha' && Array.isArray(j.ev)))
+      bindGameSocket(ws, 'tráfego');
     if (j.t === 'erro' && ws === st.sock) {
       const message = typeof j.msg === 'string' ? j.msg : '';
       const rateLimit = /devagar|desacelera|slow down|rate.?limit|too many|muitas mensagens/i.test(message);
@@ -707,6 +733,8 @@
         if (request.t === 'market.historicoGlobal') postHistory('request', { page: request.pagina, pokemon: request.tipo === 'pokemon' });
       } catch { /* A captura não interfere no envio do jogo. */ }
     }
+    if (typeof d === 'string' && /"t"\s*:\s*"market\.(listar|historicoGlobal)"/.test(d.slice(0, 120)))
+      bindGameSocket(this, 'consulta do jogo');
     if (this === st.sock && typeof d === 'string' && /"t"\s*:\s*"market\./.test(d.slice(0, 120)))
       st.marketUltimoEnvio = Date.now();
     aprenderConsultaPokemon(d);
@@ -714,7 +742,7 @@
   };
 
   // Um único limitador para TODOS os módulos (pedras, compra Pokémon, rastreador).
-  // Teste CONTROLADO: inicia em 2s; se houver limitação/timeout, aumenta para
+  // Inicia em 2s; se o servidor sinalizar limitação, aumenta para
   // 3, 4, 5, 6 e 7s, além de respeitar backoff de 90s–15min já existente.
   // Não reduz sozinho após um sucesso, evitando oscilar no limite do servidor.
   const INTERVALOS_CONSULTA_MS = [2, 3, 4, 5, 6, 7].map(seg => seg * 1000);
@@ -813,32 +841,26 @@
       const s = st.sock;
       if (!s || s.readyState !== 1) throw new Error('socket do jogo indisponível');
       st.marketUltimoEnvio = Date.now();
-      try {
-        const resposta = await new Promise((res, rej) => {
-          const w = { p: pred, r: res, reject: rej, seq: msg.seq, t: null, ws: s, censusRequest };
-          w.t = setTimeout(() => {
-            const i = waiters.indexOf(w);
-            if (i >= 0) waiters.splice(i, 1);
-            rej(Object.assign(new Error('sem resposta a ' + msg.t), { queryStatus: 'sem_resposta' }));
-          }, ms);
-          waiters.push(w);
-          try { osend.call(s, JSON.stringify(msg)); reportQuery(msg, censusRequest, 'enviada'); }
-          catch(e) {
-            clearTimeout(w.t);
-            const i=waiters.indexOf(w);
-            if (i>=0) waiters.splice(i,1);
-            rej(e);
-          }
-        });
-        // Não remove a pausa explícita disparada por aviso de limite.
-        if (Date.now() >= st.marketPausaAte) st.marketFalhas = 0;
-        reportQuery(msg, censusRequest, 'resposta');
-        return resposta;
-      } catch(e) {
-        if (msg.t !== 'market.historicoGlobal' && msg.ordem !== 'recentes' && censusRequest?.moeda !== 'orb' && /^sem resposta a market\./.test(String(e && e.message || '')))
-          registrarSobrecargaDoServidor('sem resposta do servidor');
-        throw e;
-      }
+      const resposta = await new Promise((res, rej) => {
+        const w = { p: pred, r: res, reject: rej, seq: msg.seq, t: null, ws: s, censusRequest };
+        w.t = setTimeout(() => {
+          const i = waiters.indexOf(w);
+          if (i >= 0) waiters.splice(i, 1);
+          rej(Object.assign(new Error('sem resposta a ' + msg.t), { queryStatus: 'sem_resposta' }));
+        }, ms);
+        waiters.push(w);
+        try { osend.call(s, JSON.stringify(msg)); reportQuery(msg, censusRequest, 'enviada'); }
+        catch(e) {
+          clearTimeout(w.t);
+          const i=waiters.indexOf(w);
+          if (i>=0) waiters.splice(i,1);
+          rej(e);
+        }
+      });
+      // Não remove a pausa explícita disparada por aviso de limite.
+      if (Date.now() >= st.marketPausaAte) st.marketFalhas = 0;
+      reportQuery(msg, censusRequest, 'resposta');
+      return resposta;
     };
     const tentativa = st.marketFila.then(executar, executar);
     st.marketFila = tentativa.catch(() => {});
@@ -3476,13 +3498,14 @@
   // Alterna a primeira página e as páginas seguintes das duas moedas.
   let recentTurn = 0;
   let recentBusy = false;
-  const sweepByCurrency = { gold: { page: 1, fallbackUntil: 0 }, orb: { page: 1, fallbackUntil: 0 } };
+  const sweepByCurrency = { gold: { page: 1, fallbackUntil: 0, retryAt: 0 }, orb: { page: 1, fallbackUntil: 0, retryAt: 0 } };
   setInterval(async () => {
-    if (recentBusy || !monitorAtivo() || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) return;
-    recentBusy = true;
+    if (recentBusy || !monitorAtivo() || !socketReadyForMarket() || Date.now() < st.marketPausaAte) return;
     const turn = recentTurn++ % 4;
     const currency = turn % 2 ? 'orb' : 'gold';
     const sweep = sweepByCurrency[currency];
+    if (Date.now() < sweep.retryAt) return;
+    recentBusy = true;
     const pageNumber = turn < 2 ? 0 : sweep.page;
     const order = Date.now() < sweep.fallbackUntil ? 'baratos' : 'recentes';
     try {
@@ -3492,9 +3515,12 @@
       if (pageNumber > 0) sweep.page = !page.linhas.length || page.temMais === false ||
         (total != null && pageNumber + 1 >= total) ? 1 : pageNumber + 1;
     } catch (error) {
-      if (order === 'recentes' && ['sem_resposta', 'recusada'].includes(error.queryStatus)) {
-        sweep.fallbackUntil = Date.now() + 10 * 60000;
-        sweep.page = 1;
+      if (['sem_resposta', 'recusada'].includes(error.queryStatus)) {
+        sweep.retryAt = Date.now() + 60000;
+        if (order === 'recentes') {
+          sweep.fallbackUntil = Date.now() + 10 * 60000;
+          sweep.page = 1;
+        }
       }
       dbg('Ofertas do mercado:', error.message);
     } finally { recentBusy = false; }
@@ -3511,8 +3537,18 @@
           await sleep(3000);
           continue;
         }
+        if (!socketReadyForMarket()) {
+          reportAutomatic('aguardando_tráfego');
+          await sleep(3000);
+          continue;
+        }
+        if (Date.now() < st.marketPausaAte) {
+          reportAutomatic('recuo');
+          await sleep(3000);
+          continue;
+        }
         {
-          reportAutomatic(Date.now() < st.marketPausaAte ? 'recuo' : 'varrendo');
+          reportAutomatic('varrendo');
           const precisaCenso = Date.now() >= st.pkProximoCenso;
           if (precisaCenso) {
             const completo = await varrerTodasPaginas();
