@@ -44,15 +44,6 @@ function detailsFor(row, unit) {
   details.append(text('p', `P${row.power ?? '?'} · Qualidade ${row.quality ?? '?'} · IV total ${row.ivTotal ?? '?'} · Velocidade ${ivs.speed ?? '?'}`, 'offer-meta'));
   details.append(text('p', `IVs HP ${ivs.hp ?? '?'} · Atq ${ivs.attack ?? '?'} · Def ${ivs.defense ?? '?'} · Atq Esp ${ivs.specialAttack ?? '?'} · Def Esp ${ivs.specialDefense ?? '?'}`, 'offer-meta'));
   const estimate = row.estimate;
-  if (estimate?.baselineMedian != null) {
-    const adjustment = estimate.median / estimate.baselineMedian - 1;
-    const validation = estimate.validation;
-    details.append(text('p', `Ajuste do perfil sobre a referência básica ${percent(adjustment)} · ${estimate.profileSales} comparáveis próximos · validação em ${validation.profileCount ?? validation.count} exemplares do perfil`, 'offer-meta'));
-    const drivers = [...(estimate.effects || [])].sort((a, b) => Math.abs(b.logEffect) - Math.abs(a.logEffect))
-      .filter(effect => Math.abs(effect.logEffect) >= 0.01).slice(0, 3);
-    if (drivers.length) details.append(text('p', 'Ajustes do modelo em relação ao perfil médio · ' +
-      drivers.map(effect => effect.name + ' ' + percent(Math.expm1(effect.logEffect))).join(' · '), 'offer-meta'));
-  }
   for (const sale of estimate?.comparables || []) {
     details.append(text('div', `${format.format(sale.price)} ${unit} · Nv. ${sale.level} · Nota ${format.format(sale.grade)} · P${sale.power ?? '?'} · Vel. ${sale.speed ?? '?'} · ${new Date(sale.soldAt).toLocaleDateString('pt-BR')}`, 'offer-meta'));
   }
@@ -110,11 +101,10 @@ function card(row, showLiquidity = false) {
   const minutes = Math.max(0, Math.floor((Date.now() - row.observedAt) / 60000));
   item.append(title, text('div', `Anúncio #${row.id} · Nv. ${row.level ?? '?'} · Nota ${row.grade ?? '?'} · observado há ${minutes} min`, 'offer-meta'));
   if (estimate?.status === 'estimated') {
-    const method = estimate.method === 'profile_iv_distribution' ? 'perfil e distribuição dos IVs' :
-      estimate.method === 'profile_iv_total' ? 'perfil e IV total' : 'referência básica';
+    const method = estimate.method === 'briaoale_pve' ? 'motor de PvE · Briaoale' : 'referência básica';
     const limit = PISOpportunities.priceLimit(row, config);
-    const sample = estimate.method?.startsWith('profile_')
-      ? `${estimate.profileSales} exemplares próximos do perfil`
+    const sample = estimate.method === 'briaoale_pve'
+      ? `${estimate.profileSales} vendas próximas da espécie · ${estimate.marketCount} na base do modelo`
       : `${estimate.count} vendas · n efetivo ${format.format(estimate.effectiveCount)}`;
 
     item.append(text('div', `Desconto ${percent(estimate.discount)} · mediana ${format.format(estimate.median)} · ${method}`, 'offer-meta'),

@@ -7,7 +7,7 @@ const PISMarketStore = (() => {
   function open() {
     if (opening) return opening;
     opening = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, 7);
+      const request = indexedDB.open(DB_NAME, 8);
       request.onupgradeneeded = event => {
         const db = request.result;
         const tx = request.transaction;
@@ -27,6 +27,9 @@ const PISMarketStore = (() => {
           const exposures = db.createObjectStore('exposures', { keyPath: 'key' });
           exposures.createIndex('cohort', ['currency', 'speciesId', 'shiny', 'startAt']);
           exposures.createIndex('byPokemon', ['pokemonId', 'currency', 'lastSeen']);
+        }
+        if (event.oldVersion < 8) {
+          tx.objectStore('sales').createIndex('priceMarket', ['currency', 'shiny', 'soldAt']);
         }
         if (event.oldVersion >= 4) {
           // Atualiza somente anúncios recentes. Recibos anteriores continuam válidos.
@@ -70,6 +73,27 @@ const PISMarketStore = (() => {
     });
   }
 
+  function marketSales(index, target, now) {
+    if (target.shiny == null || PISMarketCore.isOutland(target)) return Promise.resolve([]);
+    const key = [target.currency, target.shiny];
+    const range = IDBKeyRange.bound([...key, now - PISMarketCore.WINDOW_MS], [...key, now], false, true);
+    return new Promise((resolve, reject) => {
+      const rows = [];
+      let inspected = 0;
+      const request = index.openCursor(range, 'prev');
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || rows.length >= 3000 || inspected++ >= 8000) return resolve(rows);
+        const sale = cursor.value;
+        if (sale.name && sale.power && Number.isFinite(sale.quality) &&
+            Object.values(sale.ivs || {}).filter(Number.isInteger).length === 6 &&
+            !PISMarketCore.isOutland(sale)) rows.push(sale);
+        cursor.continue();
+      };
+    });
+  }
+
   const groupOf = row => [row.currency, row.speciesId, row.shiny];
 
   function result(request) {
@@ -94,11 +118,19 @@ const PISMarketStore = (() => {
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(row);
     }
-    const index = tx.objectStore('sales').index('comparables');
+    const sales = tx.objectStore('sales');
     const listings = tx.objectStore('listings');
+    const markets = new Map();
     for (const group of groups.values()) {
-      const comparable = await recentSales(index, group[0], now);
-      const estimate = PISPricingModel.prepare(comparable, PISMarketCore.estimate, PISMarketCore.sameMarket, now);
+      const target = group[0];
+      const comparable = await recentSales(sales.index('comparables'), target, now);
+      const key = JSON.stringify([target.currency, target.shiny]);
+      if (!markets.has(key)) {
+        const available = await marketSales(sales.index('priceMarket'),
+          { currency: target.currency, shiny: target.shiny }, now);
+        markets.set(key, PISPricingModel.makeMarket(available, now, PISMarketCore.isOutland));
+      }
+      const estimate = PISPricingModel.prepare(comparable, PISMarketCore.estimate, now, markets.get(key));
       for (const listing of group) {
         const priced = { ...listing, estimate: estimate(listing) };
         listings.put(priced);
@@ -296,10 +328,13 @@ const PISMarketStore = (() => {
 
   async function analyzeListing(row, now = Date.now()) {
     const db = await open();
-    const index = db.transaction('sales').objectStore('sales').index('comparables');
-    const sales = await recentSales(index, row, now);
-    return { ...row, estimate: PISPricingModel.prepare(sales, PISMarketCore.estimate,
-      PISMarketCore.sameMarket, now)(row) };
+    const store = db.transaction('sales').objectStore('sales');
+    const [sales, market] = await Promise.all([
+      recentSales(store.index('comparables'), row, now),
+      marketSales(store.index('priceMarket'), row, now),
+    ]);
+    return { ...row, estimate: PISPricingModel.prepare(sales, PISMarketCore.estimate, now,
+      PISPricingModel.makeMarket(market, now, PISMarketCore.isOutland))(row) };
   }
 
   // Leitura local iniciada pelo usuário. Só o resumo agregado sai do banco para o relatório.
@@ -326,7 +361,7 @@ const PISMarketStore = (() => {
       filters: 0, detailed: 0, matched: 0, held: 0, sent: 0, sentDesktop: 0, sentInGame: 0, sentWithoutChannelInfo: 0, failed: 0, pending: 0 };
     const byKey = new Map(opportunities.map(row => [row.key, row]));
     for (const row of listings) {
-      if (row.estimate?.method?.startsWith('profile_')) totals.detailed++;
+      if (row.estimate?.method === 'briaoale_pve') totals.detailed++;
       if (row.estimate?.status !== 'estimated') totals.noEstimate++;
       else if (row.estimate.profileReason === 'rare_profile') totals.held++;
       else if (!PISOpportunities.eligible(row)) totals.price++;

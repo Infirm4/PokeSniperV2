@@ -18,6 +18,15 @@
     };
     return [
       check('captura e preservação de IV zero', () => capture('vitrine', [listing]).rows[0].ivs.speed === 0),
+      check('motor PvE calcula 25% com fichas completas', () => {
+        const target = { ...capture('vitrine', [listing]).rows[0], price: 75, name: 'Gengar',
+          ivs: { hp: 20, attack: 20, defense: 20, specialAttack: 20, specialDefense: 20, speed: 20 } };
+        const history = Array.from({ length: 32 }, (_, i) => ({
+          ...target, price: 100, id: 'pve-sale-' + i, pokemonId: 'pve-' + i, soldAt: now - (i + 1) * 1000,
+        }));
+        const result = PISPricingModel.makeMarket(history, now, PISMarketCore.isOutland)(target);
+        return result?.method === 'briaoale_pve' && result.median === 100 && result.discount === 0.25;
+      }),
       check('faixa e preço de referência', () => {
         const target = capture('vitrine', [listing]).rows[0];
         const history = capture('historicoGlobal', sales).rows;

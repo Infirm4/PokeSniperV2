@@ -46,7 +46,8 @@
         : asNonnegative(ficha.ivTotal ?? ficha.ivSoma),
       ivs,
       aoe: shiny(ficha.tmAoe),
-      zMove: shiny(ficha.tmElemental),
+      zMove: shiny(ficha.tmElemental) ??
+        (typeof ficha.tmElemental === 'string' && /^(normal|fire|water|electric|grass|ice|fighting|poison|ground|flying|psychic|bug|rock|ghost|dragon|dark|steel|fairy)$/i.test(ficha.tmElemental.trim()) ? 1 : null),
       mega: shiny(ficha.mega),
     };
   }

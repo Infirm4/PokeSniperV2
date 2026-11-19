@@ -3,6 +3,7 @@
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwPXSeG3xL5PUwDwsuCp-XWJ8s8w3qmlGxECTJo_haREmZbeKOOnr_5qTfVZtH5xmDS/exec';
 const PIS_HOST = /^https:\/\/(?:[a-z0-9-]+\.)?pokeidle\.io(?:\/|$)/i;
 
+importScripts('vendor/briaoale/especies.js', 'vendor/briaoale/pve-power.js', 'vendor/briaoale/market-bonuses.js', 'vendor/briaoale/central.js', 'vendor/briaoale/nota.js', 'vendor/briaoale/pve-pricing.js');
 importScripts('market-core.js', 'pricing-model.js', 'liquidity.js', 'opportunities.js', 'market-store.js',
   'history-trace.js');
 

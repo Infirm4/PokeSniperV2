@@ -1,5 +1,17 @@
 # PokeIdle Market Sniper (v1.2.0)
 
+## Motor de PvE do Briaoale (v1.5.4.21)
+
+O preço usa o motor publicado pelo Briaoale sob licença MIT, sobre as vendas
+capturadas pelo Sniper. As moedas, Shiny e combinações de especiais ficam em
+grupos separados. A adaptação usa os IVs no poder PvE e não aplica uma correção
+separada por IV. Quando faltar ficha ou amostra suficiente, a análise indica
+**referência básica**. Nenhum histórico externo é baixado pela extensão.
+
+Em **Diagnóstico da versão**, o teste PvE usa fichas sintéticas para conferir
+que o novo motor está carregado. Os avisos de IV baixo serão tratados em outra
+etapa.
+
 ## Monitoramento automático (v1.5.4.19)
 
 Com a aba do PokéIdle conectada e o rastreador de Pokémon ativo, o censo de Coins
