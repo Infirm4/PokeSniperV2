@@ -17,3 +17,18 @@ li { padding: 10px; background: #302234; border-radius: 6px; }
 .offer-title strong:last-child { color: #ace6b7; white-space: nowrap; }
 .offer-meta { margin-top: 4px; }
 :focus-visible { outline: 2px solid #f3a5d8; outline-offset: 2px; }
+
+#lookup-matches { gap: 4px; max-height: 208px; overflow: auto; }
+#lookup-matches li { padding: 0; }
+#lookup-matches button { width: 100%; text-align: left; }
+#diagnostic-report {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  resize: vertical;
+  background: #302234;
+  color: inherit;
+  border: 1px solid #76576f;
+  border-radius: 5px;
+}
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }

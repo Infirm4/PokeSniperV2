@@ -232,9 +232,39 @@ const PISMarketStore = (() => {
     };
   }
 
-  async function listing(id) {
+  async function findListings(query = '') {
     const db = await open();
-    return result(db.transaction('listings').objectStore('listings').get(id));
+    const store = db.transaction('listings').objectStore('listings');
+    const fold = value => (value || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+    const needle = fold(query.trim());
+    // Suporta o ID para quem já o conhece. O fluxo principal pesquisa pelo nome.
+    if (needle && /^[A-Za-z0-9_-]{1,64}$/.test(query.trim())) {
+      const exact = await result(store.get(query.trim()));
+      if (exact) return [exact];
+    }
+    return new Promise((resolve, reject) => {
+      const matches = [];
+      const request = store.index('observedAt').openCursor(null, 'prev');
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || matches.length === 15) return resolve(matches);
+        if (!cursor.value.closed && (!needle || fold(cursor.value.name).includes(needle))) matches.push(cursor.value);
+        cursor.continue();
+      };
+    });
+  }
+
+  // Leitura local iniciada pelo usuário. Só o resumo agregado sai do banco para o relatório.
+  async function diagnosticSnapshot() {
+    const db = await open();
+    const tx = db.transaction(['listings', 'sales', 'exposures']);
+    const [listings, sales, exposures] = await Promise.all([
+      result(tx.objectStore('listings').getAll()),
+      result(tx.objectStore('sales').getAll()),
+      result(tx.objectStore('exposures').getAll()),
+    ]);
+    return { dbVersion: db.version, ...PISMarketDiagnostics.summarize({ listings, sales, exposures }, Date.now()) };
   }
 
   async function diagnostics(config, now = Date.now()) {
@@ -264,5 +294,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, initialize: open, recentOpportunities, markDelivery, listing, liquidity, diagnostics };
+  return { ingest, initialize: open, recentOpportunities, markDelivery, findListings, diagnosticSnapshot, liquidity, diagnostics };
 })();

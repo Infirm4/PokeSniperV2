@@ -1,8 +1,19 @@
 # PokeIdle Market Sniper (v1.2.0)
 
+## Análise pelo nome e diagnóstico (v1.5.4.13)
+
+No ícone do PokeSniper, abra **Analisar Pokémon**. Busque pelo nome ou escolha um anúncio
+recente. Se a busca estiver vazia, abra primeiro a vitrine do jogo e filtre a espécie desejada.
+
+Para validar a instalação, abra **Tabela de preços → Pokémon** e a vitrine. Em seguida, no
+ícone da extensão, use **Diagnóstico da versão → Rodar diagnóstico → Copiar resultado**. O
+relatório contém os resultados de testes sintéticos, contagens da fila e cobertura de campos
+no histórico local. O diagnóstico não grava registros de teste, não consulta o jogo e não
+inclui nomes de jogadores nem informações de anúncios individuais.
+
 ## Precificação por atributos e liquidez (v1.5.4.12)
 
-Abra o ícone do PokeSniper no Chrome para ver **Oportunidades**. Em **Analisar anúncio por ID**,
+Abra o ícone do PokeSniper no Chrome para ver **Oportunidades**. Em **Analisar Pokémon**,
 é possível consultar um anúncio já visto, inclusive fora dos filtros de alerta. Em **Comparáveis e
 simulação de revenda**, altere o nível e o preço de saída separadamente. O desconto continua
 referente ao anúncio original. Liquidez não integra o preço nem o disparo.

@@ -8,6 +8,8 @@
   <script defer src="opportunities.js"></script>
   <script defer src="pricing-model.js"></script>
   <script defer src="liquidity.js"></script>
+  <script defer src="market-diagnostics.js"></script>
+  <script defer src="market-smoke.js"></script>
   <script defer src="market-store.js"></script>
   <script defer src="opportunities-popup.js"></script>
 </head>
@@ -39,12 +41,25 @@
       <span id="save-status" role="status"></span>
     </form>
   </details>
-  <details>
-    <summary>Analisar anúncio por ID</summary>
-    <form id="lookup"><label>ID do anúncio<input name="listingId" required maxlength="64"></label>
-      <button>Consultar</button>
+  <details id="lookup-panel">
+    <summary>Analisar Pokémon</summary>
+    <form id="lookup">
+      <label>Nome do Pokémon<input name="pokemon" placeholder="Ex.: Pikachu" maxlength="100"></label>
+      <div><button>Buscar</button> <button type="button" id="recent-listings">Ver anúncios recentes</button></div>
     </form>
+    <p id="lookup-status" class="offer-meta" role="status"></p>
+    <ul id="lookup-matches"></ul>
     <ul id="analysis-result" aria-live="polite"></ul>
+  </details>
+  <details>
+    <summary>Diagnóstico da versão</summary>
+    <p class="offer-meta">Gera um resumo dos testes e da cobertura dos dados locais, sem incluir registros individuais.</p>
+    <div class="actions">
+      <button type="button" id="run-diagnostics">Rodar diagnóstico</button>
+      <button type="button" id="copy-diagnostics" disabled>Copiar resultado</button>
+    </div>
+    <p id="test-status" class="offer-meta" role="status"></p>
+    <textarea id="diagnostic-report" aria-label="Resultado do diagnóstico" rows="10" readonly hidden></textarea>
   </details>
   <p id="status" role="status"></p>
   <p id="diagnostics" class="offer-meta"></p>

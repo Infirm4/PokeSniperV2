@@ -9,6 +9,10 @@ let rendered = '';
 const lookup = document.querySelector('#lookup');
 const analysis = document.querySelector('#analysis-result');
 const diagnostics = document.querySelector('#diagnostics');
+const lookupStatus = document.querySelector('#lookup-status');
+const lookupMatches = document.querySelector('#lookup-matches');
+const lookupPanel = document.querySelector('#lookup-panel');
+let lookupRequest = 0;
 
 function text(tag, value, className) {
   const element = document.createElement(tag);
@@ -150,12 +154,95 @@ async function refresh() {
   }
 }
 
-lookup.addEventListener('submit', async event => {
-  event.preventDefault();
+async function searchListings(query) {
+  const request = ++lookupRequest;
+  lookupStatus.textContent = 'Consultando anúncios observados…';
+  lookupMatches.replaceChildren();
+  analysis.replaceChildren();
   try {
-    const row = await PISMarketStore.listing(lookup.elements.listingId.value.trim());
-    analysis.replaceChildren(row ? card(row, true) : text('li', 'Esse ID ainda não foi observado no mercado.'));
-  } catch (error) { analysis.replaceChildren(text('li', 'Falha na consulta. ' + error.message)); }
+    const rows = await PISMarketStore.findListings(query);
+    if (request !== lookupRequest) return;
+    if (!rows.length) {
+      lookupStatus.textContent = 'Nenhum anúncio encontrado. Abra a vitrine no jogo e busque o Pokémon lá para o Sniper observar o anúncio.';
+      return;
+    }
+    const items = rows.map(row => {
+      const item = document.createElement('li');
+      const name = row.name || 'Pokémon #' + row.speciesId;
+      const unit = row.currency === 'gold' ? 'Coins' : 'Gemas';
+      const button = text('button', `${name}${row.shiny ? ' · Shiny' : ''} · Nv. ${row.level ?? '?'} · ${format.format(row.price)} ${unit}`);
+      button.type = 'button';
+      button.addEventListener('click', () => analysis.replaceChildren(card(row, true)));
+      item.append(button);
+      return item;
+    });
+    lookupMatches.replaceChildren(...items);
+    lookupStatus.textContent = `${rows.length} resultado${rows.length === 1 ? '' : 's'} · selecione um anúncio para analisar.`;
+  } catch (error) {
+    if (request === lookupRequest) lookupStatus.textContent = 'Falha na consulta. ' + error.message;
+  }
+}
+
+lookup.addEventListener('submit', event => {
+  event.preventDefault();
+  searchListings(lookup.elements.pokemon.value.trim());
+});
+document.querySelector('#recent-listings').addEventListener('click', () => {
+  lookup.elements.pokemon.value = '';
+  searchListings('');
+});
+lookupPanel.addEventListener('toggle', () => {
+  if (lookupPanel.open && lookupRequest === 0) searchListings('');
+});
+
+const runDiagnostics = document.querySelector('#run-diagnostics');
+const copyDiagnostics = document.querySelector('#copy-diagnostics');
+const reportBox = document.querySelector('#diagnostic-report');
+const testStatus = document.querySelector('#test-status');
+let testNotification = 'não solicitada';
+
+runDiagnostics.addEventListener('click', async () => {
+  runDiagnostics.disabled = true;
+  copyDiagnostics.disabled = true;
+  testStatus.textContent = 'Executando testes locais e lendo a cobertura do IndexedDB…';
+  try {
+    const settings = config ?? PISOpportunities.settings();
+    const permission = Promise.resolve().then(() => chrome.notifications.getPermissionLevel())
+      .catch(() => 'indisponível');
+    const snapshot = PISMarketStore.diagnosticSnapshot().catch(() => ({ erro: 'falha na leitura do IndexedDB' }));
+    const pipeline = PISMarketStore.diagnostics(settings).catch(() => ({ erro: 'falha na leitura da fila' }));
+    const [notificationPermission, database, alerts] = await Promise.all([permission, snapshot, pipeline]);
+    const tests = PISMarketSmoke.run();
+    const report = {
+      versão: chrome.runtime.getManifest().version,
+      testes: tests,
+      banco: database,
+      alertas: {
+        ...alerts,
+        notificações_ativadas: settings.notify,
+        permissão_do_Chrome: notificationPermission,
+        notificação_de_teste: testNotification,
+      },
+    };
+    reportBox.value = JSON.stringify(report, null, 2);
+    reportBox.hidden = false;
+    copyDiagnostics.disabled = false;
+    const passed = tests.filter(test => test.resultado === 'ok').length;
+    testStatus.textContent = `${passed}/${tests.length} testes locais passaram. Copie o resultado para compartilhar.`;
+  } catch {
+    testStatus.textContent = 'O diagnóstico não pôde ser concluído. Reabra o painel e tente novamente.';
+  } finally { runDiagnostics.disabled = false; }
+});
+
+copyDiagnostics.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(reportBox.value);
+    testStatus.textContent = 'Resultado copiado.';
+  } catch {
+    reportBox.focus();
+    reportBox.select();
+    testStatus.textContent = 'Resultado selecionado. Use Ctrl+C para copiar.';
+  }
 });
 
 form.addEventListener('submit', async event => {
@@ -180,8 +267,12 @@ document.querySelector('#test-notification').addEventListener('click', async () 
       title: 'PokeSniper · Teste de notificação',
       message: 'As notificações do Sniper estão funcionando neste navegador.',
     });
+    testNotification = 'aceita pelo Chrome';
     saveStatus.textContent = 'Teste enviado ao Chrome.';
-  } catch (error) { saveStatus.textContent = 'Falha no teste. ' + error.message; }
+  } catch (error) {
+    testNotification = 'falhou';
+    saveStatus.textContent = 'Falha no teste. ' + error.message;
+  }
 });
 
 document.querySelector('#open').addEventListener('click', () => {
