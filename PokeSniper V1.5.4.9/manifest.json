@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "PokeIdle Market Sniper",
+  "version": "1.5.4.9",
+  "description": "Censos contínuos sem espera após censo válido, consultas globais ≥2s e backoff adaptativo.",
+  "host_permissions": [
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pokeidle.io/*",
+        "https://*.pokeidle.io/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "https://pokeidle.io/*",
+        "https://*.pokeidle.io/*"
+      ],
+      "js": [
+        "market-core.js",
+        "sniper.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
+}
