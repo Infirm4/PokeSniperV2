@@ -7,7 +7,7 @@ const PISMarketStore = (() => {
   function open() {
     if (opening) return opening;
     opening = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, 8);
+      const request = indexedDB.open(DB_NAME, 9);
       request.onupgradeneeded = event => {
         const db = request.result;
         const tx = request.transaction;
@@ -28,6 +28,7 @@ const PISMarketStore = (() => {
           exposures.createIndex('cohort', ['currency', 'speciesId', 'shiny', 'startAt']);
           exposures.createIndex('byPokemon', ['pokemonId', 'currency', 'lastSeen']);
         }
+        if (event.oldVersion < 9) db.createObjectStore('publicPricing');
         if (event.oldVersion < 8) {
           tx.objectStore('sales').createIndex('priceMarket', ['currency', 'shiny', 'soldAt']);
         }
@@ -121,6 +122,9 @@ const PISMarketStore = (() => {
     const sales = tx.objectStore('sales');
     const listings = tx.objectStore('listings');
     const markets = new Map();
+    const snapshot = rows.some(row => row.currency === 'orb')
+      ? await result(tx.objectStore('publicPricing').get('gems')) : null;
+    const publicGems = snapshot ? PISPublicGems.prepare(snapshot, now) : null;
     for (const group of groups.values()) {
       const target = group[0];
       const comparable = await recentSales(sales.index('comparables'), target, now);
@@ -132,7 +136,7 @@ const PISMarketStore = (() => {
       }
       const estimate = PISPricingModel.prepare(comparable, PISMarketCore.estimate, now, markets.get(key));
       for (const listing of group) {
-        const priced = { ...listing, estimate: estimate(listing) };
+        const priced = { ...listing, estimate: (listing.currency === 'orb' && publicGems?.(listing)) || estimate(listing) };
         listings.put(priced);
         if (recordOpportunities && priced.observedAt >= now - PISOpportunities.TTL &&
             PISOpportunities.eligible(priced)) {
@@ -144,7 +148,7 @@ const PISMarketStore = (() => {
 
   async function ingest(kind, rows, now = Date.now()) {
     const db = await open();
-    const tx = db.transaction(['sales', 'listings', 'opportunities', 'exposures'], 'readwrite');
+    const tx = db.transaction(['sales', 'listings', 'opportunities', 'exposures', 'publicPricing'], 'readwrite');
     const done = new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
       tx.onabort = () => reject(tx.error || new Error('Gravação de mercado interrompida'));
@@ -168,11 +172,15 @@ const PISMarketStore = (() => {
           const previous = await result(sales.get([sale.currency, sale.id]));
           addGroup(previous);
           addGroup(sale);
-          // Uma importação posterior sem a ficha detalhada não apaga os campos já observados.
-          const saved = previous ? { ...sale, ...Object.fromEntries(Object.entries(previous)
-            .filter(([key, value]) => sale[key] == null && value != null)),
-            ivs: Object.fromEntries(Object.entries(previous.ivs || {}).concat(
-              Object.entries(sale.ivs || {}).filter(([, value]) => value != null))) } : sale;
+          // Um backup pode preencher lacunas, mas uma ficha capturada pelo jogo tem prioridade.
+          const preferExisting = previous && sale.source === 'smartmarket_backup' && previous.source !== 'smartmarket_backup';
+          const first = preferExisting ? previous : sale;
+          const second = preferExisting ? sale : previous;
+          const saved = second ? { ...first, ...Object.fromEntries(Object.entries(second)
+            .filter(([key, value]) => first[key] == null && value != null)),
+            source: preferExisting ? previous.source ?? 'game' : sale.source,
+            ivs: Object.fromEntries(Object.entries(second.ivs || {}).concat(
+              Object.entries(first.ivs || {}).filter(([, value]) => value != null))) } : sale;
           if (previous) savedRows.existing++;
           else savedRows.new++;
           if (!hasFullIvs(previous) && hasFullIvs(saved)) savedRows.gainedFullIvs++;
@@ -331,13 +339,41 @@ const PISMarketStore = (() => {
 
   async function analyzeListing(row, now = Date.now()) {
     const db = await open();
-    const store = db.transaction('sales').objectStore('sales');
-    const [sales, market] = await Promise.all([
+    const tx = db.transaction(['sales', 'publicPricing']);
+    const store = tx.objectStore('sales');
+    const [sales, market, snapshot] = await Promise.all([
       recentSales(store.index('comparables'), row, now),
       marketSales(store.index('priceMarket'), row, now),
+      row.currency === 'orb' ? result(tx.objectStore('publicPricing').get('gems')) : null,
     ]);
-    return { ...row, estimate: PISPricingModel.prepare(sales, PISMarketCore.estimate, now,
+    const external = snapshot && PISPublicGems.prepare(snapshot, now)(row);
+    return { ...row, estimate: external || PISPricingModel.prepare(sales, PISMarketCore.estimate, now,
       PISPricingModel.makeMarket(market, now, PISMarketCore.isOutland))(row) };
+  }
+
+  async function savePublicGems(snapshot, now = Date.now()) {
+    if (!PISPublicGems.valid(snapshot, now)) throw new Error('Snapshot de Gemas inválido');
+    const db = await open();
+    const tx = db.transaction(['publicPricing', 'sales', 'listings', 'opportunities'], 'readwrite');
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error || new Error('Gravação de Gemas interrompida'));
+    });
+    done.catch(() => {});
+    const store = tx.objectStore('publicPricing');
+    try {
+      const previous = await result(store.get('gems'));
+      if (!(Date.parse(previous?.geradoEm) >= Date.parse(snapshot.geradoEm))) {
+        store.put(snapshot, 'gems');
+        const range = IDBKeyRange.lowerBound(now - PISOpportunities.TTL);
+        const current = await result(tx.objectStore('listings').index('observedAt').getAll(range));
+        await reprice(tx, current.filter(row => row.currency === 'orb'), now, true);
+      }
+      await done;
+    } catch (error) {
+      try { tx.abort(); } catch { /* já encerrada */ }
+      throw error;
+    }
   }
 
   // Leitura local iniciada pelo usuário. Só o resumo agregado sai do banco para o relatório.
@@ -364,7 +400,7 @@ const PISMarketStore = (() => {
       filters: 0, detailed: 0, matched: 0, held: 0, sent: 0, sentDesktop: 0, sentInGame: 0, sentWithoutChannelInfo: 0, failed: 0, pending: 0 };
     const byKey = new Map(opportunities.map(row => [row.key, row]));
     for (const row of listings) {
-      if (row.estimate?.method === 'briaoale_pve') totals.detailed++;
+      if (['briaoale_pve', 'briaoale_public'].includes(row.estimate?.method)) totals.detailed++;
       if (row.estimate?.status !== 'estimated') totals.noEstimate++;
       else if (row.estimate.profileReason === 'rare_profile') totals.held++;
       else if (!PISOpportunities.eligible(row)) totals.price++;
@@ -386,5 +422,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, initialize: open, recentOpportunities, markDelivery, markUnavailable, findListings, analyzeListing, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, initialize: open, savePublicGems, recentOpportunities, markDelivery, markUnavailable, findListings, analyzeListing, diagnosticSnapshot, liquidity, diagnostics };
 })();

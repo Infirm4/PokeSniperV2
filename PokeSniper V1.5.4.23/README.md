@@ -1,5 +1,25 @@
 # PokeIdle Market Sniper (v1.2.0)
 
+## Históricos separados de Gemas e Coins (v1.5.4.23)
+
+Em Gemas, a extensão consulta a base pública do Briaoale ao iniciar e verifica
+uma atualização por hora. O snapshot fica em cache local separado do histórico
+do Sniper, pois a base pública não traz IDs que permitam deduplicar vendas entre
+as duas fontes. A análise identifica a origem e a hora do snapshot. O Sniper
+mantém a exclusão de Outlaws.
+
+Em Coins, abrir uma vitrine filtrada por uma espécie, analisar um anúncio ou usar
+**Atualizar vendas em Coins** solicita à aba do jogo o histórico daquela espécie.
+A busca respeita a fila de mercado e o recuo do servidor, tem intervalo de pelo
+menos cinco segundos entre páginas e aguarda dez minutos antes de repetir a
+mesma espécie. As vendas são conciliadas pela moeda e pelo ID da transação.
+
+Em **Diagnóstico da versão → Copiar cache de Coins do Smart Market**, o Sniper lê
+em modo somente leitura o cache que o Smart Market salva na própria origem do
+PokéIdle. É necessário que o cache exista no mesmo perfil do navegador. Também
+é possível importar uma lista JSON de outro perfil. As duas opções aceitam
+apenas Coins e dão prioridade à ficha já capturada pelo Sniper no jogo.
+
 ## Sprite e preço nos avisos (v1.5.4.22)
 
 O painel e os avisos exibem desconto, preço anunciado e faixa justa estimada.

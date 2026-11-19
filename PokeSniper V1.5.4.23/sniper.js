@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.22
+// PokeIdle Market Sniper v1.5.4.23
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.22'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.23'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -591,7 +591,9 @@
     catch { if (history) postHistory('invalid_json', {}); return; }
     if (j?.t === 'market' && j.aba === 'historicoGlobal' && marketCore) {
       const trace = marketCore.historyTrace(j);
-      if (isCurrentGameSocket(ws)) postHistory('response', trace, marketCore.capture(j)?.rows);
+      const page = ws === st.sock && coinHistorySeq != null && Number(j.seq) === coinHistorySeq && j.moeda == null
+        ? { ...j, moeda: 'gold' } : j;
+      if (isCurrentGameSocket(ws)) postHistory('response', trace, marketCore.capture(page)?.rows);
       else postHistory('ignored_socket', trace);
     }
     if (j.t === 'estado' && j.estado) {
@@ -1480,6 +1482,80 @@
     st.pokeAprender = { req: j, ate: Date.now() + 10000 };
   }
 
+  const COINS_HISTORY_CHECKS = 'pis_coins_history_checks';
+  let coinHistoryActive = false;
+  let coinHistorySeq = null;
+
+  // A busca focada usa a mesma fila/recuo do jogo e nunca varre todas as espécies.
+  async function syncCoinsHistory(value) {
+    const name = globalThis.PISCoinsHistory?.cleanSpecies(value);
+    if (!name || coinHistoryActive || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) return;
+    const key = name.toLowerCase();
+    const checks = lsGet(COINS_HISTORY_CHECKS, {});
+    const last = Object.hasOwn(checks, key) ? checks[key] : null;
+    const started = Date.now();
+    if (started - (last?.at ?? 0) < 10 * 60000) return;
+    const save = newest => {
+      const entries = Object.entries({ ...checks, [key]: { at: started, newest } }).sort((a, b) => b[1].at - a[1].at);
+      lsSet(COINS_HISTORY_CHECKS, Object.fromEntries(entries.slice(0, 120)));
+    };
+    save(last?.newest ?? 0);
+    coinHistoryActive = true;
+    const live = st.sock;
+    const allowed = () => st.sock === live && live.readyState === 1 && Date.now() >= st.marketPausaAte;
+    let newest = last?.newest ?? 0;
+    const visited = new Set();
+    try {
+      for (let pagina = 0; pagina < 25 && allowed(); pagina++) {
+        if (pagina) await sleep(5000);
+        if (!allowed()) break;
+        const seq = ++st.seq;
+        coinHistorySeq = seq;
+        const request = { t: 'market.historicoGlobal', tipo: 'pokemon', moeda: 'gold', busca: name, pagina, seq };
+        postHistory('request', { page: pagina, pokemon: true });
+        const page = await ask(request, j => j.t === 'market' && j.aba === 'historicoGlobal' &&
+          Number(j.seq) === seq && (j.moeda == null || j.moeda === 'gold') &&
+          (j.pagina == null || Number(j.pagina) === pagina) && Array.isArray(j.linhas),
+          12000, allowed);
+        coinHistorySeq = null;
+        const signature = JSON.stringify(page.linhas.map(row => row?.id ?? null));
+        if (page.linhas.length && visited.has(signature)) break;
+        visited.add(signature);
+        const times = page.linhas.filter(row => row && (row.moeda == null || row.moeda === 'gold') &&
+          typeof row.ficha?.nome === 'string' && row.ficha.nome.trim().toLowerCase() === key)
+          .map(row => Number(row.em)).filter(value => Number.isSafeInteger(value) && value >= 1e12);
+        newest = Math.max(newest, ...times);
+        const oldest = times.length ? Math.min(...times) : Infinity;
+        if (page.temMais === false || page.linhas.length === 0 ||
+            oldest <= (last?.newest || started - globalThis.PISMarketCore.WINDOW_MS)) {
+          save(newest);
+          break;
+        }
+      }
+    } catch (error) { dbg('Histórico em Coins:', error.message); }
+    finally { coinHistoryActive = false; coinHistorySeq = null; }
+  }
+
+  window.addEventListener('message', event => {
+    if (event.source === window && event.origin === location.origin &&
+        event.data?.source === 'PIS_BRIDGE' && event.data.type === 'COINS_HISTORY_LOOKUP') {
+      syncCoinsHistory(event.data.name);
+    }
+  });
+
+  function requestFocusedCoins(req, frame) {
+    if (req.t !== 'market.listar' || req.moeda !== 'gold' || req.tipo !== 'pokemon' ||
+        frame.aba !== 'vitrine' || (frame.moeda != null && frame.moeda !== 'gold') ||
+        (frame.pagina != null && req.pagina != null && Number(req.pagina) !== Number(frame.pagina))) return;
+    const search = typeof req.busca === 'string' ? req.busca.trim().toLowerCase() : '';
+    if (!search && !(Number(req.especieId) > 0)) return;
+    const names = new Set(frame.linhas.filter(row => row && !globalThis.PISMarketCore?.isOutland(row))
+      .map(row => row.ficha?.nome).filter(name => typeof name === 'string' && name.trim()));
+    if (names.size !== 1) return;
+    const [name] = names;
+    if (Number(req.especieId) > 0 || name.trim().toLowerCase() === search) syncCoinsHistory(name);
+  }
+
   // A primeira resposta de mercado após essa consulta revela o nome da 'aba' (e prova que há 'linhas').
   function aprenderRespostaPokemon(j) {
     const ap = st.pokeAprender;
@@ -1489,6 +1565,7 @@
     st.pokeAprender = null;
     st.pokeTpl = { req: ap.req, aba: j.aba };
     lsSet(K_POKE_TPL, st.pokeTpl);
+    requestFocusedCoins(ap.req, j);
     st.pokeAvisos.semConsulta = false;
     logPk(`📡 POKEMON: consulta aprendida do jogo (${ap.req.t}, aba “${j.aba}”).`);
     if (ui && ui.atualizarPokemon) ui.atualizarPokemon();

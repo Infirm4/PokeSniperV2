@@ -26,6 +26,12 @@
         return record.sprite === 'https://pokeidle.io/assets/teste-pokemon.png' &&
           display.message.includes('25% de desconto · 75 Mi Coins') && display.range.includes('90–110 Mi Coins');
       }),
+      check('importação em Coins deduplica backup e separa Gemas', () => {
+        const row = { id: 11, moeda: 'gold', em: now - 1000, preco: 1000000, speciesId: 94,
+          nome: 'Gengar', level: 100, nota: 5, potencia: 3, quality: 1, shiny: false };
+        const result = PISCoinsHistory.importRows([row, row, { ...row, id: 12, moeda: 'orb' }], PISMarketCore, now);
+        return result.length === 1 && result[0].price === 1000000;
+      }),
       check('motor PvE calcula 25% com fichas completas', () => {
         const target = { ...capture('vitrine', [listing]).rows[0], price: 75, name: 'Gengar',
           ivs: { hp: 20, attack: 20, defense: 20, specialAttack: 20, specialDefense: 20, speed: 20 } };

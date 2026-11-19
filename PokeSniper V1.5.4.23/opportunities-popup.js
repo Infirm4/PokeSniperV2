@@ -101,9 +101,10 @@ function card(row, showLiquidity = false) {
   const minutes = Math.max(0, Math.floor((Date.now() - row.observedAt) / 60000));
   item.append(title, text('div', `Anúncio #${row.id} · Nv. ${row.level ?? '?'} · Nota ${row.grade ?? '?'} · observado há ${minutes} min`, 'offer-meta'));
   if (estimate?.status === 'estimated') {
-    const method = estimate.method === 'briaoale_pve' ? 'motor de PvE · Briaoale' : 'referência básica';
+    const method = estimate.method === 'briaoale_public' ? 'histórico público · Briaoale' :
+      estimate.method === 'briaoale_pve' ? 'motor de PvE · histórico local' : 'referência básica';
     const limit = PISOpportunities.priceLimit(row, config);
-    const sample = estimate.method === 'briaoale_pve'
+    const sample = ['briaoale_pve', 'briaoale_public'].includes(estimate.method)
       ? `${estimate.profileSales} vendas próximas da espécie · ${estimate.marketCount} na base do modelo`
       : `${estimate.count} vendas · n efetivo ${format.format(estimate.effectiveCount)}`;
 
@@ -111,6 +112,9 @@ function card(row, showLiquidity = false) {
       text('div', `Faixa ${format.format(estimate.lower)}–${format.format(estimate.upper)} · ${sample}`, 'offer-meta'),
       text('div', limit == null ? 'Informe a taxa e selecione uma moeda para calcular o teto de revenda.' :
         `Teto de preço para alerta ${format.format(limit)} ${unit}`, 'offer-meta'));
+    if (estimate.sourceAt) {
+      item.append(text('div', 'Base de Gemas atualizada em ' + new Date(estimate.sourceAt).toLocaleString('pt-BR'), 'offer-meta'));
+    }
     if (estimate.profileReason) item.append(text('div', profileStatus[estimate.profileReason], 'offer-meta'));
   } else item.append(text('div', estimate?.status === 'excluded_outland'
     ? 'Outlaw excluído da precificação e dos alertas.'
@@ -122,6 +126,20 @@ function card(row, showLiquidity = false) {
     PISMarketStore.liquidity(row, row.level, price)
       .then(report => { summary.textContent = `Liquidez a ${format.format(price)} ${unit} · ${liquidityText(report, 7)}`; })
       .catch(() => { summary.textContent = 'Liquidez indisponível nesta consulta.'; });
+  }
+  const species = row.currency === 'gold' && !PISMarketCore.isOutland(row) && PISCoinsHistory.cleanSpecies(row.name);
+  if (species) {
+    const update = text('button', 'Atualizar vendas em Coins');
+    update.type = 'button';
+    update.addEventListener('click', async () => {
+      update.disabled = true;
+      try {
+        const result = await chrome.runtime.sendMessage({ type: 'PIS_LOOKUP_COINS', name: species });
+        update.textContent = result?.ok ? 'Busca solicitada ao jogo' : 'Abra a aba do PokéIdle e tente novamente';
+      } catch { update.textContent = 'Busca indisponível'; }
+      finally { update.disabled = false; }
+    });
+    item.append(update);
   }
   item.append(detailsFor(row, unit));
   return item;
@@ -208,7 +226,12 @@ async function searchListings(query) {
         analysis.replaceChildren(text('li', 'Atualizando a estimativa…'));
         try {
           const updated = await PISMarketStore.analyzeListing(row);
-          if (selection === lookupRequest) analysis.replaceChildren(card(updated, true));
+          if (selection === lookupRequest) {
+            analysis.replaceChildren(card(updated, true));
+            const name = updated.currency === 'gold' && !PISMarketCore.isOutland(updated) &&
+              PISCoinsHistory.cleanSpecies(updated.name);
+            if (name) chrome.runtime.sendMessage({ type: 'PIS_LOOKUP_COINS', name }).catch(() => {});
+          }
         } catch {
           if (selection === lookupRequest) analysis.replaceChildren(text('li', 'Não foi possível atualizar a estimativa.'));
         }
@@ -235,6 +258,46 @@ lookupPanel.addEventListener('toggle', () => {
   if (lookupPanel.open && lookupRequest === 0) searchListings('');
 });
 
+const copySmartCoins = document.querySelector('#copy-smart-coins');
+copySmartCoins.addEventListener('click', async () => {
+  const status = document.querySelector('#coins-import-status');
+  copySmartCoins.disabled = true;
+  status.textContent = 'Copiando as vendas em Coins da aba do jogo…';
+  try {
+    const receipt = await chrome.runtime.sendMessage({ type: 'PIS_COPY_SMART_COINS' });
+    if (receipt?.ok) {
+      status.textContent = `${receipt.added} vendas novas em Coins de ${receipt.checked} verificadas.`;
+      await refresh();
+    } else {
+      status.textContent = receipt?.reason === 'no_cache'
+        ? 'O cache do Smart Market não foi encontrado neste perfil.'
+        : 'Abra e recarregue o PokéIdle e tente novamente. Você também pode importar um backup JSON.';
+    }
+  } catch { status.textContent = 'Falha ao copiar o cache de Coins.'; }
+  finally { copySmartCoins.disabled = false; }
+});
+
+const coinsImport = document.querySelector('#coins-import');
+coinsImport.addEventListener('change', async () => {
+  const file = coinsImport.files[0];
+  const status = document.querySelector('#coins-import-status');
+  if (!file) return;
+  coinsImport.disabled = true;
+  try {
+    if (file.size > 25 * 1024 * 1024) throw new Error('O arquivo excede 25 MiB.');
+    const rows = PISCoinsHistory.importRows(JSON.parse(await file.text()), PISMarketCore);
+    let added = 0;
+    for (let offset = 0; offset < rows.length; offset += PISMarketCore.MAX_BATCH) {
+      const receipt = await PISMarketStore.ingest('sale', rows.slice(offset, offset + PISMarketCore.MAX_BATCH));
+      added += receipt.new;
+      status.textContent = `${Math.min(rows.length, offset + PISMarketCore.MAX_BATCH)} de ${rows.length} verificadas…`;
+    }
+    status.textContent = `${added} vendas novas de ${rows.length} transações em Coins válidas. IDs repetidos foram conciliados.`;
+    await refresh();
+  } catch (error) { status.textContent = 'Falha ao importar. ' + error.message; }
+  finally { coinsImport.disabled = false; coinsImport.value = ''; }
+});
+
 const runDiagnostics = document.querySelector('#run-diagnostics');
 const copyDiagnostics = document.querySelector('#copy-diagnostics');
 const reportBox = document.querySelector('#diagnostic-report');
@@ -254,6 +317,7 @@ runDiagnostics.addEventListener('click', async () => {
     const trace = Promise.resolve().then(() => chrome.storage.session.get(PISHistoryTrace.KEY))
       .then(value => value[PISHistoryTrace.KEY] ?? []).catch(() => 'indisponível');
     // Espera os recibos desta execução; o worker os guarda mesmo se o painel fechar.
+    const sourceCheck = chrome.storage.local.get('pisPublicGemsCheck').catch(() => ({}));
     const testResults = Promise.all(['PIS_TEST_DESKTOP_TOAST', 'PIS_TEST_GAME_TOAST'].map(async type => {
       try {
         const response = await chrome.runtime.sendMessage({ type });
@@ -262,14 +326,15 @@ runDiagnostics.addEventListener('click', async () => {
       } catch { return { ok: false, at: Date.now(), result: 'sem resposta' }; }
     }));
     const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage']).catch(() => ({}));
-    const [notificationPermission, database, alerts, history, [desktopTest, gameTest], automatic] =
-      await Promise.all([permission, snapshot, pipeline, trace, testResults, monitor]);
+    const [notificationPermission, database, alerts, history, [desktopTest, gameTest], automatic, publicSource] =
+      await Promise.all([permission, snapshot, pipeline, trace, testResults, monitor, sourceCheck]);
     const tests = PISMarketSmoke.run();
     const report = {
       versão: chrome.runtime.getManifest().version,
       testes: tests,
       banco: database,
       histórico_na_sessão: history,
+      fonte_pública_de_gemas: publicSource.pisPublicGemsCheck ?? null,
       varredura_automática: { estado: automatic.pisMarketMonitor ?? null, última_página: automatic.pisMarketAutomaticPage ?? null },
       alertas: {
         ...alerts,

@@ -5,7 +5,7 @@ const PIS_HOST = /^https:\/\/(?:[a-z0-9-]+\.)?pokeidle\.io(?:\/|$)/i;
 
 importScripts('vendor/briaoale/especies.js', 'vendor/briaoale/pve-power.js', 'vendor/briaoale/market-bonuses.js', 'vendor/briaoale/central.js', 'vendor/briaoale/nota.js', 'vendor/briaoale/pve-pricing.js');
 importScripts('market-core.js', 'pricing-model.js', 'liquidity.js', 'opportunities.js', 'market-store.js',
-  'history-trace.js');
+  'history-trace.js', 'public-gems.js');
 
 const gameTabKey = 'marketGameTab';
 let lastGameTab;
@@ -25,7 +25,7 @@ const PISGameTab = {
   }
 };
 
-importScripts('opportunities-worker.js');
+importScripts('opportunities-worker.js', 'public-gems-worker.js');
 PISMarketStore.initialize().catch(error => {
   console.warn('[PIS] Não foi possível iniciar o banco de mercado:', error.message);
 });
@@ -33,6 +33,41 @@ PISMarketStore.initialize().catch(error => {
 let listingPending = 0;
 let salePending = 0;
 chrome.runtime.onMessage.addListener((req, sender, reply) => {
+  if (req?.type === 'PIS_COPY_SMART_COINS') {
+    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
+    (async () => {
+      const tabId = lastGameTab ?? (await chrome.storage.session.get(gameTabKey))[gameTabKey];
+      if (!Number.isSafeInteger(tabId)) return { ok: false, reason: 'no_tab' };
+      const response = await chrome.tabs.sendMessage(tabId, { type: 'PIS_READ_SMART_COINS' }, { frameId: 0 });
+      if (response?.rows === null) return { ok: false, reason: 'no_cache' };
+      if (!Array.isArray(response?.rows) || response.rows.length > 150000) return { ok: false, reason: 'invalid' };
+      let added = 0;
+      let checked = 0;
+      for (let i = 0; i < response.rows.length; i += PISMarketCore.MAX_BATCH) {
+        const rows = PISMarketCore.validate('sale', response.rows.slice(i, i + PISMarketCore.MAX_BATCH))
+          .filter(row => row.currency === 'gold' && !PISMarketCore.isOutland(row))
+          .map(row => ({ ...row, source: 'smartmarket_backup' }));
+        if (rows.length) {
+          const stats = await PISMarketStore.ingest('sale', rows);
+          added += stats.new;
+          checked += rows.length;
+        }
+      }
+      PISOpportunityAlerts.wake();
+      return { ok: true, added, checked };
+    })().then(reply, () => reply({ ok: false, reason: 'invalid' }));
+    return true;
+  }
+  if (req?.type === 'PIS_LOOKUP_COINS') {
+    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html') ||
+        typeof req.name !== 'string' || req.name.length > 80) return false;
+    (async () => {
+      const tabId = lastGameTab ?? (await chrome.storage.session.get(gameTabKey))[gameTabKey];
+      if (!Number.isSafeInteger(tabId)) return { ok: false };
+      return chrome.tabs.sendMessage(tabId, { type: 'PIS_COINS_HISTORY_LOOKUP', name: req.name }, { frameId: 0 });
+    })().then(result => reply({ ok: result?.ok === true }), () => reply({ ok: false }));
+    return true;
+  }
   if (req?.type === 'PIS_TEST_GAME_TOAST' || req?.type === 'PIS_TEST_DESKTOP_TOAST') {
     if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
     const game = req.type === 'PIS_TEST_GAME_TOAST';

@@ -17,6 +17,8 @@
   <script defer src="market-diagnostics.js"></script>
   <script defer src="market-smoke.js"></script>
   <script defer src="history-trace.js"></script>
+  <script defer src="public-gems.js"></script>
+  <script defer src="coins-history.js"></script>
   <script defer src="market-store.js"></script>
   <script defer src="opportunities-popup.js"></script>
 </head>
@@ -62,6 +64,10 @@
   </details>
   <details>
     <summary>Diagnóstico da versão</summary>
+    <button type="button" id="copy-smart-coins">Copiar cache de Coins do Smart Market</button>
+    <p class="offer-meta">Também é possível importar um backup JSON de outro perfil.</p>
+    <input type="file" id="coins-import" accept=".json,application/json" aria-label="Backup de vendas em Coins">
+    <p role="status" class="offer-meta" id="coins-import-status"></p>
     <p id="diagnostics" class="offer-meta"></p>
     <p class="offer-meta">Executa os testes locais e dispara um aviso de teste no jogo e outro no Chrome. O relatório não inclui registros individuais.</p>
     <div class="actions">

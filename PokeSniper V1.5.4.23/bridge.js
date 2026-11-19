@@ -3,6 +3,19 @@
 (() => {
   if (window.__pisSheetsBridge) return;
   window.__pisSheetsBridge = true;
+  chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+    if (sender.id !== chrome.runtime.id || msg?.type !== 'PIS_READ_SMART_COINS') return false;
+    PISCoinsHistory.readCache(indexedDB, PISMarketCore)
+      .then(rows => reply({ rows }), () => reply({ error: true }));
+    return true;
+  });
+  chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+    if (sender.id !== chrome.runtime.id || msg?.type !== 'PIS_COINS_HISTORY_LOOKUP' ||
+        typeof msg.name !== 'string' || msg.name.length > 80) return false;
+    window.postMessage({ source: 'PIS_BRIDGE', type: 'COINS_HISTORY_LOOKUP', name: msg.name }, location.origin);
+    reply({ ok: true });
+    return false;
+  });
   window.addEventListener('message', event => {
     if (event.source !== window || event.origin !== location.origin) return;
     const msg = event.data;

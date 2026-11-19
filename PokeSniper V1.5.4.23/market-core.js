@@ -126,7 +126,7 @@
     if (sale) {
       const soldAt = timestamp(row.em);
       if (!soldAt) return null;
-      return { ...profile, soldAt, listingId: id(row.listingId ?? row.anuncioId) };
+      return { ...profile, source: 'game', soldAt, listingId: id(row.listingId ?? row.anuncioId) };
     }
     const closed = ['cancelado', 'expirado'].includes(row.estado) ? row.estado : null;
     if ((!closed && row.estado != null && row.estado !== 'aberto') || row.comprador) return null;
