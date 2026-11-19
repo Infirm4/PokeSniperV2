@@ -8,7 +8,8 @@ const PISOpportunityAlerts = (() => {
     if (!config.notify) return;
 
     const recent = await PISMarketStore.recentOpportunities(config);
-    const pending = recent.filter(row => row.delivery === 'pending' && row.nextAttemptAt <= Date.now());
+    const pending = recent.filter(row => row.delivery === 'pending' && row.nextAttemptAt <= Date.now() &&
+      PISOpportunities.notificationEligible(row));
     for (const row of pending.slice(0, 5)) {
       // ID determinístico mantém apenas uma notificação para a mesma revisão após uma retomada.
       let delivered = false;
@@ -16,7 +17,7 @@ const PISOpportunityAlerts = (() => {
         await chrome.notifications.create('pis:' + row.key, {
           type: 'basic', iconUrl: chrome.runtime.getURL('opportunity-icon.png'),
           title: row.name || 'Pokémon #' + row.speciesId,
-          message: `${row.price.toLocaleString('pt-BR')} ${row.currency === 'gold' ? 'Coins' : 'Gemas'} · ${Math.round(row.estimate.discount * 100)}% abaixo da referência`,
+          message: `${row.price.toLocaleString('pt-BR')} ${row.currency === 'gold' ? 'Coins' : 'Gemas'} · ${Math.round(row.estimate.discount * 100)}% abaixo da referência${row.estimate.method === 'baseline' ? ' básica' : ''}`,
           contextMessage: 'Oferta observada no PokéIdle · clique para abrir o jogo',
         });
         delivered = true;

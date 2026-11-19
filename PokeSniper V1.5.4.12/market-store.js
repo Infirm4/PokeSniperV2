@@ -7,7 +7,7 @@ const PISMarketStore = (() => {
   function open() {
     if (opening) return opening;
     opening = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, 3);
+      const request = indexedDB.open(DB_NAME, 4);
       request.onupgradeneeded = event => {
         const db = request.result;
         const tx = request.transaction;
@@ -18,8 +18,14 @@ const PISMarketStore = (() => {
         }
         const listings = tx.objectStore('listings');
         if (event.oldVersion < 2) listings.createIndex('pricingGroup', ['currency', 'speciesId', 'shiny']);
-        const opportunities = db.createObjectStore('opportunities', { keyPath: 'key' });
-        opportunities.createIndex('observedAt', 'observedAt');
+        if (event.oldVersion < 3) {
+          const opportunities = db.createObjectStore('opportunities', { keyPath: 'key' });
+          opportunities.createIndex('observedAt', 'observedAt');
+        }
+        listings.createIndex('observedAt', 'observedAt');
+        const exposures = db.createObjectStore('exposures', { keyPath: 'key' });
+        exposures.createIndex('cohort', ['currency', 'speciesId', 'shiny', 'startAt']);
+        exposures.createIndex('byPokemon', ['pokemonId', 'currency', 'lastSeen']);
         // Atualiza as estimativas legadas na mesma transação que instala o índice.
         if (event.oldVersion === 1) {
           result(listings.getAll())
@@ -75,8 +81,9 @@ const PISMarketStore = (() => {
     const listings = tx.objectStore('listings');
     for (const group of groups.values()) {
       const comparable = await recentSales(index, group[0], now);
+      const estimate = PISPricingModel.prepare(comparable, PISMarketCore.estimate, PISMarketCore.sameMarket, now);
       for (const listing of group) {
-        const priced = { ...listing, estimate: PISMarketCore.estimate(listing, comparable, now) };
+        const priced = { ...listing, estimate: estimate(listing) };
         listings.put(priced);
         if (recordOpportunities && priced.observedAt >= now - PISOpportunities.TTL &&
             PISOpportunities.eligible(priced)) {
@@ -92,7 +99,7 @@ const PISMarketStore = (() => {
 
   async function ingest(kind, rows, now = Date.now()) {
     const db = await open();
-    const tx = db.transaction(['sales', 'listings', 'opportunities'], 'readwrite');
+    const tx = db.transaction(['sales', 'listings', 'opportunities', 'exposures'], 'readwrite');
     const done = new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
       tx.onabort = () => reject(tx.error || new Error('Gravação de mercado interrompida'));
@@ -101,6 +108,7 @@ const PISMarketStore = (() => {
     done.catch(() => {});
     const sales = tx.objectStore('sales');
     const listings = tx.objectStore('listings');
+    const exposures = tx.objectStore('exposures');
     try {
       if (kind === 'sale') {
         const affected = new Map();
@@ -113,7 +121,31 @@ const PISMarketStore = (() => {
           const previous = await result(sales.get([sale.currency, sale.id]));
           addGroup(previous);
           addGroup(sale);
-          sales.put(sale);
+          // Uma importação posterior sem a ficha detalhada não apaga os campos já observados.
+          const saved = previous ? { ...sale, ...Object.fromEntries(Object.entries(previous)
+            .filter(([key, value]) => sale[key] == null && value != null)),
+            ivs: Object.fromEntries(Object.entries(previous.ivs || {}).concat(
+              Object.entries(sale.ivs || {}).filter(([, value]) => value != null))) } : sale;
+          sales.put(saved);
+          if (saved.pokemonId && saved.soldAt <= now) {
+            const start = [saved.pokemonId, saved.currency, saved.soldAt - PISLiquidity.MAX_GAP];
+            const end = [saved.pokemonId, saved.currency, saved.soldAt];
+            const nearby = await result(exposures.index('byPokemon').getAll(IDBKeyRange.bound(start, end)));
+            const candidates = nearby.filter(exposure => saved.listingId ? PISLiquidity.saleMatches(exposure, saved)
+              : PISLiquidity.possibleSale(exposure, saved));
+            if (candidates.length === 1 && !candidates[0].saleAt) {
+              const [exposure] = candidates;
+              // Matches sem ID do anúncio são informativos, mas ficam fora das probabilidades.
+              exposures.put(saved.listingId ? { ...exposure, saleAt: saved.soldAt, saleId: saved.id }
+                : { ...exposure, possibleSaleAt: saved.soldAt, possibleSaleId: saved.id });
+              if (saved.listingId) {
+                const active = await result(listings.get(exposure.id));
+                if (active?.exposureKey?.[1] === exposure.startAt) {
+                  listings.put({ ...active, closed: 'vendido' });
+                }
+              }
+            }
+          }
         }
         // Recalcula apenas os grupos atingidos. Anúncios conservam a data observada.
         const index = listings.index('pricingGroup');
@@ -121,7 +153,22 @@ const PISMarketStore = (() => {
           await reprice(tx, await result(index.getAll(group)), now, true);
         }
       } else {
-        await reprice(tx, rows.map(listing => ({ ...listing, observedAt: now })), now, true);
+        const observed = [];
+        for (const listing of new Map(rows.map(row => [row.id, row])).values()) {
+          const saved = await result(listings.get(listing.id));
+          const previous = saved?.exposureKey ? await result(exposures.get(saved.exposureKey)) : null;
+          if (listing.closed) {
+            if (saved) listings.put({ ...saved, closed: listing.closed, observedAt: now });
+            if (previous && !previous.saleAt && previous.price === listing.price) {
+              exposures.put({ ...previous, closedAt: now, closed: listing.closed });
+            }
+            continue;
+          }
+          const exposure = PISLiquidity.observe(listing, previous, now);
+          exposures.put(exposure);
+          observed.push({ ...listing, exposureKey: exposure.key, observedAt: now });
+        }
+        await reprice(tx, observed, now, true);
       }
       await done;
     } catch (error) {
@@ -167,5 +214,55 @@ const PISMarketStore = (() => {
     await done;
   }
 
-  return { ingest, initialize: open, recentOpportunities, markDelivery };
+  async function liquidity(row, level, price, now = Date.now()) {
+    const target = { ...row, price, level };
+    if (row.shiny == null || !Number.isSafeInteger(level) || level < 1 ||
+        !Number.isSafeInteger(price) || price < 1) return { status: 'incomplete_profile', count: 0, horizons: [] };
+    const db = await open();
+    const tx = db.transaction(['exposures', 'sales']);
+    const group = groupOf(row);
+    const [exposures, sales] = await Promise.all([
+      result(tx.objectStore('exposures').index('cohort')
+        .getAll(IDBKeyRange.bound([...group, now - PISLiquidity.HISTORY], [...group, now]))),
+      recentSales(tx.objectStore('sales').index('comparables'), row, now),
+    ]);
+    return {
+      ...PISLiquidity.estimate(target, exposures, now, PISMarketCore.sameMarket),
+      activity: PISLiquidity.activity(target, sales, exposures, now, PISMarketCore.sameMarket, PISOpportunities.TTL),
+    };
+  }
+
+  async function listing(id) {
+    const db = await open();
+    return result(db.transaction('listings').objectStore('listings').get(id));
+  }
+
+  async function diagnostics(config, now = Date.now()) {
+    const db = await open();
+    const tx = db.transaction(['listings', 'opportunities', 'sales']);
+    const range = IDBKeyRange.lowerBound(now - PISOpportunities.TTL);
+    const rows = result(tx.objectStore('listings').index('observedAt').getAll(range));
+    const queue = result(tx.objectStore('opportunities').index('observedAt').getAll(range));
+    const sales = result(tx.objectStore('sales').count());
+    const [listings, opportunities, saleCount] = await Promise.all([rows, queue, sales]);
+    const totals = { listings: listings.length, sales: saleCount, noEstimate: 0, price: 0,
+      filters: 0, detailed: 0, matched: 0, held: 0, sent: 0, failed: 0, pending: 0 };
+    const byKey = new Map(opportunities.map(row => [row.key, row]));
+    for (const row of listings) {
+      if (row.estimate?.method?.startsWith('profile_')) totals.detailed++;
+      if (row.estimate?.status !== 'estimated') totals.noEstimate++;
+      else if (!PISOpportunities.eligible(row)) totals.price++;
+      else if (!PISOpportunities.matches(row, config)) totals.filters++;
+      else {
+        totals.matched++;
+        const delivery = byKey.get(PISOpportunities.key(row))?.delivery;
+        if (delivery === 'sent' || delivery === 'failed') totals[delivery]++;
+        else if (!PISOpportunities.notificationEligible(row)) totals.held++;
+        else if (delivery === 'pending') totals.pending++;
+      }
+    }
+    return totals;
+  }
+
+  return { ingest, initialize: open, recentOpportunities, markDelivery, listing, liquidity, diagnostics };
 })();

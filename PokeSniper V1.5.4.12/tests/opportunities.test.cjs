@@ -3,7 +3,7 @@ const test = require('node:test');
 const { settings, eligible, key, matches } = require('../opportunities.js');
 
 const row = { id: '001', speciesId: '25', name: 'Pikachu', currency: 'gold',
-  price: 70, estimate: { status: 'estimated', lower: 90, discount: 0.3 } };
+  price: 70, estimate: { status: 'estimated', lower: 90, median: 100, discount: 0.3 } };
 
 test('exige avaliação válida e preço abaixo do quartil inferior', () => {
   assert.equal(eligible(row), true);

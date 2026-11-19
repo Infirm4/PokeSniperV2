@@ -1,5 +1,29 @@
 # PokeIdle Market Sniper (v1.2.0)
 
+## Precificação por atributos e liquidez (v1.5.4.12)
+
+Abra o ícone do PokeSniper no Chrome para ver **Oportunidades**. Em **Analisar anúncio por ID**,
+é possível consultar um anúncio já visto, inclusive fora dos filtros de alerta. Em **Comparáveis e
+simulação de revenda**, altere o nível e o preço de saída separadamente. O desconto continua
+referente ao anúncio original. Liquidez não integra o preço nem o disparo.
+
+O histórico é alimentado pelas páginas da vitrine e da **Tabela de preços → Pokémon** que chegam
+ao cliente. A atualização não faz novas consultas. A ficha de venda preserva atributos recebidos
+junto da própria transação. Dados ausentes aparecem como desconhecidos.
+
+O modelo detalhado testa previsões em um bloco cronologicamente posterior e usa a referência
+básica quando o perfil não está validado. Para liquidez, somente uma venda vinculada por identidade
+explícita da oferta, exemplar, moeda, preço e tempo entra como desfecho confirmado. Os demais
+vínculos são diagnósticos. Sem observações completas ou vendas vinculadas suficientes, o painel
+exibe a atividade observada, sem porcentagem. A coleta de exposições de anúncio começa nesta versão.
+
+Em **Filtros e notificações**, a margem de revenda opcional usa a taxa e os custos informados na
+moeda selecionada. O índice de liquidez continua separado. Apps Script não precisa ser reimplantado.
+
+Teste local dos cálculos: `node --test tests/*.test.cjs`.
+
+
+
 Extensão Chrome (Manifest V3) para o jogo **pokeidle.io**. Varre o mercado de pedras, calcula para cada pedra um preço de referência (a **mediana** dos anúncios) e **compra automaticamente** os anúncios que estiverem no desconto escolhido ou abaixo, respeitando um saldo máximo de gasto.
 
 > Este documento descreve *exatamente* o que o código faz, para que outra IA (ou pessoa) consiga alterá-lo sem quebrar nada. Leia as seções 6, 11 e 12 antes de mexer.
