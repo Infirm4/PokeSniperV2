@@ -62,6 +62,7 @@
         font: inherit;
         cursor: pointer;
       }
+      .notice .review { grid-column: 1 / -1; grid-row: auto; justify-self: start; border: 1px solid #a879a2; }
       button:hover, button:focus-visible { background: #52376a; }
     `);
     container = document.createElement('div');
@@ -82,9 +83,16 @@
     visible.delete(key);
   }
 
-  function show(title, message, test, sprite) {
+  function review(value, demo = false) {
+    const offer = PISMarketCore.purchaseOffer(value);
+    if (!offer) return false;
+    window.postMessage({ source: 'PIS_BRIDGE', type: 'REVIEW_POKEMON', offer, demo }, location.origin);
+    return true;
+  }
+
+  function show(title, message, test, sprite, offer) {
     if (!mount()) return false;
-    const key = JSON.stringify([title, message, test, sprite]);
+    const key = JSON.stringify([title, message, test, sprite, offer?.id]);
     if (visible.has(key)) {
       const entry = visible.get(key);
       clearTimeout(entry.timer);
@@ -115,16 +123,31 @@
       element.append(img);
     }
     element.append(heading, text, close);
+    if (offer && !test) {
+      const checkout = document.createElement('button');
+      checkout.className = 'review';
+      checkout.type = 'button';
+      checkout.textContent = 'Revisar compra';
+      checkout.addEventListener('click', event => {
+        if (event.isTrusted && review(offer)) remove(key);
+      });
+      element.append(checkout);
+    }
     container.append(element);
     visible.set(key, { element, timer: setTimeout(() => remove(key), DURATION_MS) });
     return true;
   }
 
   chrome.runtime.onMessage.addListener((request, sender, reply) => {
-    if (sender.id !== chrome.runtime.id || request?.type !== 'PIS_MARKET_TOAST') return false;
+    if (sender.id !== chrome.runtime.id) return false;
+    if (request?.type === 'PIS_MARKET_REVIEW') {
+      reply({ ok: review(request.offer, request.demo === true) });
+      return false;
+    }
+    if (request?.type !== 'PIS_MARKET_TOAST') return false;
     const title = typeof request.title === 'string' ? request.title.trim().slice(0, 120) : '';
     const message = typeof request.message === 'string' ? request.message.trim().slice(0, 400) : '';
-    reply({ ok: Boolean(title && message && show(title, message, request.test === true, typeof request.sprite === 'string' ? request.sprite : null)) });
+    reply({ ok: Boolean(title && message && show(title, message, request.test === true, typeof request.sprite === 'string' ? request.sprite : null, PISMarketCore.purchaseOffer(request.offer))) });
     return false;
   });
 })();

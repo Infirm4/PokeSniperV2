@@ -175,6 +175,20 @@ function opportunityCard(row) {
       const panel = card(row, true);
       const body = document.createElement('div');
       body.append(...panel.childNodes);
+      if (PISMarketCore.purchaseOffer(row) && PISOpportunities.notificationEligible(row)) {
+        const checkout = text('button', 'Revisar compra no jogo');
+        checkout.type = 'button';
+        checkout.addEventListener('click', async () => {
+          checkout.disabled = true;
+          try {
+            const receipt = await chrome.runtime.sendMessage({ type: 'PIS_REVIEW_OFFER', key: row.key });
+            if (receipt?.ok) checkout.textContent = 'Revisão aberta no PokéIdle';
+            else checkout.textContent = 'Oferta indisponível ou jogo desconectado';
+          } catch { checkout.textContent = 'Revisão indisponível'; }
+          finally { checkout.disabled = false; }
+        });
+        body.append(checkout);
+      }
       details.append(body);
     }
   });
@@ -327,7 +341,7 @@ runDiagnostics.addEventListener('click', async () => {
           result: response ? (response.storageError ? 'falha ao salvar o teste' : null) : 'sem resposta' };
       } catch { return { ok: false, at: Date.now(), result: 'sem resposta' }; }
     }));
-    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie']).catch(() => ({}));
+    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie', 'pisCoinsHistory:backfill']).catch(() => ({}));
     const [notificationPermission, database, alerts, history, [desktopTest, gameTest], automatic, publicSource] =
       await Promise.all([permission, snapshot, pipeline, trace, testResults, monitor, sourceCheck]);
     const tests = PISMarketSmoke.run();
@@ -336,7 +350,8 @@ runDiagnostics.addEventListener('click', async () => {
       testes: tests,
       banco: database,
       histórico_na_sessão: history,
-      atualização_coins: { global: automatic['pisCoinsHistory:global'], espécie: automatic['pisCoinsHistory:espécie'] },
+      atualização_coins: { recentes: automatic['pisCoinsHistory:global'], espécie: automatic['pisCoinsHistory:espécie'],
+        histórico_anterior: automatic['pisCoinsHistory:backfill'] },
       fonte_pública_de_gemas: publicSource.pisPublicGemsCheck ?? null,
       varredura_automática: { estado: automatic.pisMarketMonitor ?? null, última_página: automatic.pisMarketAutomaticPage ?? null },
       alertas: {
@@ -357,6 +372,13 @@ runDiagnostics.addEventListener('click', async () => {
   } catch {
     testStatus.textContent = 'O diagnóstico não pôde ser concluído. Reabra o painel e tente novamente.';
   } finally { runDiagnostics.disabled = runBacktest.disabled = false; }
+});
+
+document.querySelector('#test-purchase-review').addEventListener('click', async () => {
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'PIS_TEST_PURCHASE_REVIEW' });
+    testStatus.textContent = result?.ok ? 'Simulação aberta no PokéIdle.' : 'Abra e recarregue o PokéIdle.';
+  } catch { testStatus.textContent = 'Revisão de teste indisponível.'; }
 });
 
 const runBacktest = document.querySelector('#run-backtest');

@@ -20,7 +20,7 @@
     if (event.source !== window || event.origin !== location.origin) return;
     const msg = event.data;
     if (msg?.source === 'PIS_MAIN' && msg.type === 'COINS_HISTORY_STATUS') {
-      chrome.runtime.sendMessage({ type: 'PIS_COINS_HISTORY_STATUS', state: msg.state, scope: msg.scope }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'PIS_COINS_HISTORY_STATUS', state: msg.state, scope: msg.scope, page: msg.page, oldest: msg.oldest }).catch(() => {});
       return;
     }
     if (msg?.source === 'PIS_MAIN' && msg.type === 'MARKET_HISTORY_EVENT') {

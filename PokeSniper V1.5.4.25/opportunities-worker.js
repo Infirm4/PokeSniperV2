@@ -69,7 +69,7 @@ const PISOpportunityAlerts = (() => {
       const title = row.name || 'Pokémon #' + row.speciesId;
       const { message } = PISOpportunities.presentation(row);
       const sprite = PISMarketCore.safeSprite(row.sprite);
-      const inGame = PISGameTab.show(title, message, false, sprite).catch(() => false);
+      const inGame = PISGameTab.show(title, message, false, sprite, PISMarketCore.purchaseOffer(row)).catch(() => false);
       let desktop = false;
       try {
         await createDesktopNotice('pis:' + row.key, title, message, sprite);
@@ -105,10 +105,22 @@ const PISOpportunityAlerts = (() => {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.opportunitySettings) wake();
   });
+  async function review(key) {
+    let revision;
+    try { revision = JSON.parse(key); } catch { return false; }
+    if (!Array.isArray(revision) || revision.length !== 3 || revision[0] !== 'gold' ||
+        typeof revision[1] !== 'string') return false;
+    const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
+    const config = PISOpportunities.settings(opportunitySettings);
+    const row = await PISMarketStore.currentOpportunity(key, revision[1], config, Date.now(), true);
+    return row ? PISGameTab.review(row) : false;
+  }
+
   chrome.notifications.onClicked.addListener(id => {
-    if (id.startsWith('pis:')) chrome.tabs.create({ url: 'https://pokeidle.io/' })
+    if (!id.startsWith('pis:')) return;
+    review(id.slice(4)).then(ok => ok || chrome.tabs.create({ url: 'https://pokeidle.io/' }))
       .catch(error => console.warn('[PIS] Não foi possível abrir o jogo:', error.message));
   });
   schedule().catch(error => console.warn('[PIS] Agendamento de alertas:', error.message));
-  return { wake };
+  return { wake, review };
 })();

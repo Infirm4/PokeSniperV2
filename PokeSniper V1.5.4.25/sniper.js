@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.24
+// PokeIdle Market Sniper v1.5.4.25
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.24'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.25'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -1508,6 +1508,28 @@
     });
   }
 
+  async function readCoinsHistoryPage(pagina, name, allowed) {
+    const core = globalThis.PISMarketCore;
+    const seq = ++st.seq;
+    coinHistorySeq = seq;
+    const request = { t: 'market.historicoGlobal', tipo: 'pokemon', moeda: 'gold', busca: name, pagina, seq };
+    postHistory('request', { page: pagina, pokemon: true });
+    const page = await ask(request, j => j.t === 'market' && j.aba === 'historicoGlobal' &&
+      Number(j.seq) === seq && (j.moeda == null || j.moeda === 'gold') &&
+      (j.pagina == null || Number(j.pagina) === pagina) && Array.isArray(j.linhas), 12000, allowed);
+    coinHistorySeq = null;
+    if (page.linhas.length > core.MAX_BATCH) throw new Error('Página acima do limite de gravação');
+    const rows = core.capture({ ...page, moeda: 'gold' })?.rows.filter(row => row.currency === 'gold' &&
+      (!name || row.name?.toLowerCase() === name.toLowerCase())) ?? [];
+    await persistHistoryPage(seq, page, rows);
+    const pageTimes = page.linhas.filter(row => row?.tipo === 'pokemon' && (row.moeda == null || row.moeda === 'gold'))
+      .map(row => Number(row.em)).filter(at => Number.isSafeInteger(at) && at >= 1e12);
+    const ids = page.linhas.map(row => row?.id).filter(id => id != null).map(String);
+    if (page.linhas.length && !ids.length) throw new Error('Página sem IDs de transação');
+    return { rows, ids, last: page.temMais === false || page.linhas.length === 0,
+      newest: pageTimes.length ? Math.max(...pageTimes) : null, oldest: pageTimes.length ? Math.min(...pageTimes) : null };
+  }
+
   // Uma lacuna nunca avança o cursor. Uma nova tentativa repete o trecho por ID.
   async function syncCoinsHistory(value) {
     const globalHistory = value == null;
@@ -1527,8 +1549,11 @@
     }
     const core = globalThis.PISMarketCore;
     const live = st.sock;
-    const allowed = () => st.sock === live && live.readyState === 1 && Date.now() >= st.marketPausaAte;
-    const since = last?.newest || started - (globalHistory ? 6 * 3600000 : core.WINDOW_MS);
+    const allowed = () => st.sock === live && live.readyState === 1 && Date.now() >= st.marketPausaAte &&
+      (!globalHistory || trackAtivo());
+    const floor = started - (globalHistory ? 6 * 3600000 : core.WINDOW_MS);
+    const since = globalHistory ? Math.max(last?.newest || started - 10 * 60000, floor) : last?.newest || floor;
+    if (globalHistory && last?.at && last.at < floor) lsSet('pis_coins_backfill_30d', null);
     let newest = last?.newest ?? 0;
     const visited = new Set();
     coinHistoryActive = true;
@@ -1537,25 +1562,13 @@
       for (let pagina = 0; pagina < 120 && allowed(); pagina++) {
         if (pagina) await sleep(5000);
         if (!allowed()) break;
-        const seq = ++st.seq;
-        coinHistorySeq = seq;
-        const request = { t: 'market.historicoGlobal', tipo: 'pokemon', moeda: 'gold', busca: name, pagina, seq };
-        postHistory('request', { page: pagina, pokemon: true });
-        const page = await ask(request, j => j.t === 'market' && j.aba === 'historicoGlobal' &&
-          Number(j.seq) === seq && (j.moeda == null || j.moeda === 'gold') &&
-          (j.pagina == null || Number(j.pagina) === pagina) && Array.isArray(j.linhas),
-          12000, allowed);
-        coinHistorySeq = null;
-        const signature = JSON.stringify(page.linhas.map(row => row?.id ?? null));
-        if (page.linhas.length && visited.has(signature)) break;
+        const page = await readCoinsHistoryPage(pagina, name, allowed);
+        const signature = JSON.stringify(page.ids);
+        if (page.ids.length && visited.has(signature)) break;
         visited.add(signature);
-        if (page.linhas.length > core.MAX_BATCH) throw new Error('Página acima do limite de gravação');
-        const rows = core.capture({ ...page, moeda: 'gold' })?.rows.filter(row =>
-          row.currency === 'gold' && (globalHistory || row.name?.toLowerCase() === key)) ?? [];
-        await persistHistoryPage(seq, page, rows);
-        const times = rows.map(row => row.soldAt).filter(at => at <= started);
+        const times = page.rows.map(row => row.soldAt).filter(at => at <= started);
         newest = Math.max(newest, ...times);
-        if (page.temMais === false || page.linhas.length === 0 || (times.length && Math.max(...times) < since)) {
+        if (page.last || (times.length && Math.max(...times) < since)) {
           const checks = lsGet(COINS_HISTORY_CHECKS, {});
           const entries = Object.entries({ ...checks, [key]: { at: started, newest: newest || since } })
             .sort((a, b) => b[1].at - a[1].at);
@@ -1574,7 +1587,61 @@
     }
   }
 
-  setInterval(() => { if (trackAtivo()) syncCoinsHistory(null); }, 60000);
+  const COINS_BACKFILL = 'pis_coins_backfill_30d';
+
+  let reportedBackfill;
+  async function syncCoinsBackfill() {
+    const initial = lsGet(COINS_BACKFILL, null);
+    const report = (state, checkpoint) => window.postMessage({ source: 'PIS_MAIN', type: 'COINS_HISTORY_STATUS',
+      scope: 'backfill', state, page: checkpoint?.page ?? null, oldest: checkpoint?.oldest ?? null }, location.origin);
+    if (initial?.completedAt) {
+      if (reportedBackfill !== initial.completedAt) {
+        report('janela percorrida', initial);
+        reportedBackfill = initial.completedAt;
+      }
+      return;
+    }
+    if (coinHistoryActive || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) return;
+    const socket = st.sock;
+    const allowed = () => trackAtivo() && st.sock === socket && socket.readyState === 1 && Date.now() >= st.marketPausaAte;
+    let first = true;
+    coinHistoryActive = true;
+    try {
+      await globalThis.PISCoinsHistory.backfill({ previous: initial,
+        read: async page => {
+          if (!first) await sleep(5000);
+          first = false;
+          if (!allowed()) throw new Error('Consulta pausada');
+          return readCoinsHistoryPage(page, '', allowed);
+        },
+        save: async (checkpoint, state) => {
+          lsSet(COINS_BACKFILL, checkpoint);
+          report(state, checkpoint);
+        } });
+    } catch (error) {
+      report('pausado · progresso preservado', lsGet(COINS_BACKFILL, null));
+      dbg('Histórico anterior em Coins:', error.message);
+    } finally {
+      coinHistoryActive = false;
+      coinHistorySeq = null;
+    }
+  }
+
+  async function maintainCoinsHistory() {
+    if (!trackAtivo() || coinHistoryActive || st.sock?.readyState !== 1) return;
+    const run = async () => {
+      if (!trackAtivo() || coinHistoryActive) return;
+      const recent = lsGet(COINS_HISTORY_CHECKS, {})['*'];
+      if (!recent || Date.now() - recent.at >= 5 * 60000) await syncCoinsHistory(null);
+      if (trackAtivo()) await syncCoinsBackfill();
+    };
+    if (navigator.locks) {
+      await navigator.locks.request('pis_coins_history_collector', { ifAvailable: true },
+        lock => lock ? run() : undefined);
+    } else await run();
+  }
+
+  setInterval(() => maintainCoinsHistory().catch(error => dbg('Histórico automático:', error.message)), 60000);
 
   window.addEventListener('message', event => {
     if (event.source === window && event.origin === location.origin &&
@@ -1872,37 +1939,138 @@
     }
   }
 
+  let revisaoCompra;
+  let compraConfirmadaEmAndamento = false;
+  const APPROVAL_RECEIPTS = 'pis_coins_approved_orders';
+
+  function revisarCompraPokemon(value, demo = false) {
+    const core = globalThis.PISMarketCore;
+    const offer = core.purchaseOffer(value);
+    if (!offer || !offer.name || Date.now() < offer.observedAt || Date.now() - offer.observedAt > 600000 ||
+        compraConfirmadaEmAndamento || !document.documentElement) return;
+    revisaoCompra?.remove();
+    const host = h('div', { position: 'fixed', inset: '0', zIndex: '2147483647' });
+    const shadow = host.attachShadow({ mode: 'closed' });
+    const box = h('div', { position: 'absolute', inset: '0', display: 'grid', placeItems: 'center',
+      background: '#120c17bd', color: '#f7effb', font: '15px/1.4 system-ui, sans-serif' });
+    const panel = h('section', { maxWidth: '360px', margin: '16px', padding: '18px', background: '#231930',
+      border: '1px solid #a879a2', borderRadius: '10px' });
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-label', 'Revisar compra');
+    const title = h('strong', {}, { textContent: (demo ? 'Teste · ' : '') + offer.name + ' · ' + fmt(offer.price) + ' Coins' });
+    const status = h('p', {}, { textContent: 'O pedido só será enviado se o anúncio continuar disponível por esse preço.' });
+    status.setAttribute('role', 'status');
+    const confirm = h('button', { marginRight: '8px' }, { type: 'button', textContent: demo ? 'Simular confirmação' : 'Confirmar compra em Coins' });
+    const cancel = h('button', {}, { type: 'button', textContent: 'Cancelar' });
+    cancel.onclick = () => host.remove();
+    confirm.addEventListener('click', async event => {
+      if (!event.isTrusted || compraConfirmadaEmAndamento) return;
+      if (demo) {
+        status.textContent = 'Confirmação simulada. Nenhum pedido foi enviado.';
+        confirm.disabled = true;
+        return;
+      }
+      if (st.running || st.activeAttempt) {
+        status.textContent = 'Pare as compras do painel antes de confirmar esta oferta.';
+        return;
+      }
+      if (Date.now() - offer.observedAt > 600000) {
+        status.textContent = 'Este aviso expirou. Aguarde uma nova oferta.';
+        confirm.disabled = true;
+        return;
+      }
+      if (!st.sock || st.sock.readyState !== 1 || Date.now() < st.marketPausaAte) {
+        status.textContent = 'O jogo está desconectado ou o mercado está em pausa.';
+        return;
+      }
+      compraConfirmadaEmAndamento = true;
+      confirm.disabled = true;
+      cancel.textContent = 'Fechar';
+      status.textContent = 'Verificando a oferta no servidor…';
+      try {
+        const submit = () => comprarPokemon({ id: offer.id, preco: offer.price }, cfg(), st.loopId,
+          { approval: offer, onSent: () => { status.textContent = 'Pedido enviado. Aguardando confirmação do jogo…'; } });
+        status.textContent = navigator.locks ? await navigator.locks.request('pis_coin_purchase', { ifAvailable: true },
+          lock => lock ? submit() : 'Já existe um pedido em andamento em outra aba.') : 'Compra indisponível neste navegador.';
+      } catch {
+        status.textContent = 'Resultado da compra indisponível. Confira o histórico antes de tentar novamente.';
+      } finally { compraConfirmadaEmAndamento = false; }
+    });
+    panel.append(title, status, confirm, cancel);
+    box.append(panel);
+    shadow.append(box);
+    revisaoCompra = host;
+    document.documentElement.append(host);
+    cancel.focus();
+  }
+
+  async function refreshApprovedPokemon(offer, allowed) {
+    const core = globalThis.PISMarketCore;
+    const speciesId = Number(offer.speciesId);
+    if (!Number.isSafeInteger(speciesId) || speciesId < 1) return null;
+    for (let pagina = 0; pagina < 3 && allowed(); pagina++) {
+      const seq = ++st.seq;
+      const request = { ...pedidoPaginaRastreador(pagina, 'gold', 'baratos'), especieId: speciesId, seq };
+      const page = await ask(request, frame => frame.t === 'market' && frame.aba === 'vitrine' &&
+        Array.isArray(frame.linhas) && Number(frame.pagina) === pagina &&
+        (frame.moeda == null || frame.moeda === 'gold') &&
+        (Number(frame.seq) === seq || (frame.seq == null && Number(frame.especieId) === speciesId && frame.moeda === 'gold')),
+        12000, allowed);
+      const item = page.linhas.find(row => row && String(row.id) === offer.id);
+      if (item) {
+        const row = core.capture({ ...page, moeda: 'gold', linhas: [item] })?.rows[0];
+        return core.matchesPurchase(offer, row, nowSrv()) ? { item, row, p: lerPokemon(item) } : null;
+      }
+      if (!page.linhas.length || page.temMais === false) break;
+    }
+    return null;
+  }
+
+  window.addEventListener('message', event => {
+    if (event.source === window && event.origin === location.origin && event.data?.source === 'PIS_BRIDGE' &&
+        event.data.type === 'REVIEW_POKEMON') revisarCompraPokemon(event.data.offer, event.data.demo === true);
+  });
+
   // ---------- compra ----------
   async function comprarPokemon(p, c, runId = st.loopId, opts = {}) {
     const id = p.id;
-    if (!st.running || runId !== st.loopId || st.finalizados.has(id) || !pokeAtivo()) return;
-    if (st.prioridadeRetida && st.prioridadeRetida !== id) return;
+    const approval = opts.approval;
+    const socket = st.sock;
+    const enabled = () => approval ? !st.running && st.sock === socket && socket?.readyState === 1 &&
+      Date.now() >= st.marketPausaAte && Date.now() - approval.observedAt <= 600000 :
+      st.running && runId === st.loopId && pokeAtivo();
+    const cancelled = 'Compra cancelada. O anúncio ou a sessão mudou.';
+    if (!enabled() || st.finalizados.has(id)) return approval ? cancelled : undefined;
+    if (st.prioridadeRetida && st.prioridadeRetida !== id) return approval ? cancelled : undefined;
     const atual = cfg();
+    if (approval && (st.activeAttempt || approval.price > orcamento(atual) - st.spent ||
+        !Number.isFinite(st.gold) || st.gold < approval.price)) return 'Saldo ou limite de compras insuficiente.';
     if (orcamento(atual) - st.spent < 1) return stop('saldo para compras esgotado');
     if (!atual.dryRun && st.activeAttempt) { dbg('Outra compra em andamento; não envio outro pedido.'); return; }
 
     let before = opts.historicoAntes || null;
-    if (!atual.dryRun) {
+    if (approval || !atual.dryRun) {
       st.skip[id] = Date.now();
       if (!before) {
         try { before = await hist(); }
-        catch (e) { logPk(`Não consegui consultar histórico antes do pedido #${id}: ${e.message}`); return; }
+        catch (e) { logPk(`Não consegui consultar histórico antes do pedido #${id}: ${e.message}`); return approval ? "Histórico de compras indisponível. O pedido não foi enviado." : undefined; }
       }
-      if (!st.running || runId !== st.loopId) return;
-      if (!Number.isSafeInteger(Number(before.total))) { logPk(`Histórico inicial sem contador confiável; compra #${id} não enviada.`); return; }
+      if (!enabled()) return approval ? cancelled : undefined;
+      if (!Number.isSafeInteger(Number(before.total))) { logPk(`Histórico inicial sem contador confiável; compra #${id} não enviada.`); return approval ? "Histórico sem contador de compras. O pedido não foi enviado." : undefined; }
     }
 
     // REFRESH OBRIGATÓRIO: relê o mercado e revalida TUDO imediatamente antes do envio.
     let resp;
-    try { resp = await consultarPokemon(!!opts.origemRetida); }
-    catch (e) { dbg(`Pokémon #${id}: mercado não respondeu ao refresh (${e.message}).`); return; }
-    if (!st.running || runId !== st.loopId) return;
+    try { resp = approval ? await refreshApprovedPokemon(approval, enabled) : await consultarPokemon(!!opts.origemRetida); }
+    catch (e) { dbg(`Pokémon #${id}: mercado não respondeu ao refresh (${e.message}).`); return approval ? "Não consegui conferir a oferta no jogo. O pedido não foi enviado." : undefined; }
+    if (!enabled()) return approval ? cancelled : undefined;
     const aoEnviar = cfg();
-    const val = validarPokemon(resp, id, p.preco, aoEnviar, opts.liberarEm ?? null);
-    if (!val) {
+    const val = approval ? resp : validarPokemon(resp, id, p.preco, aoEnviar, opts.liberarEm ?? null);
+    if (!val?.p || (approval && (val.p.qtd !== 1 || (aoEnviar.meuNome && val.item.vendedor === aoEnviar.meuNome)))) {
       dbg(`Pokémon #${id}: preço, vendedor, retenção ou limite mudou; compra cancelada.`);
       if (opts.origemRetida) logPk(L`⏭️ ${P(p.rotulo)} #${id}: compra cancelada, anúncio não atende mais às regras.`);
-      return 'reavaliar';
+      return approval ? 'Oferta indisponível ou alterada. O pedido não foi enviado.' : 'reavaliar';
     }
     const pk = val.p, custo = pk.preco;
     const lib = Number(val.item.compravelEm);
@@ -1910,12 +2078,12 @@
     const foraDaJanela = !!opts.origemRetida && (!Number.isFinite(Number(opts.liberarEm)) ||
       nowSrv() - Number(opts.liberarEm) < 0 || nowSrv() - Number(opts.liberarEm) >= JANELA_SORTEIO_MS);
     const bloqueado = (st.prioridadeRetida && st.prioridadeRetida !== id) || st.activeAttempt ||
-      custo > orcamento(aoEnviar) - st.spent || retidoAgora || foraDaJanela || aoEnviar.dryRun !== atual.dryRun ||
+      custo > orcamento(aoEnviar) - st.spent || retidoAgora || foraDaJanela || (!approval && aoEnviar.dryRun !== atual.dryRun) ||
       (!aoEnviar.dryRun && Date.now() < st.marketPausaAte) ||
       (!aoEnviar.dryRun && (!Number.isFinite(st.gold) || custo > st.gold || !st.sock || st.sock.readyState !== 1));
-    if (bloqueado) { dbg(`Pokémon #${id} NÃO enviado: saldo, orçamento, retenção ou janela inválidos.`); return 'reavaliar'; }
+    if (bloqueado) { dbg(`Pokémon #${id} NÃO enviado: saldo, orçamento, retenção ou janela inválidos.`); return approval ? cancelled : 'reavaliar'; }
 
-    if (aoEnviar.dryRun) {
+    if (!approval && aoEnviar.dryRun) {
       if (!st.seen['pk' + id]) {
         st.seen['pk' + id] = 1;
         st.spent += custo;
@@ -1927,23 +2095,52 @@
       return;
     }
 
+    const checkedAt = Date.now();
+    let alreadyRequested = false;
+    const dispatch = () => {
+      if (approval && (!enabled() || st.activeAttempt || st.finalizados.has(id) || !Number.isFinite(st.gold) ||
+          st.gold < custo || orcamento(cfg()) - st.spent < custo || Date.now() - checkedAt > 10000 ||
+          !globalThis.PISMarketCore.matchesPurchase(approval, val.row, nowSrv()))) return false;
+      if (approval) {
+        const receipts = lsGet(APPROVAL_RECEIPTS, {});
+        alreadyRequested = Date.now() - (receipts?.[id] ?? 0) < 86400000;
+        if (alreadyRequested) return false;
+        const recent = Object.entries(receipts ?? {}).filter(([, at]) => Date.now() - at < 86400000);
+        // Guarda antes do envio para evitar repetir um pedido incerto após recarregar.
+        localStorage.setItem(APPROVAL_RECEIPTS, JSON.stringify({ ...Object.fromEntries(recent), [id]: Date.now() }));
+      }
+      st.activeAttempt = a;
+      a.enviadoEm = Date.now();
+      st.marketUltimoEnvio = a.enviadoEm;
+      osend.call(st.sock, JSON.stringify({
+        t: 'market.comprar', id: pk.idRaw, qtd: 1, preco: custo, moeda: 'gold', sorteioUi: c.sorteioUi
+      }));
+      return true;
+    };
+
     const a = {
       ofertaId: id, nome: pk.especie, rotulo: pk.rotulo, itemId: null, precoUnitario: custo, qtd: 1, custo,
       entrou: false, lista: false, sorteioMostrado: false, resultadoMostrado: false,
       venceuSorteio: null, recibo: false, valorRecebido: null, enviadoEm: Date.now(), pk: true
     };
-    st.activeAttempt = a;
-    logPk(L`🛒 Tentando comprar ${P(pk.rotulo)} #${id} (${pk.shiny ? 'Shiny' : 'Normal'}) por ${G(custo)}. Verificando entrada no sorteio…`);
     try {
-      st.marketUltimoEnvio = Date.now();
-      osend.call(st.sock, JSON.stringify({
-        t: 'market.comprar', id: pk.idRaw, qtd: 1, preco: custo, moeda: 'gold', sorteioUi: c.sorteioUi
-      }));
+      if (approval) {
+        const enviar = async () => {
+          await esperarPermissaoDeConsulta(enabled);
+          return dispatch();
+        };
+        const fila = st.marketFila.then(enviar, enviar);
+        st.marketFila = fila.catch(() => {});
+        if (!await fila) return alreadyRequested ? 'Já existe um pedido registrado para este anúncio. Confira o histórico.' : cancelled;
+        opts.onSent?.();
+      } else dispatch();
+      logPk(L`🛒 Tentando comprar ${P(pk.rotulo)} #${id} (${pk.shiny ? 'Shiny' : 'Normal'}) por ${G(custo)}. Verificando entrada no sorteio…`);
     } catch (e) {
+      if (st.activeAttempt !== a) return approval ? cancelled : undefined;
       st.activeAttempt = null;
       st.finalizados.add(id);
       logPk(`Falha/resultado incerto no envio #${id}: ${e.message}. Não vou repetir automaticamente.`);
-      return;
+      return approval ? "Envio incerto. Confira o histórico antes de tentar novamente." : undefined;
     }
     dbg(`Pokémon #${id} enviado; aguardando sorteio e confirmação no histórico.`);
 
@@ -1982,6 +2179,11 @@
     }
     st.finalizados.add(id);
     if (st.activeAttempt === a) st.activeAttempt = null;
+    if (approval) {
+      if (identificada) return 'Compra confirmada no histórico do jogo.';
+      if (a.venceuSorteio === false) return 'Você não ganhou o sorteio desta oferta.';
+      return 'Resultado indeterminado. Confira o histórico antes de tentar novamente.';
+    }
   }
 
   async function loop() {

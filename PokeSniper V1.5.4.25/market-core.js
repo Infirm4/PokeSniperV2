@@ -271,7 +271,22 @@
       })) };
   }
 
-  const core = { capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
+  function purchaseOffer(row) {
+    if (row?.currency !== 'gold' || typeof row.name !== 'string' || !row.name.trim() || !id(row.id) || !id(row.pokemonId) || !id(row.speciesId) ||
+        !positiveInteger(row.price) || !timestamp(row.observedAt) || isOutland(row)) return null;
+    return { id: id(row.id), pokemonId: id(row.pokemonId), speciesId: id(row.speciesId),
+      currency: 'gold', price: Number(row.price), observedAt: row.observedAt,
+      name: row.name.trim().slice(0, 100) };
+  }
+
+  function matchesPurchase(offer, row, now = Date.now()) {
+    return Boolean(offer && row && !row.closed && !isOutland(row) &&
+      row.currency === offer.currency && row.id === offer.id && row.pokemonId === offer.pokemonId &&
+      row.speciesId === offer.speciesId && row.name === offer.name && row.price === offer.price &&
+      (!row.availableAt || row.availableAt <= now) && (!row.expiresAt || row.expiresAt > now));
+  }
+
+  const core = { purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
     WINDOW_MS, MAX_BATCH };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;

@@ -56,7 +56,50 @@
     } finally { db.close(); }
   }
 
-  const api = { cleanSpecies, importRows, readCache };
+  // Páginas mudam de posição quando entram vendas. Reencontre uma página
+  // gravada antes de prosseguir, em vez de confiar só no número da página.
+  async function backfill({ previous, read, save, now = Date.now(), budget = 6 }) {
+    const cutoff = now - 30 * DAY;
+    let state = previous ?? { page: 0, ids: [], oldest: null };
+    let page = state.probe ?? state.page;
+    let anchored = !state.ids.length;
+    let used = 0;
+    while (used++ < budget) {
+      const wasAnchored = anchored;
+      const { ids, newest, oldest, last } = await read(page);
+      if (!anchored) {
+        const savedIds = new Set(state.ids);
+        anchored = ids.some(id => savedIds.has(id));
+        if (!anchored) {
+          if (ids.length && oldest != null && state.oldest != null && oldest >= state.oldest) {
+            page++;
+            if (used === budget) {
+              state = { ...state, probe: page };
+              await save(state, 'buscando página de retomada');
+            }
+            continue;
+          }
+          // A página de referência sumiu ou moveu para trás. Repita a janela
+          // desde o começo; a gravação por ID já é idempotente.
+          const reset = { page: 0, ids: [], oldest: null };
+          await save(reset, 'reancorando');
+          return reset;
+        }
+      }
+      const complete = last || (newest != null && newest < cutoff);
+      const next = { page, ids, oldest: oldest ?? state.oldest,
+        ...(complete ? { completedAt: now } : {}) };
+      // Repetir a última página evita pular um trecho se o servidor ignorar a paginação.
+      if (wasAnchored && !complete && page !== state.page && ids.length && ids.every(id => state.ids.includes(id))) return state;
+      await save(next, complete ? 'janela percorrida' : 'gravando histórico anterior');
+      state = next;
+      if (complete) return state;
+      page++;
+    }
+    return state;
+  }
+
+  const api = { cleanSpecies, importRows, readCache, backfill };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.PISCoinsHistory = api;
 })();

@@ -15,11 +15,24 @@ const PISGameTab = {
     lastGameTab = tabId;
     chrome.storage.session.set({ [gameTabKey]: tabId }).catch(() => {});
   },
-  async show(title, message, test = false, sprite = null) {
+  async review(row, demo = false) {
+    const offer = PISMarketCore.purchaseOffer(row);
+    const tabId = lastGameTab ?? (await chrome.storage.session.get(gameTabKey))[gameTabKey];
+    if (!offer || !Number.isSafeInteger(tabId)) return false;
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (!PIS_HOST.test(tab.url ?? '')) return false;
+      await chrome.tabs.update(tabId, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+      const result = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_REVIEW', offer, demo }, { frameId: 0 });
+      return result?.ok === true;
+    } catch { return false; }
+  },
+  async show(title, message, test = false, sprite = null, offer = null) {
     const tabId = lastGameTab ?? (await chrome.storage.session.get(gameTabKey))[gameTabKey];
     if (!Number.isSafeInteger(tabId)) return false;
     try {
-      const reply = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_TOAST', title, message, test, sprite: PISMarketCore.safeSprite(sprite) }, { frameId: 0 });
+      const reply = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_TOAST', title, message, test, sprite: PISMarketCore.safeSprite(sprite), offer }, { frameId: 0 });
       return reply?.ok === true;
     } catch { return false; }
   }
@@ -33,6 +46,19 @@ PISMarketStore.initialize().catch(error => {
 let listingPending = 0;
 let salePending = 0;
 chrome.runtime.onMessage.addListener((req, sender, reply) => {
+  if (req?.type === 'PIS_TEST_PURCHASE_REVIEW') {
+    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
+    PISGameTab.review({ id: 'demo', pokemonId: 'demo', speciesId: '94', currency: 'gold',
+      name: 'Gengar', observedAt: Date.now(), price: 1000000 }, true)
+      .then(ok => reply({ ok }), () => reply({ ok: false }));
+    return true;
+  }
+  if (req?.type === 'PIS_REVIEW_OFFER') {
+    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html') ||
+        typeof req.key !== 'string' || req.key.length > 200) return false;
+    PISOpportunityAlerts.review(req.key).then(ok => reply({ ok }), () => reply({ ok: false }));
+    return true;
+  }
   if (req?.type === 'PIS_COPY_SMART_COINS') {
     if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
     (async () => {
@@ -98,8 +124,10 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   PISGameTab.remember(sender.tab.id);
   if (req.type === 'PIS_COINS_HISTORY_STATUS') {
-    if (!['global', 'espécie'].includes(req.scope) || typeof req.state !== 'string' || req.state.length > 40) return false;
-    chrome.storage.session.set({ ['pisCoinsHistory:' + req.scope]: { state: req.state, at: Date.now() } })
+    if (!['global', 'espécie', 'backfill'].includes(req.scope) || typeof req.state !== 'string' || req.state.length > 40) return false;
+    chrome.storage.session.set({ ['pisCoinsHistory:' + req.scope]: { state: req.state, at: Date.now(),
+      page: Number.isSafeInteger(req.page) && req.page >= 0 ? req.page : null,
+      oldest: Number.isSafeInteger(req.oldest) ? req.oldest : null } })
       .then(() => reply({ ok: true }), () => reply({ ok: false }));
     return true;
   }

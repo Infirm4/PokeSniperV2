@@ -263,13 +263,13 @@ const PISMarketStore = (() => {
     return current.filter(Boolean).reverse();
   }
 
-  async function currentOpportunity(key, id, config, now = Date.now()) {
+  async function currentOpportunity(key, id, config, now = Date.now(), forReview = false) {
     const db = await open();
     const tx = db.transaction(['opportunities', 'listings']);
     const [entry, listing] = await Promise.all([
       result(tx.objectStore('opportunities').get(key)), result(tx.objectStore('listings').get(id)),
     ]);
-    if (entry?.delivery !== 'pending' || entry.nextAttemptAt > now || !listing ||
+    if (!entry || (!forReview && (entry.delivery !== 'pending' || entry.nextAttemptAt > now)) || !listing ||
         listing.observedAt < now - PISOpportunities.TTL || PISOpportunities.key(listing) !== key ||
         !PISOpportunities.eligible(listing, now) || !PISOpportunities.matches(listing, config) ||
         !PISOpportunities.notificationEligible(listing)) return null;

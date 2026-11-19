@@ -1,4 +1,27 @@
-# PokeIdle Market Sniper (v1.5.4.24)
+# PokeIdle Market Sniper (v1.5.4.25)
+
+## Histórico automático de Coins e compra confirmada
+
+Com **REGISTRAR MERCADO** ativo e o PokéIdle conectado, o Sniper busca as vendas
+gerais de Coins, incluindo o histórico anterior à instalação. Os lotes usam a
+fila compartilhada de consultas e retomam de uma página já gravada. O
+**Diagnóstico da versão** mostra a página e a data mais antiga alcançada. A
+busca termina ao chegar ao fim das páginas disponíveis ou ao corte de 30 dias.
+
+No jogo, clique em **Revisar compra** no aviso. No Chrome, clique na notificação
+em Coins. O Sniper abre uma revisão com o preço integral. **Confirmar compra em
+Coins** autoriza um pedido pelo preço exibido, dentro do saldo e do limite
+configurado. Mantenha a compra automática do painel parada. O Sniper confere
+novamente o ID, o exemplar, a moeda, o preço e a disponibilidade no jogo. A
+confirmação de resultado usa o histórico e os eventos do servidor. Se o pedido
+ficar incerto, confira o histórico do jogo.
+
+Para testar a captura sem gastar, mantenha o mercado fechado por alguns minutos
+e use **Testar avisos e gerar relatório**. **Testar revisão de compra** abre
+uma simulação no jogo sem enviar pedido. Na revisão de uma oferta, **Cancelar**
+fecha a janela. Os testes Node simulam aprovação, mudança de preço e reenvio
+sem usar o servidor.
+
 
 ## Monitoramento, histórico e testes
 
