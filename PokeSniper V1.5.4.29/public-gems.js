@@ -19,9 +19,14 @@
     const { campos, nomes } = snapshot.vendas;
     const published = Date.parse(snapshot.geradoEm);
     if (snapshot.vendas.tipos?.at !== 't' || snapshot.vendas.tipos?.name !== 's') return false;
+    if (snapshot.currency != null && snapshot.currency !== 'orb') return false;
+    const currency = campos.currency;
+    if (currency && currency.some(value => (snapshot.vendas.tipos.currency === 's' ? nomes[value] : value) !== 'orb')) return false;
     let minute = 0;
-    return campos.at.every((delta, i) => Number.isSafeInteger(delta) &&
+    let latest = 0;
+    const validRows = campos.at.every((delta, i) => Number.isSafeInteger(delta) &&
       (minute += delta) * 60000 >= 1e12 && minute * 60000 <= published &&
+      (latest = Math.max(latest, minute * 60000)) > 0 &&
       [0, 1].includes(campos.shiny[i]) && (campos.nota[i] === null || Number.isFinite(campos.nota[i])) &&
       ['price', 'base', 'pve', 'level', 'speciesId', 'family'].every(key =>
         Number.isFinite(campos[key][i]) && campos[key][i] > 0) &&
@@ -29,6 +34,7 @@
       snapshot.itens.every(row => row && ['orb', 'gold'].includes(row.currency) &&
         Number.isFinite(row.price) && row.price > 0 && Number.isFinite(Date.parse(row.day)) &&
         Number.isSafeInteger(Number(row.itemId)));
+    return validRows && published - latest <= 7 * 86400000;
   }
 
   function prepare(snapshot, now = Date.now()) {
@@ -54,7 +60,7 @@
     }
     const { central, catalog, markets, fits } = cached;
     const at = Date.parse(snapshot.geradoEm);
-    const quote = engine.itemQuotes(snapshot.itens);
+    const quote = engine.itemQuotes(snapshot.itens.filter(row => row.currency === 'orb'));
     const typesOf = id => central.species.get(id)?.t || [];
     return target => {
       if (target.currency !== 'orb' || target.shiny == null || PISMarketCore.isOutland(target)) return null;
@@ -104,7 +110,15 @@
       .replace(/^✨\s*/u, '').replace(/^shiny\s+/i, '').trim().toLowerCase();
   }
 
-  const api = { prepare, valid, validateContent };
+  // A fonte pública é em Gemas. Uma cotação informada serve só ao conversor.
+  function convert(amount, from, to, coinsPerGem) {
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(coinsPerGem) || coinsPerGem <= 0 ||
+        !['gold', 'orb'].includes(from) || !['gold', 'orb'].includes(to)) return null;
+    const converted = from === to ? amount : from === 'gold' ? amount / coinsPerGem : amount * coinsPerGem;
+    return Number.isFinite(converted) && converted > 0 && converted <= Number.MAX_SAFE_INTEGER ? converted : null;
+  }
+
+  const api = { prepare, valid, validateContent, convert };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.PISPublicGems = api;
 })();

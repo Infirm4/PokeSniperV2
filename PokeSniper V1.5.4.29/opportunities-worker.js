@@ -28,11 +28,10 @@ const PISOpportunityAlerts = (() => {
     } catch { return null; }
   }
 
-  async function createDesktopNotice(id, title, message, sprite) {
-    const fallback = chrome.runtime.getURL('opportunity-icon.png');
-    let icon = null;
-    if (sprite) {
-      icon = icons.get(sprite);
+  async function createDesktopNotice(id, title, message, sprites) {
+    const options = { type: 'basic', title, message, contextMessage: 'Oferta observada no PokéIdle' };
+    for (const sprite of sprites) {
+      let icon = icons.get(sprite);
       if (!icon) {
         icon = await loadIcon(sprite);
         if (icon) {
@@ -40,14 +39,11 @@ const PISOpportunityAlerts = (() => {
           icons.set(sprite, icon);
         }
       }
+      if (!icon) continue;
+      try { await chrome.notifications.create(id, { ...options, iconUrl: icon }); return; }
+      catch { /* tenta a segunda sprite ou o ícone local */ }
     }
-    const options = { type: 'basic', iconUrl: icon ?? fallback, title, message,
-      contextMessage: 'Oferta observada no PokéIdle · clique para abrir o jogo' };
-    try { await chrome.notifications.create(id, options); }
-    catch (error) {
-      if (!icon) throw error;
-      await chrome.notifications.create(id, { ...options, iconUrl: fallback });
-    }
+    await chrome.notifications.create(id, { ...options, iconUrl: chrome.runtime.getURL('opportunity-placeholder.png') });
   }
 
   async function sendPending() {
@@ -68,11 +64,11 @@ const PISOpportunityAlerts = (() => {
       // ID determinístico mantém apenas uma notificação para a mesma revisão após uma retomada.
       const title = row.name || 'Pokémon #' + row.speciesId;
       const { message } = PISOpportunities.presentation(row);
-      const sprite = PISMarketCore.safeSprite(row.sprite);
-      const inGame = PISGameTab.show(title, message, false, sprite, PISMarketCore.purchaseOffer(row)).catch(() => false);
+      const sprites = PISOpportunities.spriteCandidates(row);
+      const inGame = PISGameTab.show(title, message, false, sprites[0], PISMarketCore.purchaseOffer(row), sprites[1]).catch(() => false);
       let desktop = false;
       try {
-        await createDesktopNotice('pis:' + row.key, title, message, sprite);
+        await createDesktopNotice('pis:' + row.key, title, message, sprites);
         desktop = true;
       } catch {
         console.warn('[PIS] Aviso visual do Chrome indisponível.');

@@ -16,10 +16,10 @@
       ...base, totalLinhas: asCount(trace.rows), linhasPokemon: asCount(trace.pokemon),
       comFicha: asCount(trace.withProfile), temMais: typeof trace.more === 'boolean' ? trace.more : null,
       camposCandidatosIdAnuncio: Object.fromEntries(FIELDS.map(field => [field, asCount(trace.candidateFields?.[field])])),
-      lote: ['gravado', 'sem_registros_validos', 'fila_cheia', 'falha_na_gravação'].includes(receipt.status)
+      lote: ['gravado', 'sem_registros_validos', 'fila_cheia', 'falha_na_gravação', 'lote_inválido'].includes(receipt.status)
         ? receipt.status : null,
       aceitas: asCount(receipt.accepted),
-      novas: asCount(receipt.new), repetidas: asCount(receipt.existing),
+      novas: asCount(receipt.new), repetidas: asCount(receipt.existing), conflitos: asCount(receipt.conflicts),
       ganharamIvsCompletos: asCount(receipt.gainedFullIvs),
     };
   }

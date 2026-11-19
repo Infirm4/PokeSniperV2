@@ -39,14 +39,14 @@
         const result = PISCoinsHistory.importRows([row, row, { ...row, id: 12, moeda: 'orb' }], PISMarketCore, now);
         return result.length === 1 && result[0].price === 1000000;
       }),
-      check('motor PvE calcula 25% com fichas completas', () => {
+      check('comparáveis em Coins calculam 25% com fichas completas', () => {
         const target = { ...capture('vitrine', [listing]).rows[0], price: 75, name: 'Gengar',
           ivs: { hp: 20, attack: 20, defense: 20, specialAttack: 20, specialDefense: 20, speed: 20 } };
         const history = Array.from({ length: 32 }, (_, i) => ({
           ...target, price: 100, id: 'pve-sale-' + i, pokemonId: 'pve-' + i, soldAt: now - (i + 1) * 1000,
         }));
-        const result = PISPricingModel.makeMarket(history, now, PISMarketCore.isOutland)(target);
-        return result?.method === 'briaoale_pve' && result.median === 100 && result.discount === 0.25;
+        const result = PISPricingModel.prepare(history, PISMarketCore.estimate, now)(target);
+        return result?.method === 'coins_comparables' && result.median === 100 && result.discount === 0.25;
       }),
       check('faixa e preço de referência', () => {
         const target = capture('vitrine', [listing]).rows[0];

@@ -22,13 +22,15 @@ const history = (market, value, extra = {}) => Array.from({ length: 35 }, (_, n)
   soldAt: now - (n + 1) * 60000, ...extra,
 }));
 
-test('executa o motor MIT em moedas distintas e calcula o desconto da referência em PvE', () => {
+test('separa as referências em Gemas e Coins e calcula o desconto', () => {
   const data = [...history('orb', 100), ...history('gold', 100_000_000)];
   const estimate = pricing.makeMarket(data, now, core.isOutland);
   assert.equal(estimate(target).method, 'briaoale_pve');
   assert.equal(estimate(target).median, 100);
   assert.equal(estimate(target).discount, 0.25);
-  assert.equal(estimate({ ...target, currency: 'gold', price: 75_000_000 }).median, 100_000_000);
+  const coins = { ...target, currency: 'gold', price: 75_000_000 };
+  assert.equal(estimate(coins), null);
+  assert.equal(pricing.prepare(data, core.estimate, now, estimate)(coins).median, 100_000_000);
   assert.equal(estimate({ ...target, name: 'Trickmaster Gengar' }), null);
 });
 

@@ -17,7 +17,7 @@
         bruto: sale.preco, em: sale.em,
         ficha: { speciesId: sale.speciesId, nome: sale.nome, level: sale.level > 1 ? sale.level : null,
           nota: sale.nota > 0 ? sale.nota : null, potencia: sale.potencia, quality: sale.quality > 0 ? sale.quality : null,
-          formId: sale.formId ?? sale.form, ivs: sale.ivs, ivTotal: sale.ivTotal > 0 ? sale.ivTotal : null, shiny: sale.shiny, tmAoe: sale.aoe, tmElemental: sale.zmove, mega: sale.mega },
+          formId: sale.formId ?? sale.form, natureza: sale.nature ?? sale.natureza, naturezaId: sale.natureId ?? sale.naturezaId, ivs: sale.ivs, ivTotal: sale.ivTotal > 0 ? sale.ivTotal : null, shiny: sale.shiny, tmAoe: sale.aoe, tmElemental: sale.zmove, mega: sale.mega },
       }] };
       const row = core.capture(frame)?.rows[0];
       if (!row || core.isOutland(row)) continue;

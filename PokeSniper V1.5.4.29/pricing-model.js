@@ -37,7 +37,7 @@
     const seen = new Set();
     // Cada exemplar contribui com a venda mais recente. Moedas e classes nunca se cruzam.
     for (const sale of [...sales].sort((a, b) => b.soldAt - a.soldAt)) {
-      if (!(sale.price > 0) || sale.soldAt >= now || sale.soldAt < now - 30 * DAY || sale.shiny == null) continue;
+      if (sale.currency === 'gold' || !(sale.price > 0) || sale.soldAt >= now || sale.soldAt < now - 30 * DAY || sale.shiny == null) continue;
       const profile = describe(sale, outland);
       if (!profile) continue;
       const key = JSON.stringify([sale.currency, sale.shiny, profile.effectsKey]);
@@ -84,7 +84,8 @@
   }
 
   function prepare(sales, baseline, now, estimateMarket) {
-    return target => estimateMarket?.(target) ?? baseline(target, sales, now);
+    return target => target.currency === 'gold' ? baseline(target, sales, now) :
+      estimateMarket?.(target) ?? baseline(target, sales, now);
   }
 
   const api = { makeMarket, prepare };

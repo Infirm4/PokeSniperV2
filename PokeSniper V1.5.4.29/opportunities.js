@@ -57,6 +57,37 @@
       !tokens(config.block).some(tag => tags.includes(tag));
   }
 
+  function approved(row, config, now = Date.now()) {
+    return eligible(row, now) && matches(row, config) && notificationEligible(row, now);
+  }
+
+  let dexNames;
+  function spriteCandidates(row) {
+    const core = typeof module === 'object' && module.exports ? require('./market-core.js') : globalThis.PISMarketCore;
+    const urls = [row.sprite, row.spriteFallback];
+    if ([0, 1].includes(row.shiny) && row.mega !== 1 &&
+        (row.form == null || ['0', 'base', 'normal', 'default'].includes(row.form)) && Array.isArray(globalThis.PI_ESPECIES)) {
+      dexNames ??= new Map(globalThis.PI_ESPECIES.filter(species => species.id > 0 && species.id <= 1025)
+        .map(species => [species.n.toLowerCase(), species.id]));
+      const name = row.name?.trim().replace(/^✨\s*/u, '').replace(/^shiny\s+/i, '').toLowerCase();
+      const dex = dexNames.get(name);
+      if (dex) urls.push(`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${row.shiny ? 'shiny/' : ''}${dex}.png`);
+    }
+    return [...new Set(urls.map(core.safeSprite).filter(Boolean))].slice(0, 2);
+  }
+
+  function mountSprite(img, urls, unavailable = () => img.remove()) {
+    if (!urls.length) return false;
+    let index = 0;
+    img.referrerPolicy = 'no-referrer';
+    img.addEventListener('error', () => {
+      if (++index < urls.length) img.src = urls[index];
+      else unavailable();
+    });
+    img.src = urls[0];
+    return true;
+  }
+
   // Formata o mesmo desconto e os mesmos valores para painel e avisos.
   function presentation(row) {
     const coins = row.currency === 'gold';
@@ -78,7 +109,7 @@
       message: [`${discount} · ${asking}`, range, warning].filter(Boolean).join('\n') };
   }
 
-  const core = { TTL, settings, eligible, key, matches, priceLimit, notificationEligible, presentation };
+  const core = { TTL, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISOpportunities = core;
 })();

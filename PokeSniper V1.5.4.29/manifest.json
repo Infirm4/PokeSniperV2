@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PokeIdle Market Sniper",
-  "version": "1.5.4.28",
+  "version": "1.5.4.29",
   "description": "Censos contínuos sem espera após censo válido, consultas globais ≥2s e backoff adaptativo.",
   "host_permissions": [
     "https://script.google.com/*",
@@ -22,9 +22,11 @@
       ],
       "js": [
         "market-core.js",
+        "opportunities.js",
         "coins-history.js",
         "bridge.js",
-        "market-toast.js"
+        "market-toast.js",
+        "market-badges.js"
       ],
       "run_at": "document_start",
       "world": "ISOLATED"

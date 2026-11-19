@@ -39,6 +39,8 @@
     const power = /^p?([1-5])$/i.exec(String(ficha.potencia ?? '').trim());
     return {
       form: label(ficha.formId ?? ficha.formaId ?? ficha.forma),
+      nature: label(ficha.natureza ?? ficha.nature),
+      natureId: id(ficha.naturezaId ?? ficha.natureId),
       power: power ? Number(power[1]) : null,
       quality: asNonnegative(ficha.quality ?? ficha.qualidade),
       ivTotal: parts.every(value => value != null)
@@ -102,11 +104,9 @@
 
   function listingSprite(row, isShiny) {
     const ficha = row.ficha || {};
+    let market = null;
     for (const source of [ficha, row]) {
-      for (const key of ['sprite', 'icone', 'icon', 'imagem', 'img', 'url']) {
-        const sprite = safeSprite(source[key]);
-        if (sprite) return { sprite, spriteSource: row.spriteSource === 'dex' ? 'dex' : 'market' };
-      }
+      market ??= ['sprite', 'icone', 'icon', 'imagem', 'img', 'url'].map(key => safeSprite(source[key])).find(Boolean) ?? null;
     }
     // O looktype só serve de fallback quando o sufixo confirma o número da Pokédex.
     const look = Number(ficha.looktype ?? row.looktype);
@@ -114,8 +114,15 @@
     const explicit = Number(ficha.dex ?? ficha.dexId ?? ficha.numeroNacional ?? row.dex);
     const number = Number.isInteger(explicit) && explicit >= 1 && explicit <= 1025 ? explicit :
       Number.isInteger(look) && look >= 60001 && look <= 61025 && internalId % 1000 === look % 1000 ? look - 60000 : null;
-    if (!number || isShiny == null) return { sprite: null, spriteSource: null };
-    return { sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${isShiny ? 'shiny/' : ''}${number}.png`, spriteSource: 'dex' };
+    const variant = label(ficha.formId ?? ficha.formaId ?? ficha.forma);
+    const namedVariant = /\b(?:mega|primal|alolan?|galarian?|hisuian?|paldean?|origin|therian)\b/i.test(ficha.nome ?? '');
+    const baseForm = !namedVariant && (variant == null || ['0', 'base', 'normal', 'default'].includes(variant));
+    const dex = number && isShiny != null && baseForm && shiny(ficha.mega) !== 1
+      ? safeSprite(`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${isShiny ? 'shiny/' : ''}${number}.png`)
+      : null;
+    const existingFallback = baseForm && shiny(ficha.mega) !== 1 ? safeSprite(row.spriteFallback) : null;
+    return { sprite: market ?? dex, spriteSource: market ? (row.spriteSource === 'dex' ? 'dex' : 'market') : dex ? 'dex' : null,
+      spriteFallback: market && (dex ?? existingFallback) !== market ? dex ?? existingFallback : null };
   }
 
   // Conserva a identidade do anúncio e a da venda em campos e stores distintos.
@@ -217,9 +224,9 @@
     return rows.map(row => row && normalizeRow(kind, {
       tipo: 'pokemon', id: row.id, pokemonId: row.pokemonId, moeda: row.currency, outland: row.outland,
       preco: row.price, bruto: row.price, em: row.soldAt, listingId: row.listingId,
-      sprite: row.sprite, spriteSource: row.spriteSource, criadoEm: row.postedAt, compravelEm: row.availableAt, expiraEm: row.expiresAt, estado: row.closed,
+      sprite: row.sprite, spriteSource: row.spriteSource, spriteFallback: row.spriteFallback, criadoEm: row.postedAt, compravelEm: row.availableAt, expiraEm: row.expiresAt, estado: row.closed,
       ficha: { speciesId: row.speciesId, nome: row.name, shiny: row.shiny, level: row.level, nota: row.grade,
-        formId: row.form, potencia: row.power, quality: row.quality, ivTotal: row.ivTotal, ivs: row.ivs,
+        formId: row.form, natureza: row.nature, naturezaId: row.natureId, potencia: row.power, quality: row.quality, ivTotal: row.ivTotal, ivs: row.ivs,
         tmAoe: row.aoe, tmElemental: row.zMove, mega: row.mega },
     })).filter(Boolean);
   }
@@ -245,6 +252,91 @@
     return sorted.at(-1).price;
   }
 
+  function coinProfile(target, sale) {
+    for (const field of ['natureId', 'nature']) {
+      if (target[field] != null && sale[field] != null && target[field] !== sale[field]) return null;
+    }
+    if (target.name && sale.name && target.name.toLowerCase() !== sale.name.toLowerCase()) return null;
+    const grade = Math.abs(sale.grade - target.grade);
+    const level = Math.abs(Math.log(sale.level / target.level));
+    let distance = grade / 0.5 + level / 0.5;
+    let close = grade <= 0.5 && level <= Math.log(2) / 2;
+    const fields = [
+      [target.power, sale.power, 1],
+      [target.quality, sale.quality, Math.max(0.01, target.quality * 0.12)],
+      [target.ivTotal, sale.ivTotal, Math.max(5, target.ivTotal * 0.15)],
+      ...Object.keys(statAliases).map(stat => [target.ivs?.[stat], sale.ivs?.[stat], 6]),
+    ];
+    for (const [desired, actual, scale] of fields) {
+      if (!Number.isFinite(desired)) continue;
+      if (!Number.isFinite(actual)) { distance += 0.35; close = false; continue; }
+      const delta = Math.abs(desired - actual) / scale;
+      distance += Math.min(2, delta) / 2;
+      close &&= delta <= 1;
+    }
+    for (const field of ['natureId', 'nature', 'aoe', 'zMove', 'mega']) {
+      if (target[field] != null && sale[field] == null) { distance += 0.3; close = false; }
+    }
+    return { distance, close };
+  }
+
+  const totalWeight = rows => rows.reduce((sum, row) => sum + row.weight, 0);
+  const effective = rows => rows.length
+    ? totalWeight(rows) ** 2 / rows.reduce((sum, row) => sum + row.weight ** 2, 0) : 0;
+
+  function trimOutliers(rows) {
+    if (rows.length < 5) return rows;
+    const weight = totalWeight(rows);
+    const median = Math.log(quantile(rows, weight, 0.5));
+    const deviation = rows.map(({ price, weight }) => ({ price: Math.abs(Math.log(price) - median), weight }))
+      .sort((a, b) => a.price - b.price);
+    const spread = Math.max(Math.log(2), 4.4478 * quantile(deviation, weight, 0.5));
+    return rows.filter(row => Math.abs(Math.log(row.price) - median) <= spread);
+  }
+
+  function estimateCoins(target, sales, now) {
+    const comparable = [];
+    for (const sale of sales) {
+      if (!id(sale.id) || !sameMarket(target, sale) || !compatibleProfile(target, sale) ||
+          !(sale.soldAt >= now - WINDOW_MS && sale.soldAt < now) || !positiveInteger(sale.price) ||
+          !(sale.level > 0 && Number.isFinite(sale.grade)) || (sale.pokemonId && sale.pokemonId === target.pokemonId)) continue;
+      const profile = coinProfile(target, sale);
+      if (!profile) continue;
+      const weight = 2 ** (-(now - sale.soldAt) / (10 * DAY)) * Math.exp(-profile.distance);
+      if (weight >= 0.01) comparable.push({ sale, price: Number(sale.price), weight, close: profile.close });
+    }
+    comparable.sort((a, b) => Number(b.close) - Number(a.close) || b.weight - a.weight || b.sale.soldAt - a.sale.soldAt);
+    const salesSeen = new Set();
+    const pokemonSeen = new Set();
+    const distinct = comparable.filter(({ sale }) => {
+      const tx = id(sale.id), pokemon = id(sale.pokemonId);
+      if (salesSeen.has(tx) || (pokemon && pokemonSeen.has(pokemon))) return false;
+      salesSeen.add(tx);
+      if (pokemon) pokemonSeen.add(pokemon);
+      return true;
+    }).sort((a, b) => a.price - b.price);
+    const similar = distinct.filter(row => row.close);
+    const close = trimOutliers(similar);
+    const direct = close.length >= 5 && effective(close) >= 4 &&
+      close.filter(row => row.sale.pokemonId).length >= 5 &&
+      [target.power, target.quality, target.ivTotal].every(Number.isFinite);
+    const rows = direct ? close : trimOutliers(distinct);
+    const count = rows.length;
+    const stats = { count, independentCount: count, effectiveCount: effective(rows),
+      closeCount: close.length, outlierCount: (direct ? similar.length : distinct.length) - count };
+    if (count < 5 || stats.effectiveCount < 4) return { status: 'insufficient_sales', ...stats };
+    const weight = totalWeight(rows);
+    const lower = quantile(rows, weight, 0.25);
+    const median = quantile(rows, weight, 0.5);
+    const upper = quantile(rows, weight, 0.75);
+    return { status: 'estimated', method: 'coins_comparables', ...stats, lower, median, upper,
+      discount: 1 - target.price / median, alertSupported: direct && upper / lower <= 2,
+      comparables: [...rows].sort((a, b) => b.weight - a.weight).slice(0, 5).map(({ sale }) => ({
+        id: sale.id, price: sale.price, soldAt: sale.soldAt, grade: sale.grade, level: sale.level,
+        power: sale.power, speed: sale.ivs?.speed,
+      })) };
+  }
+
   // Baseline conservadora: mesma espécie, moeda e Shiny, com meia-vida de 10 dias.
   // Nota e nível só participam quando presentes dos dois lados. As escalas são
   // parâmetros iniciais para backtest e a faixa descreve os comparáveis observados.
@@ -253,6 +345,7 @@
     if (target.shiny == null || !(target.level > 0) || target.grade == null) {
       return { status: 'incomplete_profile' };
     }
+    if (target.currency === 'gold') return estimateCoins(target, sales, now);
     const comparable = sales.filter(sale =>
       sameMarket(target, sale) && compatibleProfile(target, sale) && sale.soldAt >= now - WINDOW_MS && sale.soldAt < now &&
       sale.price > 0 && sale.level > 0 && sale.grade != null)

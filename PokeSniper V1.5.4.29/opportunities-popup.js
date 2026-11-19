@@ -102,7 +102,7 @@ function card(row, showLiquidity = false) {
   item.append(title, text('div', `Anúncio #${row.id} · Nv. ${row.level ?? '?'} · Nota ${row.grade ?? '?'} · observado há ${minutes} min`, 'offer-meta'));
   if (estimate?.status === 'estimated') {
     const method = estimate.method === 'briaoale_public' ? 'histórico público · Briaoale' :
-      estimate.method === 'briaoale_pve' ? 'motor de PvE · histórico local' : 'referência básica';
+      estimate.method === 'coins_comparables' ? 'comparáveis em Coins' : estimate.method === 'briaoale_pve' ? 'motor de PvE · histórico local' : 'referência básica';
     const limit = PISOpportunities.priceLimit(row, config);
     const sample = ['briaoale_pve', 'briaoale_public'].includes(estimate.method)
       ? `${estimate.profileSales} vendas próximas da espécie · ${estimate.marketCount} na base do modelo`
@@ -149,6 +149,7 @@ function card(row, showLiquidity = false) {
 function opportunityCard(row) {
   const item = document.createElement('li');
   const details = document.createElement('details');
+  details.dataset.offerKey = row.key;
   const summary = document.createElement('summary');
   summary.className = 'offer-title';
   const offer = PISOpportunities.presentation(row);
@@ -158,16 +159,10 @@ function opportunityCard(row) {
     text('span', `${offer.discount} · ${offer.asking}`, 'opportunity-price'));
   if (offer.range) block.append(text('span', offer.range, 'offer-meta'));
   if (offer.warning) block.append(text('span', offer.warning, 'offer-meta'));
-  const sprite = PISMarketCore.safeSprite(row.sprite);
-  if (sprite) {
-    const img = document.createElement('img');
-    img.className = 'opportunity-sprite';
-    img.alt = '';
-    img.referrerPolicy = 'no-referrer';
-    img.addEventListener('error', () => img.remove(), { once: true });
-    img.src = sprite;
-    summary.append(img);
-  }
+  const sprite = document.createElement('img');
+  sprite.alt = '';
+  sprite.className = 'opportunity-sprite';
+  if (PISOpportunities.mountSprite(sprite, PISOpportunities.spriteCandidates(row))) summary.append(sprite);
   summary.append(block);
   details.append(summary);
   details.addEventListener('toggle', () => {
@@ -203,17 +198,22 @@ async function refresh() {
       PISMarketStore.recentOpportunities(config), PISMarketStore.diagnostics(config),
     ]);
     if (request !== generation) return;
-    const visible = rows.slice(0, 100);
+    const visible = rows.filter(row => PISOpportunities.approved(row, config)).slice(0, 100);
     const signature = JSON.stringify([config, visible]);
-    // Não derruba uma simulação aberta durante a atualização automática.
-    if (signature !== rendered && !offers.querySelector('details[open]')) {
-      offers.replaceChildren(...visible.map(opportunityCard));
+    // Uma oferta que deixou de atender aos filtros sai mesmo se o cartão estiver aberto.
+    if (signature !== rendered) {
+      const expanded = new Set([...offers.querySelectorAll('details[data-offer-key][open]')].map(card => card.dataset.offerKey));
+      offers.replaceChildren(...visible.map(row => {
+        const card = opportunityCard(row);
+        if (expanded.has(row.key)) card.querySelector('details').open = true;
+        return card;
+      }));
       rendered = signature;
     }
     const { pisMarketMonitor } = await chrome.storage.session.get('pisMarketMonitor');
     if (request !== generation) return;
-    panelStatus.textContent = rows.length
-      ? `${visible.length} de ${rows.length} oportunidades dos últimos 10 min. Confira a oferta no jogo.`
+    panelStatus.textContent = visible.length
+      ? `${visible.length} oportunidades dos últimos 10 min. Confira a oferta no jogo.`
       : !stats.listings ? (pisMarketMonitor?.state === 'varrendo'
         ? 'Aguardando as primeiras páginas do mercado.'
         : pisMarketMonitor?.state === 'aguardando_socket' ? 'Aguardando a conexão do PokéIdle.'
@@ -322,13 +322,14 @@ coinsImport.addEventListener('change', async () => {
 
 const runDiagnostics = document.querySelector('#run-diagnostics');
 const copyDiagnostics = document.querySelector('#copy-diagnostics');
+const downloadDiagnostics = document.querySelector('#download-diagnostics');
 const reportBox = document.querySelector('#diagnostic-report');
 const testStatus = document.querySelector('#test-status');
 
 
 runDiagnostics.addEventListener('click', async () => {
   runDiagnostics.disabled = runBacktest.disabled = true;
-  copyDiagnostics.disabled = true;
+  copyDiagnostics.disabled = downloadDiagnostics.disabled = true;
   testStatus.textContent = 'Testando os dois avisos e lendo o banco local…';
   try {
     const settings = config ?? PISOpportunities.settings();
@@ -339,7 +340,7 @@ runDiagnostics.addEventListener('click', async () => {
     const trace = Promise.resolve().then(() => chrome.storage.session.get(PISHistoryTrace.KEY))
       .then(value => value[PISHistoryTrace.KEY] ?? []).catch(() => 'indisponível');
     // Espera os recibos desta execução; o worker os guarda mesmo se o painel fechar.
-    const sourceCheck = chrome.storage.local.get('pisPublicGemsCheck').catch(() => ({}));
+    const sourceCheck = chrome.storage.local.get(['pisPublicGemsCheck', 'pisMarketEvents']).catch(() => ({}));
     const testResults = Promise.all(['PIS_TEST_DESKTOP_TOAST', 'PIS_TEST_GAME_TOAST'].map(async type => {
       try {
         const response = await chrome.runtime.sendMessage({ type });
@@ -354,6 +355,7 @@ runDiagnostics.addEventListener('click', async () => {
     const report = {
       versão: chrome.runtime.getManifest().version,
       testes: tests,
+      log_do_mercado: publicSource.pisMarketEvents ?? [],
       banco: database,
       histórico_na_sessão: history,
       atualização_coins: { recentes: automatic['pisCoinsHistory:global'], espécie: automatic['pisCoinsHistory:espécie'],
@@ -375,7 +377,7 @@ runDiagnostics.addEventListener('click', async () => {
     };
     reportBox.value = JSON.stringify(report, null, 2);
     reportBox.hidden = false;
-    copyDiagnostics.disabled = false;
+    copyDiagnostics.disabled = downloadDiagnostics.disabled = false;
     const passed = tests.filter(test => test.resultado === 'ok').length;
     testStatus.textContent = `${passed}/${tests.length} testes locais passaram. Copie o resultado para compartilhar.`;
   } catch {
@@ -393,16 +395,26 @@ document.querySelector('#test-purchase-review').addEventListener('click', async 
 const runBacktest = document.querySelector('#run-backtest');
 runBacktest.addEventListener('click', async () => {
   runBacktest.disabled = runDiagnostics.disabled = true;
-  copyDiagnostics.disabled = true;
+  copyDiagnostics.disabled = downloadDiagnostics.disabled = true;
   testStatus.textContent = 'Separando treino e teste por data no banco local…';
   try {
     const result = await PISMarketStore.backtest(config ?? PISOpportunities.settings());
     reportBox.value = JSON.stringify(result, null, 2);
     reportBox.hidden = false;
-    copyDiagnostics.disabled = false;
+    copyDiagnostics.disabled = downloadDiagnostics.disabled = false;
     testStatus.textContent = 'Teste de precisão concluído.';
   } catch { testStatus.textContent = 'Falha ao avaliar o histórico local.'; }
   finally { runBacktest.disabled = runDiagnostics.disabled = false; }
+});
+
+downloadDiagnostics.addEventListener('click', () => {
+  if (!reportBox.value) return;
+  const url = URL.createObjectURL(new Blob([reportBox.value], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'pokesniper-diagnostico-' + chrome.runtime.getManifest().version + '.json';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
 copyDiagnostics.addEventListener('click', async () => {

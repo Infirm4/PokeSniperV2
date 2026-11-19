@@ -103,7 +103,7 @@
     });
   }
 
-  function show(title, message, test, sprite, offer) {
+  function show(title, message, test, sprite, offer, spriteFallback) {
     if (!mount()) return false;
     const key = JSON.stringify([title, message, test, sprite, offer?.id]);
     if (visible.has(key)) {
@@ -129,9 +129,10 @@
       const img = document.createElement('img');
       img.className = 'sprite';
       img.alt = '';
-      img.referrerPolicy = 'no-referrer';
-      img.addEventListener('error', () => { img.remove(); element.classList.remove('with-sprite'); }, { once: true });
-      img.src = sprite;
+      PISOpportunities.mountSprite(img, [sprite, spriteFallback].filter(Boolean), () => {
+        img.remove();
+        element.classList.remove('with-sprite');
+      });
       element.classList.add('with-sprite');
       element.append(img);
     }
@@ -163,7 +164,7 @@
     if (request?.type !== 'PIS_MARKET_TOAST') return false;
     const title = typeof request.title === 'string' ? request.title.trim().slice(0, 120) : '';
     const message = typeof request.message === 'string' ? request.message.trim().slice(0, 400) : '';
-    reply({ ok: Boolean(title && message && show(title, message, request.test === true, typeof request.sprite === 'string' ? request.sprite : null, PISMarketCore.purchaseOffer(request.offer))) });
+    reply({ ok: Boolean(title && message && show(title, message, request.test === true, typeof request.sprite === 'string' ? request.sprite : null, PISMarketCore.purchaseOffer(request.offer), PISMarketCore.safeSprite(request.spriteFallback))) });
     return false;
   });
 })();

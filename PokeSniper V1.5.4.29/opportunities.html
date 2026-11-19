@@ -18,6 +18,7 @@
   <script defer src="market-smoke.js"></script>
   <script defer src="history-trace.js"></script>
   <script defer src="public-gems.js"></script>
+  <script defer src="public-gems-converter.js"></script>
   <script defer src="coins-history.js"></script>
   <script defer src="market-backtest.js"></script>
   <script defer src="market-store.js"></script>
@@ -64,6 +65,17 @@
     <ul id="analysis-result" aria-live="polite"></ul>
   </details>
   <details>
+    <summary>Converter Coins e Gemas</summary>
+    <form id="currency-converter">
+      <label>Converter de <select name="from"><option value="gold">Coins</option><option value="orb">Gemas</option></select></label>
+      <label>Valor <input name="amount" type="number" min="0" step="any" required></label>
+      <label>Coins por Gema <input name="rate" type="number" min="0" step="any" required></label>
+      <button>Converter</button>
+      <output id="conversion-result" aria-live="polite"></output>
+      <small>O valor convertido é informativo. Os alertas usam o histórico da moeda original.</small>
+    </form>
+  </details>
+  <details>
     <summary>Diagnóstico da versão</summary>
     <button type="button" id="copy-smart-coins">Copiar cache de Coins do Smart Market</button>
     <p class="offer-meta">Também é possível importar um backup JSON de outro perfil.</p>
@@ -76,6 +88,7 @@
       <button type="button" id="test-purchase-review">Testar revisão de compra</button>
       <button type="button" id="run-backtest">Testar precisão com vendas locais</button>
       <button type="button" id="copy-diagnostics" disabled>Copiar resultado</button>
+      <button type="button" id="download-diagnostics" disabled>Baixar diagnóstico (.json)</button>
     </div>
     <p id="test-status" class="offer-meta" role="status"></p>
     <textarea id="diagnostic-report" aria-label="Resultado do diagnóstico" rows="10" readonly hidden></textarea>

@@ -11,9 +11,11 @@
     const interval = pisPublicGemsCheck?.ok ? REFRESH_MS : RETRY_MS;
     if (Date.now() - (pisPublicGemsCheck?.at ?? 0) < interval) return;
     const at = Date.now();
+    let stage = 'rede_ou_cors';
     try {
       const response = await fetch(SOURCE, { credentials: 'omit', redirect: 'error',
         cache: 'no-cache', signal: AbortSignal.timeout(25000) });
+      stage = response.ok ? 'conteúdo_inválido' : 'erro_http';
       if (!response.ok || Number(response.headers.get('content-length')) > LIMIT) throw new Error('download');
       const reader = response.body?.getReader();
       if (!reader) throw new Error('download');
@@ -27,11 +29,13 @@
         data += decoder.decode(value, { stream: true });
       }
       const snapshot = JSON.parse(data + decoder.decode());
+      if (!PISPublicGems.validateContent(snapshot)) throw new Error('Snapshot inválido');
+      stage = 'falha_no_cache';
       const sourceAt = await PISMarketStore.savePublicGems(snapshot);
       await chrome.storage.local.set({ pisPublicGemsCheck: { at, ok: true, sourceAt, attempted: snapshot.geradoEm } });
       PISOpportunityAlerts.wake();
     } catch (error) {
-      await chrome.storage.local.set({ pisPublicGemsCheck: { at, ok: false, sourceAt: pisPublicGemsCheck?.sourceAt, error: error.message } });
+      await chrome.storage.local.set({ pisPublicGemsCheck: { at, ok: false, sourceAt: pisPublicGemsCheck?.sourceAt, error: error.name === 'TimeoutError' || error.name === 'AbortError' ? 'tempo_esgotado' : stage } });
       // O último snapshot válido continua disponível até vencer sua janela de frescor.
     }
   }

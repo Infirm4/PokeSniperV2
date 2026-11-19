@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.28
+// PokeIdle Market Sniper v1.5.4.29
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.28'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.29'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -1590,10 +1590,16 @@
       Number(j.seq) === seq && (j.moeda == null || j.moeda === 'gold') &&
       (j.pagina == null || Number(j.pagina) === pagina) && Array.isArray(j.linhas), 12000, allowed);
     coinHistorySeq = null;
-    if (page.linhas.length > core.MAX_BATCH) throw new Error('Página acima do limite de gravação');
-    const rows = core.capture({ ...page, moeda: 'gold' })?.rows.filter(row => row.currency === 'gold' &&
-      (!name || row.name?.toLowerCase() === name.toLowerCase())) ?? [];
-    await persistHistoryPage(seq, page, rows);
+    const rows = [];
+    const chunks = Math.max(1, Math.ceil(page.linhas.length / core.MAX_BATCH));
+    for (let index = 0; index < chunks; index++) {
+      const offset = index * core.MAX_BATCH;
+      const partial = { ...page, moeda: 'gold', linhas: page.linhas.slice(offset, offset + core.MAX_BATCH) };
+      const captured = core.capture(partial)?.rows.filter(row => row.currency === 'gold' &&
+        (!name || row.name?.toLowerCase() === name.toLowerCase())) ?? [];
+      await persistHistoryPage(index ? ++st.seq : seq, partial, captured);
+      rows.push(...captured);
+    }
     const pageTimes = page.linhas.filter(row => row?.tipo === 'pokemon' && (row.moeda == null || row.moeda === 'gold'))
       .map(row => Number(row.em)).filter(at => Number.isSafeInteger(at) && at >= 1e12);
     const ids = page.linhas.map(row => row?.id).filter(id => id != null).map(String);
@@ -3467,26 +3473,31 @@
       densidade,deslocamentoPct,duracaoMs:Math.max(0,nowSrv()-inicio)};
   }
 
-  // Primeiro acompanha lançamentos; o censo de Coins continua na mesma fila de rede.
-  let recentPage = 0;
+  // Alterna a primeira página e as páginas seguintes das duas moedas.
+  let recentTurn = 0;
   let recentBusy = false;
-  let nextGemPage = 1;
+  const sweepByCurrency = { gold: { page: 1, fallbackUntil: 0 }, orb: { page: 1, fallbackUntil: 0 } };
   setInterval(async () => {
     if (recentBusy || !monitorAtivo() || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) return;
     recentBusy = true;
-    const index = recentPage++ % 3;
+    const turn = recentTurn++ % 4;
+    const currency = turn % 2 ? 'orb' : 'gold';
+    const sweep = sweepByCurrency[currency];
+    const pageNumber = turn < 2 ? 0 : sweep.page;
+    const order = Date.now() < sweep.fallbackUntil ? 'baratos' : 'recentes';
     try {
-      if (index < 2) await consultarPaginaRastreador(0, index ? 'orb' : 'gold', 'recentes');
-      else {
-        const page = await consultarPaginaRastreador(nextGemPage, 'orb', 'recentes');
-        const size = Number(page.porPagina) || page.linhas.length;
-        const total = size > 0 && Number.isFinite(Number(page.total)) ? Math.ceil(Number(page.total) / size) : null;
-        nextGemPage = !page.linhas.length || (total != null && nextGemPage + 1 >= total)
-          ? 1 : nextGemPage + 1;
+      const page = await consultarPaginaRastreador(pageNumber, currency, order);
+      const size = Number(page.porPagina) || page.linhas.length;
+      const total = size > 0 && Number.isSafeInteger(Number(page.total)) ? Math.ceil(Number(page.total) / size) : null;
+      if (pageNumber > 0) sweep.page = !page.linhas.length || page.temMais === false ||
+        (total != null && pageNumber + 1 >= total) ? 1 : pageNumber + 1;
+    } catch (error) {
+      if (order === 'recentes' && ['sem_resposta', 'recusada'].includes(error.queryStatus)) {
+        sweep.fallbackUntil = Date.now() + 10 * 60000;
+        sweep.page = 1;
       }
-    }
-    catch (error) { dbg('Ofertas recentes:', error.message); }
-    finally { recentBusy = false; }
+      dbg('Ofertas do mercado:', error.message);
+    } finally { recentBusy = false; }
   }, 12000);
 
   (async function coletaContinua() {

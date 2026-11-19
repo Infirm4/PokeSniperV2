@@ -5,7 +5,7 @@ const PIS_HOST = /^https:\/\/(?:[a-z0-9-]+\.)?pokeidle\.io(?:\/|$)/i;
 
 importScripts('vendor/briaoale/especies.js', 'vendor/briaoale/pve-power.js', 'vendor/briaoale/market-bonuses.js', 'vendor/briaoale/central.js', 'vendor/briaoale/nota.js', 'vendor/briaoale/pve-pricing.js');
 importScripts('market-core.js', 'pricing-model.js', 'liquidity.js', 'opportunities.js', 'market-store.js',
-  'history-trace.js', 'public-gems.js');
+  'history-trace.js', 'public-gems.js', 'market-event-log.js');
 
 const gameTabKey = 'marketGameTab';
 let lastGameTab;
@@ -30,11 +30,11 @@ const PISGameTab = {
       return true;
     } catch { return false; }
   },
-  async show(title, message, test = false, sprite = null, offer = null) {
+  async show(title, message, test = false, sprite = null, offer = null, spriteFallback = null) {
     const tabId = lastGameTab ?? (await chrome.storage.session.get(gameTabKey))[gameTabKey];
     if (!Number.isSafeInteger(tabId)) return false;
     try {
-      const reply = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_TOAST', title, message, test, sprite: PISMarketCore.safeSprite(sprite), offer }, { frameId: 0 });
+      const reply = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_TOAST', title, message, test, sprite: PISMarketCore.safeSprite(sprite), offer, spriteFallback: PISMarketCore.safeSprite(spriteFallback) }, { frameId: 0 });
       return reply?.ok === true;
     } catch { return false; }
   }
@@ -44,6 +44,10 @@ importScripts('opportunities-worker.js', 'public-gems-worker.js');
 PISMarketStore.initialize().catch(error => {
   console.warn('[PIS] Não foi possível iniciar o banco de mercado:', error.message);
 });
+
+function recordMarket(route, status, page) {
+  globalThis.PISMarketEventLog?.record(chrome.storage.local, route, status, page);
+}
 
 let listingPending = 0;
 let salePending = 0;
@@ -106,7 +110,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
           ok = await PISGameTab.show('PokeSniper · Aviso de teste', 'Este aviso aparece dentro da aba do PokéIdle.', true);
         } else {
           await chrome.notifications.create('pis:test', {
-            type: 'basic', iconUrl: chrome.runtime.getURL('opportunity-icon.png'),
+            type: 'basic', iconUrl: chrome.runtime.getURL('opportunity-placeholder.png'),
             title: 'PokeSniper · Teste de notificação', message: 'Aviso de teste enviado ao Chrome.',
           });
           ok = true;
@@ -116,6 +120,23 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
       await chrome.storage.local.set({ [key]: { ok, at: Date.now() } });
       reply({ ok });
     })().catch(() => reply({ ok: false, storageError: true }));
+    return true;
+  }
+  if (req?.type === 'PIS_MARKET_BADGES') {
+    if (!sender.tab || !PIS_HOST.test(String(sender.url || sender.tab.url || '')) ||
+        !Array.isArray(req.offers) || req.offers.length > 100) return false;
+    const candidates = req.offers.filter(row => ['gold', 'orb'].includes(row?.currency) &&
+      typeof row.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(row.id) &&
+      Number.isSafeInteger(row.price) && row.price > 0);
+    (async () => {
+      const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
+      const rows = await PISMarketStore.marketBadges(candidates, PISOpportunities.settings(opportunitySettings));
+      return rows.map(row => {
+        const { discount, asking } = PISOpportunities.presentation(row);
+        return { id: row.id, currency: row.currency, price: row.price, discount, asking,
+          sprites: PISOpportunities.spriteCandidates(row) };
+      });
+    })().then(offers => reply({ offers }), () => reply({ offers: [] }));
     return true;
   }
   const history = req?.type === 'PIS_MARKET_HISTORY_EVENT';
@@ -131,6 +152,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     const query = { status: req.status, at: Date.now(),
       page: Number.isSafeInteger(req.page) && req.page >= 0 ? req.page : null,
       order: ['recentes', 'baratos'].includes(req.order) ? req.order : null };
+    recordMarket(req.route, query.status, query.page);
     chrome.storage.session.set({ ['pisMarketQuery:' + req.route]: query })
       .then(() => reply({ ok: true }), () => reply({ ok: false }));
     return true;
@@ -145,6 +167,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   if (req.type === 'PIS_MARKET_MONITOR') {
     if (!['aguardando_socket', 'rastreador_desligado', 'recuo', 'varrendo', 'falha_ou_recuo'].includes(req.state)) return false;
+    recordMarket('monitor', req.state);
     chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now(),
       socket: ['abertura', 'envio do jogo', 'tráfego', 'estado'].includes(req.socket) ? req.socket : null } })
       .then(() => reply({ ok: true }), () => reply({ ok: false }));
@@ -180,10 +203,14 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   const isSale = kind === 'sale';
   // Reserva vagas para páginas de histórico durante um censo da vitrine.
   const full = isSale ? salePending >= 4 : listingPending >= 16;
-  if (!rows.length || full) {
-    const status = rows.length ? 'fila_cheia' : 'sem_registros_validos';
+  const route = history ? 'history' : req.currency;
+  const page = history ? req.trace?.page : req.page;
+  const invalidHistory = history && Array.isArray(req.rows) && req.rows.length !== rows.length;
+  if (!rows.length || full || invalidHistory) {
+    const status = invalidHistory ? 'lote_inválido' : rows.length ? 'fila_cheia' : 'sem_registros_validos';
+    recordMarket(route, status, page);
     Promise.all([track({ status, accepted: rows.length }), pageReceipt(status, rows.length)])
-      .then(() => reply({ ok: (history || req.automatic === true) && !rows.length,
+      .then(() => reply({ ok: !invalidHistory && (history || req.automatic === true) && !rows.length,
         error: rows.length ? 'fila local cheia' : 'lote inválido' }));
     return true;
   }
@@ -191,10 +218,16 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   else listingPending++;
   PISMarketStore.ingest(kind, rows)
     .then(
-      stats => Promise.all([track({ status: 'gravado', accepted: rows.length, ...stats }), pageReceipt('gravado', rows.length)])
-        .then(() => { reply({ ok: true }); PISOpportunityAlerts.wake(); }),
-      error => Promise.all([track({ status: 'falha_na_gravação', accepted: rows.length }), pageReceipt('falha_na_gravação', rows.length)])
-        .then(() => reply({ ok: false, error: String(error.message).slice(0, 300) })),
+      stats => {
+        recordMarket(route, stats.conflicts ? 'conflito_de_transação' : 'gravado', page);
+        return Promise.all([track({ status: 'gravado', accepted: rows.length, ...stats }), pageReceipt('gravado', rows.length)])
+          .then(() => { reply({ ok: true }); PISOpportunityAlerts.wake(); });
+      },
+      error => {
+        recordMarket(route, 'falha_na_gravação', page);
+        return Promise.all([track({ status: 'falha_na_gravação', accepted: rows.length }), pageReceipt('falha_na_gravação', rows.length)])
+          .then(() => reply({ ok: false, error: String(error.message).slice(0, 300) }));
+      },
     )
     .finally(() => { if (isSale) salePending--; else listingPending--; });
   return true;

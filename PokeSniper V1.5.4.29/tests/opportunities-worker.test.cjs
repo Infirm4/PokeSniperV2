@@ -73,7 +73,7 @@ test('tenta a sprite verificada nos dois canais e recupera o ícone fixo se o Ch
   });
   await alerts.wake();
   assert.match(notices[0].iconUrl, /^data:image\/png;base64,/);
-  assert.equal(notices[1].iconUrl, 'opportunity-icon.png');
+  assert.equal(notices[1].iconUrl, 'opportunity-placeholder.png');
   assert.equal(game[3], sprite);
   assert.equal(notices[0].message, '21,5% de desconto · 78,5 Mi Coins\nFaixa justa estimada · 90–120 Mi Coins');
 });

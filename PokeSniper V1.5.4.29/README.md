@@ -1,4 +1,37 @@
-# PokeIdle Market Sniper (v1.5.4.28)
+# PokeIdle Market Sniper (v1.5.4.29)
+
+## Monitoramento e precificação
+
+Com **Avisos dentro do jogo e no Chrome** ativo e o jogo conectado, o Sniper
+acompanha as duas moedas pela conexão do jogo, incluindo o histórico anterior
+de Coins. Os limites de consulta e o recuo do servidor continuam valendo.
+
+- **Coins:** as transações confirmadas ficam separadas por moeda e ID de venda.
+  O ID do exemplar ajuda a deduplicar os comparáveis. O cálculo considera
+  espécie, forma, Shiny, nível, Nota, Potência, Qualidade, IVs e Nature conforme
+  os campos disponíveis, com menor peso para vendas mais antigas. Extremos são
+  filtrados na avaliação. Histórico incompleto pode fornecer uma referência
+  exploratória. Só referências com suporte suficiente podem gerar alertas.
+- **Gemas:** a cópia pública JSON do Briaoale fica em armazenamento separado e
+  é validada antes de substituir o último snapshot. O conversor aceita uma
+  cotação informada em Coins por Gema. A cotação não entra no cálculo do desconto.
+- **Avisos:** a porcentagem é calculada com a referência na moeda do anúncio.
+  O painel e os selos de vitrine só exibem ofertas que passam pelo filtro.
+  A sprite do jogo tem precedência. Para a forma base identificada, o fallback
+  respeita a variante Shiny. No Chrome, o último fallback é um ícone neutro.
+
+## Diagnóstico desta versão
+
+Deixe o jogo conectado com o Mercado fechado, moeda **Todas**, desconto mínimo
+**0%** e avisos ativos por cinco minutos. Execute **Testar avisos e gerar relatório**.
+**Baixar diagnóstico (.json)** exporta o estado da coleta e até 100 eventos
+agregados, sem nomes, IDs de vendas ou conteúdo bruto das respostas. O arquivo
+pode ser enviado ao suporte manualmente. Em seguida, abra o Mercado e confira
+se o selo e a sprite permanecem corretos quando a vitrine atualiza.
+
+O teste local roda com `node --test tests/*.test.cjs`. O Apps Script mantém a
+mesma implantação.
+
 
 O monitor reconhece a conexão do PokéIdle quando ela abre ou quando o jogo
 envia dados por uma conexão que já estava aberta. O diagnóstico mostra como
