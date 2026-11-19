@@ -1,0 +1,32 @@
+POKEIDLE MARKET SNIPER v1.4.4 - CORREÇÃO DE ENVIO SHEETS
+
+O QUE MUDOU
+- A página do PokeIdle deixa de tentar enviar diretamente para o Google.
+- bridge.js (ISOLATED) comunica-se com o service worker background.js.
+- Só considera enviado quando o Apps Script devolve JSON com ok:true.
+- Falhas preservam os registros pendentes, e o Sniper tenta de novo 30 s depois.
+- Todas as outras regras de compra e rastreamento foram mantidas.
+
+COMO INSTALAR
+1. Faça backup da pasta atual da extensão.
+2. Extraia os 4 arquivos manifest.json, sniper.js, bridge.js e background.js NA MESMA PASTA.
+3. Substitua o manifest.json e sniper.js anteriores.
+4. Chrome: chrome://extensions > Modo do desenvolvedor > Atualizar (ícone de recarregar).
+   Se a extensão antiga não estiver carregada como pasta, use "Carregar sem compactação"
+   e escolha a pasta extraída (NÃO selecione o ZIP).
+5. Confirme a permissão para os dois domínios script.google.com e script.googleusercontent.com.
+6. Recarregue o PokeIdle (F5). O rastreador funciona com o botão Ligar desligado.
+7. Aguarde um lote novo e verifique a aba "eventos" e "Sheet" de sua planilha manualmente.
+
+APPS SCRIPT
+- NÃO é preciso trocar o código já instalado da v1.4.3.
+- A implantação da Web App deve usar "Executar como: eu" e acesso "Qualquer pessoa".
+- O Apps Script precisa estar publicado na URL /exec indicada no background.js.
+- Se aparecer erro HTTP ou JSON, o Sniper mostrará detalhes no painel/console.
+
+SEGURANÇA
+- Não é necessário dar acesso do Chrome à sua conta Google, apenas permissão
+  de rede da extensão para o endpoint publicado do Apps Script.
+- Como a implantação pública aceita solicitações, avalie usar validação de token
+  no Apps Script no futuro para impedir envios não autorizados.
+- Nenhuma conta, planilha ou site foi acessado durante a construção desses arquivos.
