@@ -210,9 +210,14 @@ async function refresh() {
       offers.replaceChildren(...visible.map(opportunityCard));
       rendered = signature;
     }
+    const { pisMarketMonitor } = await chrome.storage.session.get('pisMarketMonitor');
+    if (request !== generation) return;
     panelStatus.textContent = rows.length
       ? `${visible.length} de ${rows.length} oportunidades dos últimos 10 min. Confira a oferta no jogo.`
-      : 'Nenhuma oportunidade recente atende aos filtros. A vitrine e a Tabela de preços alimentam o painel.';
+      : !stats.listings ? (pisMarketMonitor?.state === 'varrendo'
+        ? 'Aguardando as primeiras páginas do mercado.'
+        : 'Sem páginas recentes. Deixe os avisos ligados e o PokéIdle aberto e conectado.')
+        : 'Nenhuma oportunidade recente atende aos filtros.';
     diagnostics.textContent = `${stats.listings} anúncios recentes · ${stats.sales} vendas no banco · ${stats.detailed} avaliados pelo perfil · ${stats.noEstimate} sem avaliação · ${stats.price} acima do preço de referência · ${stats.filters} barrados pelos filtros · ${stats.matched} oportunidades. Notificações ${config.notify ? 'ligadas' : 'desligadas'} · ${stats.pending} pendentes · ${stats.held} retidas · ${stats.sent} enviadas (${stats.sentInGame} no jogo · ${stats.sentDesktop} aceitas pelo Chrome) · ${stats.failed} com falha.`;
   } catch (error) {
     if (request === generation) panelStatus.textContent = 'Não foi possível ler as oportunidades. ' + error.message;
@@ -341,7 +346,7 @@ runDiagnostics.addEventListener('click', async () => {
           result: response ? (response.storageError ? 'falha ao salvar o teste' : null) : 'sem resposta' };
       } catch { return { ok: false, at: Date.now(), result: 'sem resposta' }; }
     }));
-    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie', 'pisCoinsHistory:backfill']).catch(() => ({}));
+    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisMarketPage:gold', 'pisMarketPage:orb', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie', 'pisCoinsHistory:backfill']).catch(() => ({}));
     const [notificationPermission, database, alerts, history, [desktopTest, gameTest], automatic, publicSource] =
       await Promise.all([permission, snapshot, pipeline, trace, testResults, monitor, sourceCheck]);
     const tests = PISMarketSmoke.run();
@@ -353,7 +358,8 @@ runDiagnostics.addEventListener('click', async () => {
       atualização_coins: { recentes: automatic['pisCoinsHistory:global'], espécie: automatic['pisCoinsHistory:espécie'],
         histórico_anterior: automatic['pisCoinsHistory:backfill'] },
       fonte_pública_de_gemas: publicSource.pisPublicGemsCheck ?? null,
-      varredura_automática: { estado: automatic.pisMarketMonitor ?? null, última_página: automatic.pisMarketAutomaticPage ?? null },
+      varredura_automática: { estado: automatic.pisMarketMonitor ?? null, última_página: automatic.pisMarketAutomaticPage ?? null,
+        coins: automatic['pisMarketPage:gold'] ?? null, gemas: automatic['pisMarketPage:orb'] ?? null },
       alertas: {
         ...alerts,
         notificações_ativadas: settings.notify,
@@ -377,7 +383,7 @@ runDiagnostics.addEventListener('click', async () => {
 document.querySelector('#test-purchase-review').addEventListener('click', async () => {
   try {
     const result = await chrome.runtime.sendMessage({ type: 'PIS_TEST_PURCHASE_REVIEW' });
-    testStatus.textContent = result?.ok ? 'Simulação aberta no PokéIdle.' : 'Abra e recarregue o PokéIdle.';
+    testStatus.textContent = result?.ok ? 'Simulação aberta no PokéIdle.' : 'A aba do jogo não confirmou a revisão. Recarregue o PokéIdle e tente novamente.';
   } catch { testStatus.textContent = 'Revisão de teste indisponível.'; }
 });
 

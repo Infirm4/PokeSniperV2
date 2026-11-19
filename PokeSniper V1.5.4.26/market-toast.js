@@ -83,11 +83,24 @@
     visible.delete(key);
   }
 
-  function review(value, demo = false) {
+  async function review(value, demo = false) {
     const offer = PISMarketCore.purchaseOffer(value);
     if (!offer) return false;
-    window.postMessage({ source: 'PIS_BRIDGE', type: 'REVIEW_POKEMON', offer, demo }, location.origin);
-    return true;
+    const requestId = crypto.randomUUID();
+    return new Promise(resolve => {
+      const receive = event => {
+        if (event.source === window && event.origin === location.origin && event.data?.source === 'PIS_MAIN' &&
+            event.data.type === 'REVIEW_POKEMON_RESULT' && event.data.requestId === requestId) finish(event.data.ok === true);
+      };
+      function finish(ok) {
+        clearTimeout(timer);
+        window.removeEventListener('message', receive);
+        resolve(ok);
+      }
+      const timer = setTimeout(() => finish(false), 2500);
+      window.addEventListener('message', receive);
+      window.postMessage({ source: 'PIS_BRIDGE', type: 'REVIEW_POKEMON', offer, demo, requestId }, location.origin);
+    });
   }
 
   function show(title, message, test, sprite, offer) {
@@ -128,8 +141,11 @@
       checkout.className = 'review';
       checkout.type = 'button';
       checkout.textContent = 'Revisar compra';
-      checkout.addEventListener('click', event => {
-        if (event.isTrusted && review(offer)) remove(key);
+      checkout.addEventListener('click', async event => {
+        if (!event.isTrusted) return;
+        checkout.disabled = true;
+        if (await review(offer)) remove(key);
+        else { checkout.textContent = 'Recarregue o PokéIdle para revisar'; checkout.disabled = false; }
       });
       element.append(checkout);
     }
@@ -141,8 +157,8 @@
   chrome.runtime.onMessage.addListener((request, sender, reply) => {
     if (sender.id !== chrome.runtime.id) return false;
     if (request?.type === 'PIS_MARKET_REVIEW') {
-      reply({ ok: review(request.offer, request.demo === true) });
-      return false;
+      review(request.offer, request.demo === true).then(ok => reply({ ok }), () => reply({ ok: false }));
+      return true;
     }
     if (request?.type !== 'PIS_MARKET_TOAST') return false;
     const title = typeof request.title === 'string' ? request.title.trim().slice(0, 120) : '';

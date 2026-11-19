@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.25
+// PokeIdle Market Sniper v1.5.4.26
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.25'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.26'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -572,6 +572,13 @@
   }
 
   let lastMonitorState;
+  let watchOpportunities = false;
+  function monitorAtivo() { return watchOpportunities || trackAtivo(); }
+  window.addEventListener('message', event => {
+    if (event.source !== window || event.origin !== location.origin || event.data?.source !== 'PIS_BRIDGE' ||
+        event.data.type !== 'WATCH_OPPORTUNITIES' || typeof event.data.enabled !== 'boolean') return;
+    watchOpportunities = event.data.enabled;
+  });
   function reportAutomatic(state) {
     if (state === lastMonitorState) return;
     lastMonitorState = state;
@@ -1550,7 +1557,7 @@
     const core = globalThis.PISMarketCore;
     const live = st.sock;
     const allowed = () => st.sock === live && live.readyState === 1 && Date.now() >= st.marketPausaAte &&
-      (!globalHistory || trackAtivo());
+      (!globalHistory || monitorAtivo());
     const floor = started - (globalHistory ? 6 * 3600000 : core.WINDOW_MS);
     const since = globalHistory ? Math.max(last?.newest || started - 10 * 60000, floor) : last?.newest || floor;
     if (globalHistory && last?.at && last.at < floor) lsSet('pis_coins_backfill_30d', null);
@@ -1603,7 +1610,7 @@
     }
     if (coinHistoryActive || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) return;
     const socket = st.sock;
-    const allowed = () => trackAtivo() && st.sock === socket && socket.readyState === 1 && Date.now() >= st.marketPausaAte;
+    const allowed = () => monitorAtivo() && st.sock === socket && socket.readyState === 1 && Date.now() >= st.marketPausaAte;
     let first = true;
     coinHistoryActive = true;
     try {
@@ -1628,12 +1635,12 @@
   }
 
   async function maintainCoinsHistory() {
-    if (!trackAtivo() || coinHistoryActive || st.sock?.readyState !== 1) return;
+    if (!monitorAtivo() || coinHistoryActive || st.sock?.readyState !== 1) return;
     const run = async () => {
-      if (!trackAtivo() || coinHistoryActive) return;
+      if (!monitorAtivo() || coinHistoryActive) return;
       const recent = lsGet(COINS_HISTORY_CHECKS, {})['*'];
       if (!recent || Date.now() - recent.at >= 5 * 60000) await syncCoinsHistory(null);
-      if (trackAtivo()) await syncCoinsBackfill();
+      if (monitorAtivo()) await syncCoinsBackfill();
     };
     if (navigator.locks) {
       await navigator.locks.request('pis_coins_history_collector', { ifAvailable: true },
@@ -1947,12 +1954,14 @@
     const core = globalThis.PISMarketCore;
     const offer = core.purchaseOffer(value);
     if (!offer || !offer.name || Date.now() < offer.observedAt || Date.now() - offer.observedAt > 600000 ||
-        compraConfirmadaEmAndamento || !document.documentElement) return;
+        compraConfirmadaEmAndamento || !document.documentElement) return false;
     revisaoCompra?.remove();
     const host = h('div', { position: 'fixed', inset: '0', zIndex: '2147483647' });
     const shadow = host.attachShadow({ mode: 'closed' });
-    const box = h('div', { position: 'absolute', inset: '0', display: 'grid', placeItems: 'center',
-      background: '#120c17bd', color: '#f7effb', font: '15px/1.4 system-ui, sans-serif' });
+    const box = h('dialog', { maxWidth: 'calc(100vw - 32px)', padding: '0', border: '0',
+      background: 'transparent', color: '#f7effb', font: '15px/1.4 system-ui, sans-serif' });
+    const style = h('style', {}, { textContent: 'dialog::backdrop { background: #120c17bd; }' });
+    box.addEventListener('close', () => host.remove());
     const panel = h('section', { maxWidth: '360px', margin: '16px', padding: '18px', background: '#231930',
       border: '1px solid #a879a2', borderRadius: '10px' });
     panel.setAttribute('role', 'dialog');
@@ -1999,10 +2008,13 @@
     });
     panel.append(title, status, confirm, cancel);
     box.append(panel);
-    shadow.append(box);
+    shadow.append(style, box);
     revisaoCompra = host;
     document.documentElement.append(host);
+    try { box.showModal(); }
+    catch { host.remove(); return false; }
     cancel.focus();
+    return box.open;
   }
 
   async function refreshApprovedPokemon(offer, allowed) {
@@ -2029,7 +2041,13 @@
 
   window.addEventListener('message', event => {
     if (event.source === window && event.origin === location.origin && event.data?.source === 'PIS_BRIDGE' &&
-        event.data.type === 'REVIEW_POKEMON') revisarCompraPokemon(event.data.offer, event.data.demo === true);
+        event.data.type === 'REVIEW_POKEMON' && typeof event.data.requestId === 'string') {
+      let ok = false;
+      try { ok = revisarCompraPokemon(event.data.offer, event.data.demo === true); }
+      finally {
+        window.postMessage({ source: 'PIS_MAIN', type: 'REVIEW_POKEMON_RESULT', requestId: event.data.requestId, ok }, location.origin);
+      }
+    }
   });
 
   // ---------- compra ----------
@@ -2357,7 +2375,7 @@
       (ordem !== 'recentes' || Number(j.seq) === req.seq || (j.ordem === ordem && j.moeda === moeda)) &&
       (j.especieId == null || Number(j.especieId) === 0) &&
       (req.seq == null || j.seq == null || Number(j.seq) === Number(req.seq)),
-      15000, () => trackAtivo(), req));
+      15000, () => monitorAtivo(), req));
   }
 
   function numeroInteiroNaoNegativo(v) {
@@ -3321,7 +3339,7 @@
       const ordem = Array.from({length: Math.max(0,nPaginas-1)},(_,i)=>i+1);
       if (sentido === 'desc') ordem.reverse();
       while (ordem.length) {
-        if (!trackAtivo() || !st.sock || st.sock.readyState !== 1)
+        if (!monitorAtivo() || !st.sock || st.sock.readyState !== 1)
           throw new Error('censo interrompido: mercado ou WebSocket indisponível');
         const pagina = ordem.shift();
         await sleep(PAUSA_ENTRE_PAGINAS_COMPLETAS_MS);
@@ -3395,7 +3413,7 @@
   let recentBusy = false;
   let nextGemPage = 1;
   setInterval(async () => {
-    if (recentBusy || !trackAtivo() || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) return;
+    if (recentBusy || !monitorAtivo() || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) return;
     recentBusy = true;
     const index = recentPage++ % 3;
     try {
@@ -3418,8 +3436,8 @@
       // Falhas, interrupções, módulo desligado e coletas parciais não ativam isto.
       let reiniciarCensoSemEspera = false;
       try {
-        if (!trackAtivo() || !st.sock || st.sock.readyState !== 1) {
-          reportAutomatic(trackAtivo() ? 'aguardando_socket' : 'rastreador_desligado');
+        if (!monitorAtivo() || !st.sock || st.sock.readyState !== 1) {
+          reportAutomatic(monitorAtivo() ? 'aguardando_socket' : 'rastreador_desligado');
           await sleep(3000);
           continue;
         }
@@ -3475,7 +3493,7 @@
             const tamanho = numeroInteiroNaoNegativo(primeira.porPagina) || linhas.length;
             const paginasTotal = total != null && tamanho > 0
               ? Math.max(1, Math.ceil(total / tamanho)) : 1;
-            if (paginasTotal > 1 && trackAtivo()) {
+            if (paginasTotal > 1 && monitorAtivo()) {
               const pagina = Math.min(Math.max(1, st.pkPaginaRotativa), paginasTotal - 1);
               await sleep(PAUSA_ENTRE_PAGINAS_COMPLETAS_MS);
               linhas.push(...(await consultarPaginaRastreador(pagina)).linhas);
@@ -3505,7 +3523,7 @@
       // Não aplicar a espera de 60s da coleta incremental após um censo válido.
       // sleep(0) apenas cede o controle ao navegador; a fila global continua
       // exigindo o intervalo adaptativo antes de cada requisição real.
-      if (reiniciarCensoSemEspera && trackAtivo() && Date.now() >= st.pkProximoCenso) {
+      if (reiniciarCensoSemEspera && monitorAtivo() && Date.now() >= st.pkProximoCenso) {
         await sleep(0);
         continue;
       }

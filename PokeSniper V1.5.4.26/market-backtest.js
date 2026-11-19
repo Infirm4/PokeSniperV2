@@ -8,17 +8,20 @@
   };
 
   async function run(sales, config, now = Date.now()) {
-    const cut = now - 7 * DAY;
+    const standardCut = now - 7 * DAY;
     const rows = sales.filter(row => !PISMarketCore.isOutland(row) && row.price > 0 &&
       row.soldAt >= now - 30 * DAY && row.soldAt < now);
     const byCurrency = {};
     for (const currency of ['gold', 'orb']) {
-      const held = rows.filter(row => row.currency === currency && row.soldAt >= cut)
-        .sort((a, b) => a.soldAt - b.soldAt);
+      const trades = rows.filter(row => row.currency === currency).sort((a, b) => a.soldAt - b.soldAt);
+      const trainingCount = trades.filter(row => row.soldAt < standardCut).length;
+      const adaptive = trades.length > 1 && (trainingCount < 10 || trainingCount === trades.length);
+      const cut = adaptive ? trades[Math.floor(trades.length * .75)].soldAt : standardCut;
+      const held = trades.filter(row => row.soldAt >= cut);
       const step = Math.max(1, Math.ceil(held.length / 250));
       const sample = held.filter((_, index) => index % step === 0);
       const heldIds = new Set(sample.map(row => row.pokemonId).filter(Boolean));
-      const training = rows.filter(row => row.currency === currency && row.soldAt < cut && !heldIds.has(row.pokemonId));
+      const training = trades.filter(row => row.soldAt < cut && !heldIds.has(row.pokemonId));
       const market = PISPricingModel.makeMarket(training, cut, PISMarketCore.isOutland);
       const estimate = PISPricingModel.prepare(training, PISMarketCore.estimate, cut, market);
       const grouped = new Map();
@@ -53,6 +56,10 @@
           error, covered, signals, falseSignals);
       }
       byCurrency[currency] = {
+        treino_antes_de: new Date(cut).toISOString(),
+        corte: adaptive ? 'janela disponível · separação cronológica' : 'últimos 7 dias para teste',
+        estado: !sample.length || !training.length ? 'sem datas suficientes para separar treino e teste' :
+          unavailable === sample.length ? 'sem comparáveis para a amostra' : 'avaliado',
         treino: training.length, vendas_na_janela_de_teste: held.length, amostra: sample.length, sem_estimativa: unavailable,
         grupos: Object.fromEntries([...grouped].map(([key, group]) => [key, {
           avaliadas: group.errors.length,
@@ -62,7 +69,7 @@
         }])),
       };
     }
-    return { fonte: 'Vendas locais. Gemas públicas não entram neste teste.', treino_antes_de: new Date(cut).toISOString(),
+    return { fonte: 'Vendas locais. Gemas públicas não entram neste teste.',
       desconto_mínimo_pct: config.discount, moedas: byCurrency };
   }
 

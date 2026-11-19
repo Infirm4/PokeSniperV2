@@ -26,7 +26,7 @@ test('repete o histórico após falha intermediária e só avança após gravar 
   const sync = runInNewContext(script + '\nsyncCoinsHistory', {
     window, location: { origin: 'https://pokeidle.io' }, PISMarketCore: core, PISCoinsHistory: coins,
     st: { sock: { readyState: 1 }, seq: 1001, marketPausaAte: 0 },
-    lsGet: () => state, lsSet: (_, saved) => Object.assign(state, saved), postHistory() {}, dbg() {}, trackAtivo: () => true,
+    lsGet: () => state, lsSet: (_, saved) => Object.assign(state, saved), postHistory() {}, dbg() {}, monitorAtivo: () => true,
     setTimeout, clearTimeout, sleep: async () => {},
     ask: async req => {
       asked.push(req.pagina);

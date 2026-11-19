@@ -1,17 +1,19 @@
 (() => {
   const SOURCE = 'https://briaoale.github.io/precificador-pokemon/precos.json';
   const ALARM = 'pis-public-gems';
-  const RETRY_MS = 60 * 60000;
+  const REFRESH_MS = 60 * 60000;
+  const RETRY_MS = 5 * 60000;
   const LIMIT = 24 * 1024 * 1024;
   let updating;
 
   async function refresh() {
     const { pisPublicGemsCheck } = await chrome.storage.local.get('pisPublicGemsCheck');
-    if (Date.now() - (pisPublicGemsCheck?.at ?? 0) < RETRY_MS) return;
+    const interval = pisPublicGemsCheck?.ok ? REFRESH_MS : RETRY_MS;
+    if (Date.now() - (pisPublicGemsCheck?.at ?? 0) < interval) return;
     const at = Date.now();
     try {
       const response = await fetch(SOURCE, { credentials: 'omit', redirect: 'error',
-        cache: 'no-cache', signal: AbortSignal.timeout(20000) });
+        cache: 'no-cache', signal: AbortSignal.timeout(25000) });
       if (!response.ok || Number(response.headers.get('content-length')) > LIMIT) throw new Error('download');
       const reader = response.body?.getReader();
       if (!reader) throw new Error('download');
@@ -42,7 +44,8 @@
 
   chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) wake(); });
   (async () => {
-    if (!await chrome.alarms.get(ALARM)) await chrome.alarms.create(ALARM, { periodInMinutes: 60 });
+    const alarm = await chrome.alarms.get(ALARM);
+    if (alarm?.periodInMinutes !== 5) await chrome.alarms.create(ALARM, { periodInMinutes: 5 });
     wake();
   })().catch(() => {});
 })();

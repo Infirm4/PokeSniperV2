@@ -1,4 +1,15 @@
-# PokeIdle Market Sniper (v1.5.4.25)
+# PokeIdle Market Sniper (v1.5.4.26)
+
+Ao salvar **Avisos dentro do jogo e no Chrome**, o monitor de oportunidades
+começa a coletar anúncios em Coins e Gemas com a aba do jogo conectada.
+O diagnóstico mostra o último recibo de cada moeda. A opção **REGISTRAR
+MERCADO** do painel antigo também pode manter a coleta ligada.
+
+Em **Testar revisão de compra**, o jogo confirma que abriu a janela simulada
+antes de a extensão trazer a aba à frente. **Simular confirmação** não envia
+pedido. O diagnóstico de precisão adapta o corte em bases com poucos dias,
+mantendo o treino anterior à janela de teste.
+
 
 ## Histórico automático de Coins e compra confirmada
 

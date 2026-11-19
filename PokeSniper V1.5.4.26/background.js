@@ -22,10 +22,12 @@ const PISGameTab = {
     try {
       const tab = await chrome.tabs.get(tabId);
       if (!PIS_HOST.test(tab.url ?? '')) return false;
-      await chrome.tabs.update(tabId, { active: true });
-      await chrome.windows.update(tab.windowId, { focused: true });
       const result = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_REVIEW', offer, demo }, { frameId: 0 });
-      return result?.ok === true;
+      if (result?.ok !== true) return false;
+      if (!tab.active) await chrome.tabs.update(tabId, { active: true });
+      const currentWindow = await chrome.windows.getLastFocused();
+      if (currentWindow.id !== tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
+      return true;
     } catch { return false; }
   },
   async show(title, message, test = false, sprite = null, offer = null) {
@@ -146,12 +148,15 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
       .then(() => reply({ ok: true }), () => reply({ ok: false }));
     return true;
   }
-  const pageReceipt = (status, accepted) => req.kind === 'listing' && req.automatic === true
-    ? chrome.storage.session.set({ pisMarketAutomaticPage: { status, accepted,
-      page: Number.isSafeInteger(req.page) ? req.page : null,
-      currency: ['gold', 'orb'].includes(req.currency) ? req.currency : null,
-      totalRows: Number.isSafeInteger(req.totalRows) ? req.totalRows : null, at: Date.now() } }).catch(() => {})
-    : Promise.resolve();
+  function pageReceipt(status, accepted) {
+    if (req.kind !== 'listing' || req.automatic !== true) return Promise.resolve();
+    const currency = ['gold', 'orb'].includes(req.currency) ? req.currency : null;
+    const page = { status, accepted, page: Number.isSafeInteger(req.page) ? req.page : null, currency,
+      totalRows: Number.isSafeInteger(req.totalRows) ? req.totalRows : null, at: Date.now() };
+    const receipts = { pisMarketAutomaticPage: page };
+    if (currency) receipts['pisMarketPage:' + currency] = page;
+    return chrome.storage.session.set(receipts).catch(() => {});
+  }
   const traceEvent = history ? req.event : req.kind === 'sale' ? 'legacy_batch' : null;
   const track = receipt => traceEvent ? PISHistoryTrace.record(traceEvent, history ? req.trace || {} : {}, receipt)
     .catch(() => console.warn('[PIS] Falha ao guardar o diagnóstico do histórico.')) : Promise.resolve();

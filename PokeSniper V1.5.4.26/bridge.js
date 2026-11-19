@@ -3,6 +3,13 @@
 (() => {
   if (window.__pisSheetsBridge) return;
   window.__pisSheetsBridge = true;
+  const configureMonitor = settings => window.postMessage({ source: 'PIS_BRIDGE',
+    type: 'WATCH_OPPORTUNITIES', enabled: settings?.notify === true }, location.origin);
+  chrome.storage.local.get('opportunitySettings').then(
+    data => configureMonitor(data.opportunitySettings), () => {});
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.opportunitySettings) configureMonitor(changes.opportunitySettings.newValue);
+  });
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (sender.id !== chrome.runtime.id || msg?.type !== 'PIS_READ_SMART_COINS') return false;
     PISCoinsHistory.readCache(indexedDB, PISMarketCore)
