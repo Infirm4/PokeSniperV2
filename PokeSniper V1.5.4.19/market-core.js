@@ -82,7 +82,7 @@
     }
     const closed = ['cancelado', 'expirado'].includes(row.estado) ? row.estado : null;
     if ((!closed && row.estado != null && row.estado !== 'aberto') || row.comprador) return null;
-    return { ...profile, postedAt: timestamp(row.criadoEm), availableAt: timestamp(row.compravelEm),
+    return { ...profile, postedAt: timestamp(row.criadoEm), availableAt: timestamp(row.compravelEm), expiresAt: timestamp(row.expiraEm),
       ...(closed ? { closed } : {}) };
   }
 
@@ -112,6 +112,14 @@
     return rows.length ? { kind, rows } : null;
   }
 
+  function captureAutomatic(frame, request) {
+    if (frame.aba !== 'vitrine' || frame.pagina == null || Number(frame.pagina) !== request.pagina ||
+        (frame.moeda != null && frame.moeda !== request.moeda) || !money(request.moeda)) return null;
+    // Nunca atribui a moeda solicitada quando o servidor identificou outra moeda na linha.
+    return capture({ ...frame, moeda: request.moeda,
+      linhas: frame.linhas.filter(row => row && (row.moeda == null || row.moeda === request.moeda)) });
+  }
+
   // Revalida a mensagem no limite de privilégio e reconstrói somente os campos permitidos.
   function validate(kind, rows) {
     if (!['sale', 'listing'].includes(kind) || !Array.isArray(rows) ||
@@ -119,7 +127,7 @@
     return rows.map(row => row && normalizeRow(kind, {
       tipo: 'pokemon', id: row.id, pokemonId: row.pokemonId, moeda: row.currency,
       preco: row.price, bruto: row.price, em: row.soldAt, listingId: row.listingId,
-      criadoEm: row.postedAt, compravelEm: row.availableAt, estado: row.closed,
+      criadoEm: row.postedAt, compravelEm: row.availableAt, expiraEm: row.expiresAt, estado: row.closed,
       ficha: { speciesId: row.speciesId, nome: row.name, shiny: row.shiny, level: row.level, nota: row.grade,
         formId: row.form, potencia: row.power, quality: row.quality, ivTotal: row.ivTotal, ivs: row.ivs,
         tmAoe: row.aoe, tmElemental: row.zMove, mega: row.mega },
@@ -191,7 +199,7 @@
       })) };
   }
 
-  const core = { capture, validate, estimate, sameMarket, historyReply, historyRequest, historyTrace, linkageFields,
+  const core = { capture, captureAutomatic, validate, estimate, sameMarket, historyReply, historyRequest, historyTrace, linkageFields,
     WINDOW_MS, MAX_BATCH };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;

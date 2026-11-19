@@ -47,3 +47,13 @@ test('abstém-se com amostra pequena ou atributos ausentes', () => {
   assert.equal(estimate(target, batch.rows, now).status, 'insufficient_sales');
   assert.equal(estimate({ ...target, grade: null }, batch.rows, now).status, 'incomplete_profile');
 });
+
+test('página do censo aceita a moeda da consulta correlacionada e rejeita outra moeda', () => {
+  const core = require('../market-core.js');
+  const frame = { t: 'market', aba: 'vitrine', pagina: 3,
+    linhas: [{ ...listing, moeda: undefined }, { ...listing, id: 'gem', moeda: 'orb' }] };
+  assert.equal(core.captureAutomatic(frame, { pagina: 3, moeda: 'gold' }).rows.length, 1);
+  assert.equal(core.captureAutomatic(frame, { pagina: 3, moeda: 'gold' }).rows[0].currency, 'gold');
+  assert.equal(core.captureAutomatic(frame, { pagina: 4, moeda: 'gold' }), null);
+  assert.equal(core.captureAutomatic({ ...frame, moeda: 'orb' }, { pagina: 3, moeda: 'gold' }), null);
+});

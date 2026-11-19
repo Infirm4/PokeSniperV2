@@ -206,12 +206,31 @@ const PISMarketStore = (() => {
     const current = await Promise.all(candidates.map(async candidate => {
       const listing = await result(listings.get(candidate.id));
       if (listing && PISOpportunities.key(listing) === candidate.key &&
-          PISOpportunities.eligible(listing) && PISOpportunities.matches(listing, config)) {
+          PISOpportunities.eligible(listing, now) && PISOpportunities.matches(listing, config)) {
         return { ...candidate, ...listing };
       }
       return null;
     }));
     return current.filter(Boolean).reverse();
+  }
+
+  // Remove da vitrine local, sem transformar a ausência em venda para precificação ou liquidez.
+  async function markUnavailable(ids, cutoff) {
+    const db = await open();
+    const tx = db.transaction('listings', 'readwrite');
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error || new Error('Atualização de ofertas interrompida'));
+    });
+    done.catch(() => {});
+    const store = tx.objectStore('listings');
+    for (const id of new Set(ids)) {
+      const row = await result(store.get(id));
+      if (row && !row.closed && row.observedAt <= cutoff) {
+        store.put({ ...row, closed: 'ausente_no_censo' });
+      }
+    }
+    await done;
   }
 
   async function markDelivery(key, delivered, now = Date.now(), channels) {
@@ -329,5 +348,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, initialize: open, recentOpportunities, markDelivery, findListings, analyzeListing, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, initialize: open, recentOpportunities, markDelivery, markUnavailable, findListings, analyzeListing, diagnosticSnapshot, liquidity, diagnostics };
 })();

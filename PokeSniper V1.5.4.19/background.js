@@ -55,12 +55,32 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     return true;
   }
   const history = req?.type === 'PIS_MARKET_HISTORY_EVENT';
-  if (!history && req?.type !== 'PIS_MARKET_CORE_BATCH') return false;
+  if (!history && !['PIS_MARKET_CORE_BATCH', 'PIS_MARKET_MONITOR', 'PIS_MARKET_UNAVAILABLE'].includes(req?.type)) return false;
   if (!sender.tab || !PIS_HOST.test(String(sender.url || sender.tab.url || ''))) {
     reply({ ok: false, error: 'origem inválida' });
     return false;
   }
   PISGameTab.remember(sender.tab.id);
+  if (req.type === 'PIS_MARKET_MONITOR') {
+    if (!['aguardando_socket', 'rastreador_desligado', 'recuo', 'varrendo', 'falha_ou_recuo'].includes(req.state)) return false;
+    chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now() } })
+      .then(() => reply({ ok: true }), () => reply({ ok: false }));
+    return true;
+  }
+  if (req.type === 'PIS_MARKET_UNAVAILABLE') {
+    const now = Date.now();
+    if (!Array.isArray(req.ids) || req.ids.length > 100 || !Number.isSafeInteger(req.cutoff) ||
+        req.cutoff > now || now - req.cutoff > 2 * 3600000) return false;
+    const ids = req.ids.filter(id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id));
+    PISMarketStore.markUnavailable(ids, req.cutoff)
+      .then(() => reply({ ok: true }), () => reply({ ok: false }));
+    return true;
+  }
+  const pageReceipt = (status, accepted) => req.kind === 'listing' && req.automatic === true
+    ? chrome.storage.session.set({ pisMarketAutomaticPage: { status, accepted,
+      page: Number.isSafeInteger(req.page) ? req.page : null,
+      totalRows: Number.isSafeInteger(req.totalRows) ? req.totalRows : null, at: Date.now() } }).catch(() => {})
+    : Promise.resolve();
   const traceEvent = history ? req.event : req.kind === 'sale' ? 'legacy_batch' : null;
   const track = receipt => traceEvent ? PISHistoryTrace.record(traceEvent, history ? req.trace || {} : {}, receipt)
     .catch(() => console.warn('[PIS] Falha ao guardar o diagnóstico do histórico.')) : Promise.resolve();
@@ -74,17 +94,19 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   // Reserva vagas para páginas de histórico durante um censo da vitrine.
   const full = isSale ? salePending >= 4 : listingPending >= 16;
   if (!rows.length || full) {
-    track({ status: rows.length ? 'fila_cheia' : 'sem_registros_validos', accepted: rows.length })
-      .then(() => reply({ ok: history && !rows.length, error: rows.length ? 'fila local cheia' : 'lote inválido' }));
+    const status = rows.length ? 'fila_cheia' : 'sem_registros_validos';
+    Promise.all([track({ status, accepted: rows.length }), pageReceipt(status, rows.length)])
+      .then(() => reply({ ok: (history || req.automatic === true) && !rows.length,
+        error: rows.length ? 'fila local cheia' : 'lote inválido' }));
     return true;
   }
   if (isSale) salePending++;
   else listingPending++;
   PISMarketStore.ingest(kind, rows)
     .then(
-      stats => track({ status: 'gravado', accepted: rows.length, ...stats })
+      stats => Promise.all([track({ status: 'gravado', accepted: rows.length, ...stats }), pageReceipt('gravado', rows.length)])
         .then(() => { reply({ ok: true }); PISOpportunityAlerts.wake(); }),
-      error => track({ status: 'falha_na_gravação', accepted: rows.length })
+      error => Promise.all([track({ status: 'falha_na_gravação', accepted: rows.length }), pageReceipt('falha_na_gravação', rows.length)])
         .then(() => reply({ ok: false, error: String(error.message).slice(0, 300) })),
     )
     .finally(() => { if (isSale) salePending--; else listingPending--; });

@@ -254,14 +254,16 @@ runDiagnostics.addEventListener('click', async () => {
           result: response ? (response.storageError ? 'falha ao salvar o teste' : null) : 'sem resposta' };
       } catch { return { ok: false, at: Date.now(), result: 'sem resposta' }; }
     }));
-    const [notificationPermission, database, alerts, history, [desktopTest, gameTest]] =
-      await Promise.all([permission, snapshot, pipeline, trace, testResults]);
+    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage']).catch(() => ({}));
+    const [notificationPermission, database, alerts, history, [desktopTest, gameTest], automatic] =
+      await Promise.all([permission, snapshot, pipeline, trace, testResults, monitor]);
     const tests = PISMarketSmoke.run();
     const report = {
       versão: chrome.runtime.getManifest().version,
       testes: tests,
       banco: database,
       histórico_na_sessão: history,
+      varredura_automática: { estado: automatic.pisMarketMonitor ?? null, última_página: automatic.pisMarketAutomaticPage ?? null },
       alertas: {
         ...alerts,
         notificações_ativadas: settings.notify,

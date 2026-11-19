@@ -33,3 +33,9 @@ test('exibe pelo desconto mínimo mesmo acima da faixa inferior e ignora o teto 
   assert.equal(matches(withinBand, settings({ discount: 5, maxPrice: 10_000 })), true);
   assert.equal(matches(withinBand, settings({ discount: 6 })), false);
 });
+
+test('uma oferta expirada ou ausente no censo sai das oportunidades', () => {
+  assert.equal(eligible({ ...row, expiresAt: 100 }, 100), false);
+  assert.equal(eligible({ ...row, expiresAt: 100 }, 99), true);
+  assert.equal(eligible({ ...row, closed: 'ausente_no_censo' }), false);
+});

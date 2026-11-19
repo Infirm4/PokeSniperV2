@@ -30,6 +30,11 @@
         return PISMarketCore.estimate(target, capture('historicoGlobal', premium).rows, now)
           .status === 'insufficient_sales';
       }),
+      check('censo captura anúncio sem moeda explícita', () => {
+        const frame = { t: 'market', aba: 'vitrine', pagina: 2, linhas: [{ ...listing, moeda: undefined }] };
+        const batch = PISMarketCore.captureAutomatic(frame, { pagina: 2, moeda: 'gold' });
+        return batch?.rows[0]?.currency === 'gold' && !PISMarketCore.captureAutomatic(frame, { pagina: 3, moeda: 'gold' });
+      }),
       check('desconto dentro da faixa e sem teto antigo', () => {
         const row = { ...capture('vitrine', [listing]).rows[0],
           price: 95, estimate: { status: 'estimated', lower: 90, median: 100 } };

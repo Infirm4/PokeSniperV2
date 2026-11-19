@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.18
+// PokeIdle Market Sniper v1.5.4.19
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.18'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.19'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -561,6 +561,22 @@
     } catch { return false; }
   }
 
+  function publishMarketPage(frame, request) {
+    const core = globalThis.PISMarketCore;
+    if (!core || frame.aba !== 'vitrine') return;
+    const batch = request ? core.captureAutomatic(frame, request) : core.capture(frame);
+    if (batch || request) window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_CORE_BATCH',
+      kind: 'listing', rows: batch?.rows ?? [], automatic: !!request,
+      page: request?.pagina, totalRows: frame.linhas?.length }, location.origin);
+  }
+
+  let lastMonitorState;
+  function reportAutomatic(state) {
+    if (state === lastMonitorState) return;
+    lastMonitorState = state;
+    window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_MONITOR', state }, location.origin);
+  }
+
   function onMsg(ws, e) {
     const d = e.data;
     if (typeof d !== 'string') return;
@@ -593,19 +609,18 @@
       }
     }
     if (j.t === 'market') aprenderRespostaPokemon(j);
-    // Observa páginas conforme chegam, sem consultas adicionais nem efeito sobre o censo.
-    if (ws === st.sock && j.t === 'market' && j.aba !== 'historicoGlobal') {
-      try {
-        const batch = globalThis.PISMarketCore?.capture(j);
-        if (batch) window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_CORE_BATCH', ...batch }, location.origin);
-      } catch (error) { dbg('Captura da fundação de mercado:', error.message); }
-    }
+    let censusRequest;
     for (let i = waiters.length - 1; i >= 0; i--) {
-      if (waiters[i].p(j)) {
+      if (waiters[i].ws === ws && waiters[i].p(j)) {
         const w = waiters.splice(i, 1)[0];
         clearTimeout(w.t);
+        censusRequest ||= w.censusRequest;
         w.r(j);
       }
+    }
+    if (ws === st.sock && j.t === 'market') {
+      try { publishMarketPage(j, censusRequest); }
+      catch (error) { dbg('Captura de mercado:', error.message); }
     }
   }
 
@@ -720,7 +735,7 @@
   // O lock inclui a RESPOSTA, não apenas o envio. Isso impede duas consultas do
   // próprio bot em paralelo e evita confundir respostas de paginação ou mercado.
   // 'permitir' é reavaliado após qualquer espera: desligar rastreador/bot cancela a consulta.
-  function ask(msg, pred, ms = 12000, permitir = null) {
+  function ask(msg, pred, ms = 12000, permitir = null, censusRequest = null) {
     const executar = async () => {
       await esperarPermissaoDeConsulta(permitir);
       const s = st.sock;
@@ -728,7 +743,7 @@
       st.marketUltimoEnvio = Date.now();
       try {
         const resposta = await new Promise((res, rej) => {
-          const w = { p: pred, r: res, t: null };
+          const w = { p: pred, r: res, t: null, ws: s, censusRequest };
           w.t = setTimeout(() => {
             const i = waiters.indexOf(w);
             if (i >= 0) waiters.splice(i, 1);
@@ -2022,7 +2037,7 @@
       (j.moeda == null || j.moeda === 'gold') &&
       (j.especieId == null || Number(j.especieId) === 0) &&
       (req.seq == null || j.seq == null || Number(j.seq) === Number(req.seq)),
-      15000, () => trackAtivo()));
+      15000, () => trackAtivo(), req));
   }
 
   function numeroInteiroNaoNegativo(v) {
@@ -2437,6 +2452,7 @@
   function rastrearMercado(snapshot, { completa = true } = {}) {
     if (!trackAtivo() || !st.pkPronto || !snapshot || !Array.isArray(snapshot.linhas)) return;
     const { linhas, paginas } = snapshot;
+    const missingForAlerts = [];
     const agora = snapshot.coletaFim || nowSrv(), mudados = new Map(), presentes = new Set();
     const abertas = linhas.filter(abertoPoke);
     const idsColetados = new Set(linhas.filter(l => l && l.id != null).map(l => String(l.id)));
@@ -2539,6 +2555,7 @@
           const vistoHa = agora - Number(rec.ultimaVez || 0);
           if (st.pkIdsConfiaveis.has(rec.id) || (vistoHa >= 0 && vistoHa <= 48*3600000)) {
             registrarDesaparecimento(rec, snapshot, agora);
+            missingForAlerts.push(rec.id);
           } else {
             rec.status = STATUS_SEM_BASE;
             rec.faltas = 0;
@@ -2560,6 +2577,12 @@
     // Um bloco parcial de um censo NÃO deve apagar o progresso visível do próprio censo.
     if (!(st.pkTrackInfo?.emCenso && !completa))
       st.pkTrackInfo = { paginas, total: snapshot.total, atualizadoEm: Date.now(), parcial: !completa, erro: null };
+    if (Number.isSafeInteger(snapshot.inicioLocal)) {
+      for (let i = 0; i < missingForAlerts.length; i += 100) {
+        window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_UNAVAILABLE',
+          ids: missingForAlerts.slice(i, i + 100), cutoff: snapshot.inicioLocal }, location.origin);
+      }
+    }
     const gravacao = mudados.size ? persistirPokemon([...mudados.values()]) : Promise.resolve();
     if (ui && ui.atualizarPokemon && [...mudados.values()].some(r => r.status !== STATUS_ATIVO)) ui.atualizarPokemon();
     return gravacao;
@@ -2906,6 +2929,7 @@
   // mesmo quando houve pequena variação e algum anúncio migrou entre páginas.
   // A ausência somente é aceita após duas coberturas em sentidos ALTERNADOS.
   async function varrerTodasPaginas() {
+    const inicioLocal = Date.now();
     const inicio = nowSrv();
     const sentido = st.pkDirecaoCenso;
     const primeira = await consultarPaginaRastreador(0);
@@ -3039,7 +3063,7 @@
     const coberturaRuidosa = coberturaModerada;
     const coerente = coberturaNormal && desvio === 0 && duplicados === 0 &&
       unicos.size === totalInicial;
-    return {linhas:[...unicos.values()],vistosEm,paginas:nPaginas,total:maiorTotal,
+    return {linhas:[...unicos.values()],inicioLocal,vistosEm,paginas:nPaginas,total:maiorTotal,
       coletaInicio:inicio,coletaFim:nowSrv(),cobertura,coerente,coberturaRuidosa,
       sentido,desvio,duplicados,limiteDuplicados,limiteModerado,
       paginasIncompletas,menorTotal,maiorTotal,tolerancia,
@@ -3052,7 +3076,13 @@
       // Falhas, interrupções, módulo desligado e coletas parciais não ativam isto.
       let reiniciarCensoSemEspera = false;
       try {
-        if (trackAtivo() && st.sock && st.sock.readyState === 1 && st.pkPronto) {
+        if (!trackAtivo() || !st.sock || st.sock.readyState !== 1) {
+          reportAutomatic(trackAtivo() ? 'aguardando_socket' : 'rastreador_desligado');
+          await sleep(3000);
+          continue;
+        }
+        {
+          reportAutomatic(Date.now() < st.marketPausaAte ? 'recuo' : 'varrendo');
           const precisaCenso = Date.now() >= st.pkProximoCenso;
           if (precisaCenso) {
             const completo = await varrerTodasPaginas();
@@ -3119,6 +3149,7 @@
         }
       } catch (e) {
         st.pkTrackErros++;
+        reportAutomatic('falha_ou_recuo');
         if (Date.now() >= st.pkProximoCenso) {
           st.pkFalhasCenso++;
           st.pkProximoCenso = Date.now() + Math.max(intervaloCensoAtualMs(), Math.min(INTERVALO_RETRY_CENSO_MAX_MS,

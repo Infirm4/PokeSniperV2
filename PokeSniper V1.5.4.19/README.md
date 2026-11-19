@@ -1,5 +1,12 @@
 # PokeIdle Market Sniper (v1.2.0)
 
+## Monitoramento automático (v1.5.4.19)
+
+Com a aba do PokéIdle conectada e o rastreador de Pokémon ativo, o censo de Coins
+alimenta os avisos sem precisar abrir a vitrine ou ligar compras. O diagnóstico
+inclui o estado do censo e o recibo da última página automática. Ofertas expiradas
+ou ausentes após a confirmação do censo saem das oportunidades.
+
 ## Filtro por desconto (v1.5.4.17)
 
 O painel usa o desconto mínimo sobre a mediana. Anúncios dentro da faixa estimada podem

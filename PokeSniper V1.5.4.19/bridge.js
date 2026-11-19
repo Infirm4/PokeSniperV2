@@ -13,11 +13,17 @@
         .catch(error => console.warn('[PIS] Histórico de mercado:', error.message));
       return;
     }
+    if (msg?.source === 'PIS_MAIN' && ['MARKET_MONITOR', 'MARKET_UNAVAILABLE'].includes(msg.type)) {
+      chrome.runtime.sendMessage({ type: 'PIS_' + msg.type, state: msg.state, ids: msg.ids, cutoff: msg.cutoff })
+        .catch(error => console.warn('[PIS] Monitor de mercado:', error.message));
+      return;
+    }
     if (msg?.source === 'PIS_MAIN' && msg.type === 'MARKET_CORE_BATCH') {
       if (!['sale', 'listing'].includes(msg.kind) || !Array.isArray(msg.rows) ||
-          msg.rows.length === 0 || msg.rows.length > 100) return;
+          (msg.rows.length === 0 && !msg.automatic) || msg.rows.length > 100) return;
       try {
-        chrome.runtime.sendMessage({ type: 'PIS_MARKET_CORE_BATCH', kind: msg.kind, rows: msg.rows }, reply => {
+        chrome.runtime.sendMessage({ type: 'PIS_MARKET_CORE_BATCH', kind: msg.kind, rows: msg.rows,
+          automatic: msg.automatic === true, page: msg.page, totalRows: msg.totalRows }, reply => {
           const error = chrome.runtime.lastError;
           if (error || !reply?.ok) console.warn('[PIS] Observação de mercado não gravada:', error?.message || reply?.error);
         });
