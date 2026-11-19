@@ -100,6 +100,6 @@
   }
 
   const api = { cleanSpecies, importRows, readCache, backfill };
-  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (typeof window === 'undefined' && typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.PISCoinsHistory = api;
 })();

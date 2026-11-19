@@ -75,6 +75,7 @@ const PISOpportunityAlerts = (() => {
       }
       const game = await inGame;
       await PISMarketStore.markDelivery(row.key, desktop || game, Date.now(), { desktop, game });
+      globalThis.PISMarketEventLog?.record(chrome.storage.local, row.currency, desktop || game ? 'aviso_enviado' : 'aviso_falhou');
     }
   }
 

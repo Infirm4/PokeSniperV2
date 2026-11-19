@@ -6,7 +6,7 @@ const test = require('node:test');
 
 const source = readFileSync(join(__dirname, '../background.js'), 'utf8');
 
-test('atribui falhas e vendas repetidas à página certa e restringe o teste à extensão', async () => {
+test('atribui falhas e vendas repetidas à página certa e nunca dispara avisos sintéticos', async () => {
   const listeners = [];
   const trace = [];
   const messages = [];
@@ -49,12 +49,9 @@ test('atribui falhas e vendas repetidas à página certa e restringe o teste à 
     ['response', 3, 'falha_na_gravação', undefined]]);
   assert.equal(await dispatch({ type: 'PIS_TEST_GAME_TOAST' }), undefined);
   const popup = { id: 'own', url: 'chrome-extension://own/opportunities.html' };
-  assert.equal((await dispatch({ type: 'PIS_TEST_GAME_TOAST' }, popup)).ok, true);
-  assert.deepEqual(messages, [[7, 'PIS_MARKET_TOAST']]);
-  assert.equal((await dispatch({ type: 'PIS_TEST_DESKTOP_TOAST' }, popup)).ok, true);
-  assert.equal(savedNotices.pisGameToastTest.ok, true);
-  assert.equal(savedNotices.pisDesktopToastTest.ok, true);
-  assert.ok(savedNotices.pisGameToastTest.at > 0);
+  assert.equal(await dispatch({ type: 'PIS_TEST_GAME_TOAST' }, popup), undefined);
+  assert.equal(await dispatch({ type: 'PIS_TEST_DESKTOP_TOAST' }, popup), undefined);
+  assert.deepEqual(messages, []);
   assert.equal((await dispatch({ type: 'PIS_MARKET_CORE_BATCH', kind: 'sale', rows: ['known'] })).ok, true);
   assert.deepEqual(trace.at(-1), ['legacy_batch', undefined, 'gravado', 1]);
 });

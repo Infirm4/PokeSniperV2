@@ -100,28 +100,6 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     })().then(result => reply({ ok: result?.ok === true }), () => reply({ ok: false }));
     return true;
   }
-  if (req?.type === 'PIS_TEST_GAME_TOAST' || req?.type === 'PIS_TEST_DESKTOP_TOAST') {
-    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
-    const game = req.type === 'PIS_TEST_GAME_TOAST';
-    (async () => {
-      let ok = false;
-      try {
-        if (game) {
-          ok = await PISGameTab.show('PokeSniper · Aviso de teste', 'Este aviso aparece dentro da aba do PokéIdle.', true);
-        } else {
-          await chrome.notifications.create('pis:test', {
-            type: 'basic', iconUrl: chrome.runtime.getURL('opportunity-placeholder.png'),
-            title: 'PokeSniper · Teste de notificação', message: 'Aviso de teste enviado ao Chrome.',
-          });
-          ok = true;
-        }
-      } catch { /* O teste guarda a falha sem expor mensagens locais. */ }
-      const key = game ? 'pisGameToastTest' : 'pisDesktopToastTest';
-      await chrome.storage.local.set({ [key]: { ok, at: Date.now() } });
-      reply({ ok });
-    })().catch(() => reply({ ok: false, storageError: true }));
-    return true;
-  }
   if (req?.type === 'PIS_MARKET_BADGES') {
     if (!sender.tab || !PIS_HOST.test(String(sender.url || sender.tab.url || '')) ||
         !Array.isArray(req.offers) || req.offers.length > 100) return false;
@@ -160,16 +138,19 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   if (req.type === 'PIS_COINS_HISTORY_STATUS') {
     if (!['global', 'espécie', 'backfill'].includes(req.scope) || typeof req.state !== 'string' || req.state.length > 40) return false;
     chrome.storage.session.set({ ['pisCoinsHistory:' + req.scope]: { state: req.state, at: Date.now(),
+      reason: ['schema_incompatível', 'sem_resposta', 'falha_na_gravação', 'recusada', 'desconectada', 'recuo',
+        'cancelada', 'falha_de_envio'].includes(req.reason) ? req.reason : null,
       page: Number.isSafeInteger(req.page) && req.page >= 0 ? req.page : null,
       oldest: Number.isSafeInteger(req.oldest) ? req.oldest : null } })
       .then(() => reply({ ok: true }), () => reply({ ok: false }));
     return true;
   }
   if (req.type === 'PIS_MARKET_MONITOR') {
-    if (!['aguardando_socket', 'rastreador_desligado', 'aguardando_tráfego', 'recuo', 'varrendo', 'falha_ou_recuo'].includes(req.state)) return false;
+    if (!['aguardando_socket', 'rastreador_desligado', 'aguardando_tráfego', 'parser_indisponível', 'recuo', 'varrendo', 'falha_ou_recuo'].includes(req.state)) return false;
     recordMarket('monitor', req.state);
     chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now(),
       socket: ['abertura', 'envio do jogo', 'consulta do jogo', 'tráfego', 'estado'].includes(req.socket) ? req.socket : null,
+      módulos: { parser: req.modules?.parser === true, histórico: req.modules?.histórico === true },
       tráfego: {
         ...Object.fromEntries(['recebidos', 'estados', 'vitrine', 'histórico', 'outros', 'binários']
           .map(key => [key, Number.isSafeInteger(req.wire?.[key]) && req.wire[key] >= 0 ? req.wire[key] : 0])),

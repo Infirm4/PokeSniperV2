@@ -12,7 +12,7 @@ test('Coins usa perfil comparável, não conta duas vendas do mesmo exemplar e l
     shiny: 0, level: 100, price: 75, grade: 5, power: 3, quality: 1.5, ivTotal: 120,
     nature: 'modest', ivs: { hp: 20, attack: 20, defense: 20, specialAttack: 20, specialDefense: 20, speed: 20 } };
   const row = (i, price, extra) => ({
-    ...target, id: String(i), pokemonId: 'p' + i, soldAt: now - 500000, price, ...extra,
+    ...target, id: String(i), pokemonId: 'p' + i, source: 'game', soldAt: now - 500000, price, ...extra,
   });
   const sales = [98, 100, 101, 102, 104, 10_000].map((price, index) => row(index, price));
   sales.push(row(6, 101, { pokemonId: 'p0' }), row(7, 20, { nature: 'adamant' }), row(8, 100, { currency: 'orb' }));
@@ -23,6 +23,9 @@ test('Coins usa perfil comparável, não conta duas vendas do mesmo exemplar e l
   assert.equal(estimate.outlierCount, 1);
   assert.equal(estimate.alertSupported, true);
   assert.equal(sales.length, 9);
+  const reference = core.estimate(target, sales.map(sale => ({ ...sale, source: 'smartmarket_backup' })), now);
+  assert.equal(reference.status, 'estimated');
+  assert.equal(reference.alertSupported, false);
   assert.equal(opportunities.approved({ ...target, estimate }, opportunities.settings({ discount: 25 }), now), true);
   assert.equal(opportunities.approved({ ...target, estimate }, opportunities.settings({ discount: 27 }), now), false);
 });

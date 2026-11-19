@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.31
+// PokeIdle Market Sniper v1.5.4.32
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.31'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.32'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -598,6 +598,10 @@
   let lastMonitorState;
   let watchOpportunities = false;
   function monitorAtivo() { return watchOpportunities || trackAtivo(); }
+  function marketModules() {
+    return { parser: typeof globalThis.PISMarketCore?.decodeGameFrame === 'function',
+      histórico: typeof globalThis.PISCoinsHistory?.backfill === 'function' };
+  }
   window.addEventListener('message', event => {
     if (event.source !== window || event.origin !== location.origin || event.data?.source !== 'PIS_BRIDGE' ||
         event.data.type !== 'WATCH_OPPORTUNITIES' || typeof event.data.enabled !== 'boolean') return;
@@ -610,7 +614,8 @@
     lastMonitorState = key;
     lastMonitorReportAt = Date.now();
     window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_MONITOR', state,
-      socket: gameSocketSource, wire }, location.origin);
+      socket: gameSocketSource, wire,
+      modules: marketModules() }, location.origin);
   }
 
   function onMsg(ws, e) {
@@ -1595,7 +1600,7 @@
         clearTimeout(timer);
         window.removeEventListener('message', receive);
         if (ok) resolve();
-        else reject(new Error('Página sem confirmação de gravação'));
+        else reject(Object.assign(new Error('Página sem confirmação de gravação'), { queryStatus: 'falha_na_gravação' }));
       };
       const timer = setTimeout(() => finish(false), 20000);
       window.addEventListener('message', receive);
@@ -1624,8 +1629,12 @@
       await persistHistoryPage(index ? ++st.seq : seq, partial, captured);
       rows.push(...captured);
     }
-    const pageTimes = page.linhas.filter(row => row?.tipo === 'pokemon' && (row.moeda == null || row.moeda === 'gold'))
-      .map(row => Number(row.em)).filter(at => Number.isSafeInteger(at) && at >= 1e12);
+    const expected = page.linhas.filter(row => row && (row.tipo === 'pokemon' || (row.tipo == null && row.ficha)) &&
+      (row.moeda == null || row.moeda === 'gold') && (!name || row.ficha?.nome?.toLowerCase() === name.toLowerCase()));
+    if (expected.length && !rows.length) throw Object.assign(new Error('O histórico retornou fichas incompatíveis'), {
+      queryStatus: 'schema_incompatível',
+    });
+    const pageTimes = expected.map(row => Number(row.em)).filter(at => Number.isSafeInteger(at) && at >= 1e12);
     const ids = page.linhas.map(row => row?.id).filter(id => id != null).map(String);
     if (page.linhas.length && !ids.length) throw new Error('Página sem IDs de transação');
     return { rows, ids, last: page.temMais === false || page.linhas.length === 0,
@@ -1637,8 +1646,8 @@
     const globalHistory = value == null;
     const name = globalHistory ? '' : globalThis.PISCoinsHistory?.cleanSpecies(value);
     const key = globalHistory ? '*' : name?.toLowerCase();
-    const report = state => window.postMessage({ source: 'PIS_MAIN', type: 'COINS_HISTORY_STATUS',
-      state, scope: globalHistory ? 'global' : 'espécie' }, location.origin);
+    const report = (state, reason) => window.postMessage({ source: 'PIS_MAIN', type: 'COINS_HISTORY_STATUS',
+      state, reason, scope: globalHistory ? 'global' : 'espécie' }, location.origin);
     if (key == null || coinHistoryActive || st.sock?.readyState !== 1 || Date.now() < st.marketPausaAte) {
       if (!globalHistory) report('indisponível');
       return;
@@ -1681,7 +1690,7 @@
       }
       report('parcial · cursor preservado');
     } catch (error) {
-      report('falha · cursor preservado');
+      report('falha · cursor preservado', error.queryStatus);
       dbg('Histórico em Coins:', error.message);
     } finally {
       coinHistoryActive = false;
@@ -1694,8 +1703,8 @@
   let reportedBackfill;
   async function syncCoinsBackfill() {
     const initial = lsGet(COINS_BACKFILL, null);
-    const report = (state, checkpoint) => window.postMessage({ source: 'PIS_MAIN', type: 'COINS_HISTORY_STATUS',
-      scope: 'backfill', state, page: checkpoint?.page ?? null, oldest: checkpoint?.oldest ?? null }, location.origin);
+    const report = (state, checkpoint, reason) => window.postMessage({ source: 'PIS_MAIN', type: 'COINS_HISTORY_STATUS',
+      scope: 'backfill', state, reason, page: checkpoint?.page ?? null, oldest: checkpoint?.oldest ?? null }, location.origin);
     if (initial?.completedAt) {
       if (reportedBackfill !== initial.completedAt) {
         report('janela percorrida', initial);
@@ -1721,7 +1730,7 @@
           report(state, checkpoint);
         } });
     } catch (error) {
-      report('pausado · progresso preservado', lsGet(COINS_BACKFILL, null));
+      report('pausado · progresso preservado', lsGet(COINS_BACKFILL, null), error.queryStatus);
       dbg('Histórico anterior em Coins:', error.message);
     } finally {
       coinHistoryActive = false;
@@ -3502,7 +3511,8 @@
   let recentBusy = false;
   const sweepByCurrency = { gold: { page: 1, fallbackUntil: 0, retryAt: 0 }, orb: { page: 1, fallbackUntil: 0, retryAt: 0 } };
   setInterval(async () => {
-    if (recentBusy || !monitorAtivo() || !socketReadyForMarket() || Date.now() < st.marketPausaAte) return;
+    if (recentBusy || !monitorAtivo() || !socketReadyForMarket() || !marketModules().parser ||
+        Date.now() < st.marketPausaAte) return;
     const turn = recentTurn++ % 4;
     const currency = turn % 2 ? 'orb' : 'gold';
     const sweep = sweepByCurrency[currency];
@@ -3536,6 +3546,11 @@
       try {
         if (!monitorAtivo() || !st.sock || st.sock.readyState !== 1) {
           reportAutomatic(monitorAtivo() ? 'aguardando_socket' : 'rastreador_desligado');
+          await sleep(3000);
+          continue;
+        }
+        if (!marketModules().parser) {
+          reportAutomatic('parser_indisponível');
           await sleep(3000);
           continue;
         }

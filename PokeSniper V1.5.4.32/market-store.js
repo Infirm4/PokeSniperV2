@@ -3,7 +3,7 @@ const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
   const DB_VERSION = 11;
-  const ESTIMATE_REVISION = 2;
+  const ESTIMATE_REVISION = 3;
   const listingKey = row => [row.currency, row.id];
   let opening;
 
@@ -19,9 +19,15 @@ const PISMarketStore = (() => {
     if (opening) return opening;
     opening = new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
+      let abandoned = false;
+      request.onblocked = () => {
+        abandoned = true;
+        reject(new Error('Atualização do IndexedDB bloqueada por uma conexão antiga'));
+      };
       request.onupgradeneeded = event => {
         const db = request.result;
         const tx = request.transaction;
+        if (abandoned) { tx.abort(); return; }
         if (event.oldVersion < 1) {
           createListings(db);
           const sales = db.createObjectStore('sales', { keyPath: ['currency', 'id'] });
@@ -58,6 +64,7 @@ const PISMarketStore = (() => {
       };
       request.onsuccess = () => {
         const db = request.result;
+        if (abandoned) { db.close(); return; }
         db.onversionchange = () => { db.close(); opening = null; };
         resolve(db);
       };
@@ -161,7 +168,7 @@ const PISMarketStore = (() => {
   function reconcileSale(previous, incoming) {
     if (!previous) return { saved: incoming, changed: true, conflict: false };
     const gamePriority = previous.source === 'smartmarket_backup' && incoming.source === 'game';
-    const conflict = ['soldAt', 'price', 'speciesId', 'pokemonId', 'listingId', 'shiny', 'form'].some(field =>
+    const conflict = ['soldAt', 'price', 'speciesId', 'pokemonId', 'listingId', 'shiny', 'form', 'shadow', 'rarity'].some(field =>
       previous[field] != null && incoming[field] != null && previous[field] !== incoming[field]);
     if (conflict) return { saved: gamePriority ? incoming : previous, changed: gamePriority, conflict };
     const primary = gamePriority ? incoming : previous;
@@ -172,8 +179,10 @@ const PISMarketStore = (() => {
     const ivs = Object.values(saved.ivs);
     if (ivs.length === 6 && ivs.every(Number.isInteger)) saved.ivTotal = ivs.reduce((sum, value) => sum + value, 0);
     if (previous.outland || incoming.outland) saved.outland = true;
-    const changed = Object.entries(saved).some(([key, value]) => key === 'ivs'
-      ? Object.entries(value).some(([stat, iv]) => previous.ivs?.[stat] !== iv)
+    saved.stats = { ...supplemental.stats, ...primary.stats };
+    if (Object.keys(saved.stats).length === 0) saved.stats = null;
+    const changed = Object.entries(saved).some(([key, value]) => (key === 'ivs' || key === 'stats') && value != null
+      ? Object.entries(value).some(([stat, iv]) => previous[key]?.[stat] !== iv)
       : previous[key] !== value);
     return { saved, changed, conflict };
   }
@@ -492,7 +501,20 @@ const PISMarketStore = (() => {
     const totals = { listings: listings.length, sales: saleCount, noEstimate: 0, price: 0,
       filters: 0, detailed: 0, matched: 0, held: 0, sent: 0, sentDesktop: 0, sentInGame: 0, sentWithoutChannelInfo: 0, failed: 0, pending: 0 };
     const byKey = new Map(opportunities.map(row => [row.key, row]));
+    const coins = { observados: 0, estimados: 0, confiáveis: 0, ofertas: 0, avisos_reais: 0 };
+    totals.coins = coins;
     for (const row of listings) {
+      if (row.currency === 'gold') {
+        coins.observados++;
+        if (row.pricingRevision === ESTIMATE_REVISION && row.estimate?.status === 'estimated') {
+          coins.estimados++;
+          if (PISOpportunities.notificationEligible(row)) coins.confiáveis++;
+          if (PISOpportunities.approved(row, config, now)) {
+            coins.ofertas++;
+            if (byKey.get(PISOpportunities.key(row))?.delivery === 'sent') coins.avisos_reais++;
+          }
+        }
+      }
       if (['coins_comparables', 'briaoale_pve', 'briaoale_public'].includes(row.estimate?.method)) totals.detailed++;
       if (row.estimate?.status !== 'estimated') totals.noEstimate++;
       else if (row.estimate.profileReason === 'rare_profile') totals.held++;

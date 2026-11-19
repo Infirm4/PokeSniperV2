@@ -43,7 +43,7 @@
         const target = { ...capture('vitrine', [listing]).rows[0], price: 75, name: 'Gengar',
           ivs: { hp: 20, attack: 20, defense: 20, specialAttack: 20, specialDefense: 20, speed: 20 } };
         const history = Array.from({ length: 32 }, (_, i) => ({
-          ...target, price: 100, id: 'pve-sale-' + i, pokemonId: 'pve-' + i, soldAt: now - (i + 1) * 1000,
+          ...target, source: 'game', price: 100, id: 'pve-sale-' + i, pokemonId: 'pve-' + i, soldAt: now - (i + 1) * 1000,
         }));
         const result = PISPricingModel.prepare(history, PISMarketCore.estimate, now)(target);
         return result?.method === 'coins_comparables' && result.median === 100 && result.discount === 0.25;

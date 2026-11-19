@@ -14,6 +14,12 @@
     quality: nonnegative,
     ivTotal: nonnegative,
     form: identifier,
+    nature: identifier,
+    rarity: identifier,
+    shadow: value => value === 0 || value === 1,
+    stats: value => value != null && Object.values(value).some(nonnegative),
+    refinement: nonnegative,
+    battlePower: nonnegative,
     shiny: value => value === 0 || value === 1,
   };
   const counters = names => Object.fromEntries(names.map(name => [name, 0]));
@@ -77,7 +83,7 @@
     return {
       lookbackDays: RECENT_MS / DAY_MS,
       listings: coverage(listings, 'observedAt', { postedAt: positive, availableAt: positive, sprite: identifier, spriteSource: value => value === 'market' }, now),
-      sales: coverage(sales, 'soldAt', { listingId: identifier }, now),
+      sales: coverage(sales, 'soldAt', { listingId: identifier, pokemonId: identifier, source: value => value === 'game' }, now),
       exposures: { ...exposureCoverage, outcomes },
     };
   }

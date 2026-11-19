@@ -32,7 +32,7 @@
       return;
     }
     if (msg?.source === 'PIS_MAIN' && msg.type === 'COINS_HISTORY_STATUS') {
-      chrome.runtime.sendMessage({ type: 'PIS_COINS_HISTORY_STATUS', state: msg.state, scope: msg.scope, page: msg.page, oldest: msg.oldest }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'PIS_COINS_HISTORY_STATUS', state: msg.state, scope: msg.scope, reason: msg.reason, page: msg.page, oldest: msg.oldest }).catch(() => {});
       return;
     }
     if (msg?.source === 'PIS_MAIN' && msg.type === 'MARKET_HISTORY_EVENT') {
@@ -47,7 +47,7 @@
       return;
     }
     if (msg?.source === 'PIS_MAIN' && ['MARKET_MONITOR', 'MARKET_UNAVAILABLE'].includes(msg.type)) {
-      chrome.runtime.sendMessage({ type: 'PIS_' + msg.type, state: msg.state, socket: msg.socket, wire: msg.wire, ids: msg.ids, cutoff: msg.cutoff })
+      chrome.runtime.sendMessage({ type: 'PIS_' + msg.type, state: msg.state, socket: msg.socket, wire: msg.wire, modules: msg.modules, ids: msg.ids, cutoff: msg.cutoff })
         .catch(error => console.warn('[PIS] Monitor de mercado:', error.message));
       return;
     }

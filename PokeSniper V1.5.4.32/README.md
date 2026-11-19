@@ -1,4 +1,29 @@
-# PokeIdle Market Sniper (v1.5.4.31)
+# PokeIdle Market Sniper (v1.5.4.32)
+
+O parser do mercado é carregado no navegador mesmo quando a página expõe
+um objeto de módulos JavaScript. O relatório mostra se o parser e o coletor
+do histórico estão disponíveis e identifica falhas de resposta ou gravação.
+
+O banco aceita novos campos opcionais de perfil, como natureza, raridade,
+Shadow, atributos, refino e poder, quando a resposta do servidor os contém.
+Vendas anteriores são preservadas. A moeda e a transação identificam a venda.
+O identificador do exemplar impede que revendas dominem a referência.
+
+A precificação de Coins pondera a semelhança de Nota, nível e Potência,
+os atributos comparáveis e a recência. Usa quartis ponderados e filtra
+extremos no cálculo. Os avisos exigem suporte de vendas confirmadas pelo jogo.
+A margem de revenda, quando ativada, considera a taxa configurada pelo usuário.
+
+**Gerar relatório do mercado** consulta o estado e os registros de avisos reais.
+Os testes locais continuam disponíveis no relatório sem enviar notificações.
+
+Para validar no jogo, salve os filtros em **Coins** com os avisos ligados e
+um desconto mínimo de 5%. Abra a **Tabela de preços** no Mercado e selecione
+**Pokémon** e **Coins**. Espere carregar, feche o Mercado e deixe o jogo
+conectado por dois minutos. Gere um relatório. Confira os lotes de histórico
+gravados e as contagens em **alertas → coins**. O número de avisos reais sobe
+quando surgir uma oferta com comparáveis suficientes e desconto.
+
 
 Os filtros **Somente espécies** e **Bloquear espécies** foram removidos.
 Configurações antigas desses campos são ignoradas. O diagnóstico de tráfego

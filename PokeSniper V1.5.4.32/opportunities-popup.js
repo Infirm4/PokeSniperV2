@@ -112,6 +112,7 @@ function card(row, showLiquidity = false) {
       text('div', `Faixa ${format.format(estimate.lower)}–${format.format(estimate.upper)} · ${sample}`, 'offer-meta'),
       text('div', limit == null ? 'Informe a taxa e selecione uma moeda para calcular o teto de revenda.' :
         `Teto de preço para alerta ${format.format(limit)} ${unit}`, 'offer-meta'));
+    if (estimate.confidence) item.append(text('div', 'Confiança: ' + estimate.confidence, 'offer-meta'));
     if (estimate.alertSupported === false) item.append(text('div', 'Referência com poucos comparáveis próximos. Alerta suspenso.', 'offer-meta'));
     if (estimate.sourceAt) {
       item.append(text('div', 'Base de Gemas atualizada em ' + new Date(estimate.sourceAt).toLocaleString('pt-BR'), 'offer-meta'));
@@ -331,27 +332,19 @@ const testStatus = document.querySelector('#test-status');
 runDiagnostics.addEventListener('click', async () => {
   runDiagnostics.disabled = runBacktest.disabled = true;
   copyDiagnostics.disabled = downloadDiagnostics.disabled = true;
-  testStatus.textContent = 'Testando os dois avisos e lendo o banco local…';
+  testStatus.textContent = 'Lendo o banco local e os registros de alertas…';
   try {
     const settings = config ?? PISOpportunities.settings();
     const permission = Promise.resolve().then(() => chrome.notifications.getPermissionLevel())
       .catch(() => 'indisponível');
-    const snapshot = PISMarketStore.diagnosticSnapshot().catch(() => ({ erro: 'falha na leitura do IndexedDB' }));
+    const snapshot = PISMarketStore.diagnosticSnapshot().catch(error => ({ erro: error.message }));
     const pipeline = PISMarketStore.diagnostics(settings).catch(() => ({ erro: 'falha na leitura da fila' }));
     const trace = Promise.resolve().then(() => chrome.storage.session.get(PISHistoryTrace.KEY))
       .then(value => value[PISHistoryTrace.KEY] ?? []).catch(() => 'indisponível');
-    // Espera os recibos desta execução; o worker os guarda mesmo se o painel fechar.
     const sourceCheck = chrome.storage.local.get(['pisPublicGemsCheck', 'pisMarketEvents']).catch(() => ({}));
-    const testResults = Promise.all(['PIS_TEST_DESKTOP_TOAST', 'PIS_TEST_GAME_TOAST'].map(async type => {
-      try {
-        const response = await chrome.runtime.sendMessage({ type });
-        return { ok: response?.ok === true, at: Date.now(),
-          result: response ? (response.storageError ? 'falha ao salvar o teste' : null) : 'sem resposta' };
-      } catch { return { ok: false, at: Date.now(), result: 'sem resposta' }; }
-    }));
     const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisMarketPage:gold', 'pisMarketPage:orb', 'pisMarketQuery:gold', 'pisMarketQuery:orb', 'pisMarketQuery:history', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie', 'pisCoinsHistory:backfill']).catch(() => ({}));
-    const [notificationPermission, database, alerts, history, [desktopTest, gameTest], automatic, publicSource] =
-      await Promise.all([permission, snapshot, pipeline, trace, testResults, monitor, sourceCheck]);
+    const [notificationPermission, database, alerts, history, automatic, publicSource] =
+      await Promise.all([permission, snapshot, pipeline, trace, monitor, sourceCheck]);
     const tests = PISMarketSmoke.run();
     const report = {
       versão: chrome.runtime.getManifest().version,
@@ -370,10 +363,7 @@ runDiagnostics.addEventListener('click', async () => {
         ...alerts,
         notificações_ativadas: settings.notify,
         permissão_do_Chrome: notificationPermission,
-        notificação_de_teste: desktopTest.result ?? (desktopTest.ok ? 'aceita pelo Chrome' : 'falhou'),
-        notificação_de_teste_em: desktopTest.at,
-        aviso_de_teste_no_jogo: gameTest.result ?? (gameTest.ok ? 'confirmado pela aba' : 'aba indisponível'),
-        aviso_de_teste_no_jogo_em: gameTest.at,
+
       },
     };
     reportBox.value = JSON.stringify(report, null, 2);
@@ -442,23 +432,6 @@ form.addEventListener('submit', async event => {
     saveStatus.textContent = 'Filtros salvos.';
     await refresh();
   } catch (error) { saveStatus.textContent = 'Falha ao salvar. ' + error.message; }
-});
-
-async function runNoticeTest(type, success, failure) {
-  try {
-    const response = await chrome.runtime.sendMessage({ type });
-    saveStatus.textContent = response?.storageError ? 'Falha ao salvar o resultado do teste.' :
-      response?.ok ? success : failure;
-  } catch { saveStatus.textContent = 'Recarregue a extensão e tente novamente.'; }
-}
-
-document.querySelector('#test-notification').addEventListener('click', () => {
-  runNoticeTest('PIS_TEST_DESKTOP_TOAST', 'Teste enviado ao Chrome.', 'O Chrome recusou o aviso de teste.');
-});
-
-document.querySelector('#test-game-toast').addEventListener('click', () => {
-  runNoticeTest('PIS_TEST_GAME_TOAST', 'Aviso exibido dentro da aba do PokéIdle. Volte ao jogo para vê-lo.',
-    'Abra ou recarregue o PokéIdle e deixe o mercado carregar antes de testar.');
 });
 
 document.querySelector('#open').addEventListener('click', () => {

@@ -29,6 +29,15 @@
     ? value.trim().slice(0, 80).toLowerCase() : id(value);
   const timestamp = value => positiveInteger(value) && Number(value) >= 1e12 ? Number(value) : null;
 
+  function readStats(source, aliases) {
+    const stats = {};
+    for (const [stat, keys] of Object.entries(aliases)) {
+      const value = asNonnegative(keys.map(key => source?.[key]).find(value => value != null));
+      if (value != null) stats[stat] = value;
+    }
+    return Object.keys(stats).length ? stats : null;
+  }
+
   function attributes(ficha) {
     const source = ficha.ivs && typeof ficha.ivs === 'object' && !Array.isArray(ficha.ivs) ? ficha.ivs : {};
     const ivs = Object.fromEntries(Object.entries(statAliases).map(([stat, aliases]) => [
@@ -41,6 +50,12 @@
       form: label(ficha.formId ?? ficha.formaId ?? ficha.forma),
       nature: label(ficha.natureza ?? ficha.nature),
       natureId: id(ficha.naturezaId ?? ficha.natureId),
+      shadow: shiny(ficha.shadow ?? ficha.isShadow),
+      rarity: label(ficha.rarity ?? ficha.raridade),
+      legendary: shiny(ficha.legendary ?? ficha.lendario),
+      stats: readStats(ficha.stats ?? ficha.atributos, statAliases),
+      refinement: asNonnegative(ficha.refinoTotal ?? ficha.refinementTotal),
+      battlePower: asNonnegative(ficha.poder ?? ficha.battlePower),
       power: power ? Number(power[1]) : null,
       quality: asNonnegative(ficha.quality ?? ficha.qualidade),
       ivTotal: parts.every(value => value != null)
@@ -130,7 +145,6 @@
   function normalizeRow(kind, row, currency) {
     if (!row || (row.tipo != null && row.tipo !== 'pokemon') || !row.ficha) return null;
     const sale = kind === 'sale';
-    if (sale && row.tipo !== 'pokemon') return null;
     const recordId = id(row.id);
     const speciesId = id(row.ficha.speciesId ?? row.ficha.especieId);
     const denomination = money(row.moeda ?? currency);
@@ -139,7 +153,7 @@
       (row.qtd != null && number(row.qtd) !== 1)) return null;
     const profile = {
       id: recordId,
-      pokemonId: id(row.pokemonId),
+      pokemonId: id(row.pokemonId ?? row.ficha.id),
       speciesId,
       name: typeof row.ficha.nome === 'string' ? row.ficha.nome.trim().slice(0, 100) : null,
       currency: denomination,
@@ -242,7 +256,9 @@
       preco: row.price, bruto: row.price, em: row.soldAt, listingId: row.listingId,
       sprite: row.sprite, spriteSource: row.spriteSource, spriteFallback: row.spriteFallback, criadoEm: row.postedAt, compravelEm: row.availableAt, expiraEm: row.expiresAt, estado: row.closed,
       ficha: { speciesId: row.speciesId, nome: row.name, shiny: row.shiny, level: row.level, nota: row.grade,
-        formId: row.form, natureza: row.nature, naturezaId: row.natureId, potencia: row.power, quality: row.quality, ivTotal: row.ivTotal, ivs: row.ivs,
+        formId: row.form, natureza: row.nature, naturezaId: row.natureId, shadow: row.shadow,
+        rarity: row.rarity, legendary: row.legendary, stats: row.stats, refinoTotal: row.refinement,
+        poder: row.battlePower, potencia: row.power, quality: row.quality, ivTotal: row.ivTotal, ivs: row.ivs,
         tmAoe: row.aoe, tmElemental: row.zMove, mega: row.mega },
     })).filter(Boolean);
   }
@@ -269,16 +285,20 @@
   }
 
   function coinProfile(target, sale) {
-    for (const field of ['natureId', 'nature']) {
+    if ((target.shadow === 1 || sale.shadow === 1) && target.shadow !== sale.shadow) return null;
+    for (const field of ['natureId', 'nature', 'rarity', 'legendary']) {
       if (target[field] != null && sale[field] != null && target[field] !== sale[field]) return null;
     }
     if (target.name && sale.name && target.name.toLowerCase() !== sale.name.toLowerCase()) return null;
     const grade = Math.abs(sale.grade - target.grade);
     const level = Math.abs(Math.log(sale.level / target.level));
-    let distance = grade / 0.5 + level / 0.5;
+    const power = Number.isFinite(target.power) && Number.isFinite(sale.power) ? target.power - sale.power : 0;
+    // Núcleo de semelhança por Nota, log do nível e Potência, com parâmetros próprios.
+    let distance = ((grade / 0.24) ** 2 + (level / 0.30) ** 2 + (power / 1.25) ** 2) / 2;
     let close = grade <= 0.5 && level <= Math.log(2) / 2;
     const fields = [
       [target.power, sale.power, 1],
+      [target.refinement, sale.refinement, Math.max(1, target.refinement * 0.2)],
       [target.quality, sale.quality, Math.max(0.01, target.quality * 0.12)],
       [target.ivTotal, sale.ivTotal, Math.max(5, target.ivTotal * 0.15)],
       ...Object.keys(statAliases).map(stat => [target.ivs?.[stat], sale.ivs?.[stat], 6]),
@@ -318,10 +338,11 @@
           !(sale.level > 0 && Number.isFinite(sale.grade)) || (sale.pokemonId && sale.pokemonId === target.pokemonId)) continue;
       const profile = coinProfile(target, sale);
       if (!profile) continue;
-      const weight = 2 ** (-(now - sale.soldAt) / (10 * DAY)) * Math.exp(-profile.distance);
+      const weight = 2 ** (-(now - sale.soldAt) / (5 * DAY)) * Math.exp(-profile.distance);
       if (weight >= 0.01) comparable.push({ sale, price: Number(sale.price), weight, close: profile.close });
     }
-    comparable.sort((a, b) => Number(b.close) - Number(a.close) || b.weight - a.weight || b.sale.soldAt - a.sale.soldAt);
+    comparable.sort((a, b) => Number(b.close) - Number(a.close) ||
+      Number(b.sale.source === 'game') - Number(a.sale.source === 'game') || b.weight - a.weight || b.sale.soldAt - a.sale.soldAt);
     const salesSeen = new Set();
     const pokemonSeen = new Set();
     const distinct = comparable.filter(({ sale }) => {
@@ -332,21 +353,24 @@
       return true;
     }).sort((a, b) => a.price - b.price);
     const similar = distinct.filter(row => row.close);
-    const close = trimOutliers(similar);
+    const verified = similar.filter(row => row.sale.source === 'game' && id(row.sale.pokemonId));
+    const close = trimOutliers(verified);
     const direct = close.length >= 5 && effective(close) >= 4 &&
-      close.filter(row => row.sale.pokemonId).length >= 5 &&
       [target.power, target.quality, target.ivTotal].every(Number.isFinite);
     const rows = direct ? close : trimOutliers(distinct);
     const count = rows.length;
     const stats = { count, independentCount: count, effectiveCount: effective(rows),
-      closeCount: close.length, outlierCount: (direct ? similar.length : distinct.length) - count };
+      closeCount: close.length, outlierCount: (direct ? verified.length : distinct.length) - count };
     if (count < 5 || stats.effectiveCount < 4) return { status: 'insufficient_sales', ...stats };
     const weight = totalWeight(rows);
     const lower = quantile(rows, weight, 0.25);
     const median = quantile(rows, weight, 0.5);
     const upper = quantile(rows, weight, 0.75);
+    const spread = Math.log(upper / lower);
+    const confidence = stats.effectiveCount >= 8 && spread <= Math.log(1.6) ? 'alta' :
+      stats.effectiveCount >= 4 && spread <= Math.log(2) ? 'média' : 'baixa';
     return { status: 'estimated', method: 'coins_comparables', ...stats, lower, median, upper,
-      discount: 1 - target.price / median, alertSupported: direct && upper / lower <= 2,
+      confidence, discount: 1 - target.price / median, alertSupported: direct && confidence !== 'baixa',
       comparables: [...rows].sort((a, b) => b.weight - a.weight).slice(0, 5).map(({ sale }) => ({
         id: sale.id, price: sale.price, soldAt: sale.soldAt, grade: sale.grade, level: sale.level,
         power: sale.power, speed: sale.ivs?.speed,
@@ -419,6 +443,6 @@
 
   const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
     WINDOW_MS, MAX_BATCH };
-  if (typeof module === 'object' && module.exports) module.exports = core;
+  if (typeof window === 'undefined' && typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
 })();
