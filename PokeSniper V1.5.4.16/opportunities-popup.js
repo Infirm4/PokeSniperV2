@@ -204,7 +204,7 @@ const testStatus = document.querySelector('#test-status');
 runDiagnostics.addEventListener('click', async () => {
   runDiagnostics.disabled = true;
   copyDiagnostics.disabled = true;
-  testStatus.textContent = 'Executando testes locais e lendo a cobertura do IndexedDB…';
+  testStatus.textContent = 'Testando os dois avisos e lendo o banco local…';
   try {
     const settings = config ?? PISOpportunities.settings();
     const permission = Promise.resolve().then(() => chrome.notifications.getPermissionLevel())
@@ -213,8 +213,15 @@ runDiagnostics.addEventListener('click', async () => {
     const pipeline = PISMarketStore.diagnostics(settings).catch(() => ({ erro: 'falha na leitura da fila' }));
     const trace = Promise.resolve().then(() => chrome.storage.session.get(PISHistoryTrace.KEY))
       .then(value => value[PISHistoryTrace.KEY] ?? []).catch(() => 'indisponível');
-    const testResults = chrome.storage.local.get(['pisDesktopToastTest', 'pisGameToastTest']).catch(() => ({}));
-    const [notificationPermission, database, alerts, history, notices] =
+    // Espera os recibos desta execução; o worker os guarda mesmo se o painel fechar.
+    const testResults = Promise.all(['PIS_TEST_DESKTOP_TOAST', 'PIS_TEST_GAME_TOAST'].map(async type => {
+      try {
+        const response = await chrome.runtime.sendMessage({ type });
+        return { ok: response?.ok === true, at: Date.now(),
+          result: response ? (response.storageError ? 'falha ao salvar o teste' : null) : 'sem resposta' };
+      } catch { return { ok: false, at: Date.now(), result: 'sem resposta' }; }
+    }));
+    const [notificationPermission, database, alerts, history, [desktopTest, gameTest]] =
       await Promise.all([permission, snapshot, pipeline, trace, testResults]);
     const tests = PISMarketSmoke.run();
     const report = {
@@ -226,12 +233,10 @@ runDiagnostics.addEventListener('click', async () => {
         ...alerts,
         notificações_ativadas: settings.notify,
         permissão_do_Chrome: notificationPermission,
-        notificação_de_teste: notices.pisDesktopToastTest
-          ? (notices.pisDesktopToastTest.ok ? 'aceita pelo Chrome' : 'falhou') : 'não solicitada',
-        notificação_de_teste_em: notices.pisDesktopToastTest?.at ?? null,
-        aviso_de_teste_no_jogo: notices.pisGameToastTest
-          ? (notices.pisGameToastTest.ok ? 'confirmado pela aba' : 'aba indisponível') : 'não solicitado',
-        aviso_de_teste_no_jogo_em: notices.pisGameToastTest?.at ?? null,
+        notificação_de_teste: desktopTest.result ?? (desktopTest.ok ? 'aceita pelo Chrome' : 'falhou'),
+        notificação_de_teste_em: desktopTest.at,
+        aviso_de_teste_no_jogo: gameTest.result ?? (gameTest.ok ? 'confirmado pela aba' : 'aba indisponível'),
+        aviso_de_teste_no_jogo_em: gameTest.at,
       },
     };
     reportBox.value = JSON.stringify(report, null, 2);

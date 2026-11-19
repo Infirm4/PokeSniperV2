@@ -1,5 +1,10 @@
 # PokeIdle Market Sniper (v1.2.0)
 
+## Diagnóstico em um clique (v1.5.4.16)
+
+Com o jogo aberto, use **Diagnóstico da versão → Testar avisos e gerar relatório → Copiar resultado**.
+O diagnóstico dispara um aviso de teste em cada canal e registra os resultados da mesma execução.
+
 ## Avisos e diagnóstico da Tabela de preços (v1.5.4.14)
 
 O aviso visual pode aparecer no próprio PokéIdle e nas notificações do sistema via Chrome.
