@@ -1,0 +1,115 @@
+// Exibe avisos enviados pelo service worker na aba do jogo.
+(() => {
+  const MAX_VISIBLE = 3;
+  const DURATION_MS = 9000;
+  const visible = new Map();
+  let host;
+  let container;
+
+  function mount() {
+    if (host?.isConnected) return true;
+    if (!document.documentElement) return false;
+    for (const entry of visible.values()) clearTimeout(entry.timer);
+    visible.clear();
+
+    host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'closed' });
+    const style = new CSSStyleSheet();
+    style.replaceSync(`
+      :host {
+        all: initial !important;
+        position: fixed !important;
+        top: 16px !important;
+        right: 16px !important;
+        width: min(350px, calc(100vw - 32px)) !important;
+        z-index: 2147483647 !important;
+        pointer-events: none !important;
+      }
+      .stack { display: grid; gap: 8px; }
+      .notice {
+        box-sizing: border-box;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px 12px;
+        padding: 12px 14px;
+        background: #231930;
+        color: #faf5ff;
+        border: 1px solid #785393;
+        border-inline-start: 4px solid #d5a7fb;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px #100a19aa;
+        pointer-events: auto;
+        font: 14px/1.35 system-ui, sans-serif;
+        overflow-wrap: anywhere;
+      }
+      .notice.test { border-inline-start-color: #8ad6f5; }
+      strong { grid-column: 1; }
+      p { grid-column: 1; margin: 0; color: #ebdff4; }
+      button {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        align-self: start;
+        border: 0;
+        border-radius: 4px;
+        padding: 2px 6px;
+        color: inherit;
+        background: transparent;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover, button:focus-visible { background: #52376a; }
+    `);
+    container = document.createElement('div');
+    container.className = 'stack';
+    container.setAttribute('aria-live', 'polite');
+    container.setAttribute('aria-relevant', 'additions text');
+    shadow.adoptedStyleSheets = [style];
+    shadow.append(container);
+    document.documentElement.append(host);
+    return true;
+  }
+
+  function remove(key) {
+    const entry = visible.get(key);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    entry.element.remove();
+    visible.delete(key);
+  }
+
+  function show(title, message, test) {
+    if (!mount()) return false;
+    const key = JSON.stringify([title, message, test]);
+    if (visible.has(key)) {
+      const entry = visible.get(key);
+      clearTimeout(entry.timer);
+      entry.timer = setTimeout(() => remove(key), DURATION_MS);
+      return true;
+    }
+    if (visible.size >= MAX_VISIBLE) remove(visible.keys().next().value);
+
+    const element = document.createElement('div');
+    element.className = test ? 'notice test' : 'notice';
+    const heading = document.createElement('strong');
+    heading.textContent = title;
+    const text = document.createElement('p');
+    text.textContent = message;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = '×';
+    close.setAttribute('aria-label', 'Fechar aviso');
+    close.addEventListener('click', () => remove(key));
+    element.append(heading, text, close);
+    container.append(element);
+    visible.set(key, { element, timer: setTimeout(() => remove(key), DURATION_MS) });
+    return true;
+  }
+
+  chrome.runtime.onMessage.addListener((request, sender, reply) => {
+    if (sender.id !== chrome.runtime.id || request?.type !== 'PIS_MARKET_TOAST') return false;
+    const title = typeof request.title === 'string' ? request.title.trim().slice(0, 120) : '';
+    const message = typeof request.message === 'string' ? request.message.trim().slice(0, 400) : '';
+    reply({ ok: Boolean(title && message && show(title, message, request.test === true)) });
+    return false;
+  });
+})();

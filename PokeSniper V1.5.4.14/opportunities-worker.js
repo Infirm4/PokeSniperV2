@@ -12,19 +12,21 @@ const PISOpportunityAlerts = (() => {
       PISOpportunities.notificationEligible(row));
     for (const row of pending.slice(0, 5)) {
       // ID determinístico mantém apenas uma notificação para a mesma revisão após uma retomada.
-      let delivered = false;
+      const title = row.name || 'Pokémon #' + row.speciesId;
+      const message = `${row.price.toLocaleString('pt-BR')} ${row.currency === 'gold' ? 'Coins' : 'Gemas'} · ${Math.round(row.estimate.discount * 100)}% abaixo da referência${row.estimate.method === 'baseline' ? ' básica' : ''}`;
+      const inGame = PISGameTab.show(title, message).catch(() => false);
+      let desktop = false;
       try {
         await chrome.notifications.create('pis:' + row.key, {
-          type: 'basic', iconUrl: chrome.runtime.getURL('opportunity-icon.png'),
-          title: row.name || 'Pokémon #' + row.speciesId,
-          message: `${row.price.toLocaleString('pt-BR')} ${row.currency === 'gold' ? 'Coins' : 'Gemas'} · ${Math.round(row.estimate.discount * 100)}% abaixo da referência${row.estimate.method === 'baseline' ? ' básica' : ''}`,
+          type: 'basic', iconUrl: chrome.runtime.getURL('opportunity-icon.png'), title, message,
           contextMessage: 'Oferta observada no PokéIdle · clique para abrir o jogo',
         });
-        delivered = true;
-      } catch (error) {
-        console.warn('[PIS] Falha na notificação:', error.message);
+        desktop = true;
+      } catch {
+        console.warn('[PIS] Aviso visual do Chrome indisponível.');
       }
-      await PISMarketStore.markDelivery(row.key, delivered);
+      const game = await inGame;
+      await PISMarketStore.markDelivery(row.key, desktop || game, Date.now(), { desktop, game });
     }
   }
 

@@ -4,27 +4,73 @@ const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwPXSeG3xL5PUwDwsuCp
 const PIS_HOST = /^https:\/\/(?:[a-z0-9-]+\.)?pokeidle\.io(?:\/|$)/i;
 
 importScripts('market-core.js', 'pricing-model.js', 'liquidity.js', 'opportunities.js', 'market-store.js',
-  'opportunities-worker.js');
+  'history-trace.js');
+
+const gameTabKey = 'marketGameTab';
+let lastGameTab;
+const PISGameTab = {
+  remember(tabId) {
+    if (lastGameTab === tabId) return;
+    lastGameTab = tabId;
+    chrome.storage.session.set({ [gameTabKey]: tabId }).catch(() => {});
+  },
+  async show(title, message, test = false) {
+    const tabId = lastGameTab ?? (await chrome.storage.session.get(gameTabKey))[gameTabKey];
+    if (!Number.isSafeInteger(tabId)) return false;
+    try {
+      const reply = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_TOAST', title, message, test }, { frameId: 0 });
+      return reply?.ok === true;
+    } catch { return false; }
+  }
+};
+
+importScripts('opportunities-worker.js');
 PISMarketStore.initialize().catch(error => {
   console.warn('[PIS] Não foi possível iniciar o banco de mercado:', error.message);
 });
 
-let corePending = 0;
+let listingPending = 0;
+let salePending = 0;
 chrome.runtime.onMessage.addListener((req, sender, reply) => {
-  if (req?.type !== 'PIS_MARKET_CORE_BATCH') return false;
+  if (req?.type === 'PIS_TEST_GAME_TOAST') {
+    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
+    PISGameTab.show('PokeSniper · Aviso de teste', 'Este aviso aparece dentro da aba do PokéIdle.', true)
+      .then(ok => reply({ ok }), () => reply({ ok: false }));
+    return true;
+  }
+  const history = req?.type === 'PIS_MARKET_HISTORY_EVENT';
+  if (!history && req?.type !== 'PIS_MARKET_CORE_BATCH') return false;
   if (!sender.tab || !PIS_HOST.test(String(sender.url || sender.tab.url || ''))) {
     reply({ ok: false, error: 'origem inválida' });
     return false;
   }
-  const rows = PISMarketCore.validate(req.kind, req.rows);
-  if (!rows.length || corePending >= 16) {
-    reply({ ok: false, error: rows.length ? 'fila local cheia' : 'lote inválido' });
-    return false;
+  PISGameTab.remember(sender.tab.id);
+  const track = receipt => history ? PISHistoryTrace.record(req.event, req.trace || {}, receipt)
+    .catch(() => console.warn('[PIS] Falha ao guardar o diagnóstico do histórico.')) : Promise.resolve();
+  if (history && req.event !== 'response') {
+    track().then(() => reply({ ok: true }));
+    return true;
   }
-  corePending++;
-  PISMarketStore.ingest(req.kind, rows)
-    .then(() => { reply({ ok: true }); PISOpportunityAlerts.wake(); }, error => reply({ ok: false, error: String(error.message).slice(0, 300) }))
-    .finally(() => { corePending--; });
+  const kind = history ? 'sale' : req.kind;
+  const rows = PISMarketCore.validate(kind, req.rows);
+  const isSale = kind === 'sale';
+  // Reserva vagas para páginas de histórico durante um censo da vitrine.
+  const full = isSale ? salePending >= 4 : listingPending >= 16;
+  if (!rows.length || full) {
+    track({ status: rows.length ? 'fila_cheia' : 'sem_registros_validos', accepted: rows.length })
+      .then(() => reply({ ok: history && !rows.length, error: rows.length ? 'fila local cheia' : 'lote inválido' }));
+    return true;
+  }
+  if (isSale) salePending++;
+  else listingPending++;
+  PISMarketStore.ingest(kind, rows)
+    .then(
+      stats => track({ status: 'gravado', accepted: rows.length, ...stats })
+        .then(() => { reply({ ok: true }); PISOpportunityAlerts.wake(); }),
+      error => track({ status: 'falha_na_gravação', accepted: rows.length })
+        .then(() => reply({ ok: false, error: String(error.message).slice(0, 300) })),
+    )
+    .finally(() => { if (isSale) salePending--; else listingPending--; });
   return true;
 });
 

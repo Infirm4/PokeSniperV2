@@ -91,7 +91,7 @@ const PISMarketStore = (() => {
           const key = PISOpportunities.key(priced);
           const previous = await result(store.get(key));
           store.put({ ...priced, key, delivery: previous?.delivery ?? 'pending',
-            attempts: previous?.attempts ?? 0, nextAttemptAt: previous?.nextAttemptAt ?? 0 });
+            attempts: previous?.attempts ?? 0, nextAttemptAt: previous?.nextAttemptAt ?? 0, deliveryChannels: previous?.deliveryChannels });
         }
       }
     }
@@ -109,6 +109,8 @@ const PISMarketStore = (() => {
     const sales = tx.objectStore('sales');
     const listings = tx.objectStore('listings');
     const exposures = tx.objectStore('exposures');
+    const savedRows = { new: 0, existing: 0, gainedFullIvs: 0 };
+    const hasFullIvs = row => Object.values(row?.ivs || {}).filter(Number.isFinite).length === 6;
     try {
       if (kind === 'sale') {
         const affected = new Map();
@@ -126,6 +128,9 @@ const PISMarketStore = (() => {
             .filter(([key, value]) => sale[key] == null && value != null)),
             ivs: Object.fromEntries(Object.entries(previous.ivs || {}).concat(
               Object.entries(sale.ivs || {}).filter(([, value]) => value != null))) } : sale;
+          if (previous) savedRows.existing++;
+          else savedRows.new++;
+          if (!hasFullIvs(previous) && hasFullIvs(saved)) savedRows.gainedFullIvs++;
           sales.put(saved);
           if (saved.pokemonId && saved.soldAt <= now) {
             const start = [saved.pokemonId, saved.currency, saved.soldAt - PISLiquidity.MAX_GAP];
@@ -171,6 +176,7 @@ const PISMarketStore = (() => {
         await reprice(tx, observed, now, true);
       }
       await done;
+      return savedRows;
     } catch (error) {
       try { tx.abort(); } catch { /* já encerrada */ }
       throw error;
@@ -195,7 +201,7 @@ const PISMarketStore = (() => {
     return current.filter(Boolean).reverse();
   }
 
-  async function markDelivery(key, delivered, now = Date.now()) {
+  async function markDelivery(key, delivered, now = Date.now(), channels) {
     const db = await open();
     const tx = db.transaction('opportunities', 'readwrite');
     const done = new Promise((resolve, reject) => {
@@ -207,6 +213,7 @@ const PISMarketStore = (() => {
     const row = await result(store.get(key));
     if (row && row.delivery === 'pending') {
       row.attempts++;
+      if (channels) row.deliveryChannels = channels;
       row.delivery = delivered ? 'sent' : row.attempts >= 3 ? 'failed' : 'pending';
       row.nextAttemptAt = now + 60000 * row.attempts;
       store.put(row);
@@ -276,7 +283,7 @@ const PISMarketStore = (() => {
     const sales = result(tx.objectStore('sales').count());
     const [listings, opportunities, saleCount] = await Promise.all([rows, queue, sales]);
     const totals = { listings: listings.length, sales: saleCount, noEstimate: 0, price: 0,
-      filters: 0, detailed: 0, matched: 0, held: 0, sent: 0, failed: 0, pending: 0 };
+      filters: 0, detailed: 0, matched: 0, held: 0, sent: 0, sentDesktop: 0, sentInGame: 0, sentWithoutChannelInfo: 0, failed: 0, pending: 0 };
     const byKey = new Map(opportunities.map(row => [row.key, row]));
     for (const row of listings) {
       if (row.estimate?.method?.startsWith('profile_')) totals.detailed++;
@@ -285,8 +292,14 @@ const PISMarketStore = (() => {
       else if (!PISOpportunities.matches(row, config)) totals.filters++;
       else {
         totals.matched++;
-        const delivery = byKey.get(PISOpportunities.key(row))?.delivery;
-        if (delivery === 'sent' || delivery === 'failed') totals[delivery]++;
+        const entry = byKey.get(PISOpportunities.key(row));
+        const delivery = entry?.delivery;
+        if (delivery === 'sent') {
+          totals.sent++;
+          if (!entry.deliveryChannels) totals.sentWithoutChannelInfo++;
+          if (entry.deliveryChannels?.desktop) totals.sentDesktop++;
+          if (entry.deliveryChannels?.game) totals.sentInGame++;
+        } else if (delivery === 'failed') totals.failed++;
         else if (!PISOpportunities.notificationEligible(row)) totals.held++;
         else if (delivery === 'pending') totals.pending++;
       }

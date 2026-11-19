@@ -1,5 +1,16 @@
 # PokeIdle Market Sniper (v1.2.0)
 
+## Avisos e diagnóstico da Tabela de preços (v1.5.4.14)
+
+O aviso visual pode aparecer no próprio PokéIdle e nas notificações do sistema via Chrome.
+Em **Filtros e notificações**, os dois botões de teste permitem conferir os canais separadamente.
+O teste no jogo usa a última aba do PokéIdle observada pela extensão.
+
+Se a quantidade de vendas não mudar, abra **Tabela de preços → Pokémon**, avance algumas
+páginas e rode **Diagnóstico da versão**. O campo `histórico_na_sessão` mostra as páginas
+observadas, quantas linhas tinham ficha e quantas vendas foram novas, repetidas ou enriqueceram
+a ficha. Ele contém apenas metadados e contagens e mantém os últimos 40 eventos da sessão.
+
 ## Análise pelo nome e diagnóstico (v1.5.4.13)
 
 No ícone do PokeSniper, abra **Analisar Pokémon**. Busque pelo nome ou escolha um anúncio

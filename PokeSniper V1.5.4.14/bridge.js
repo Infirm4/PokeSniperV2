@@ -6,6 +6,13 @@
   window.addEventListener('message', event => {
     if (event.source !== window || event.origin !== location.origin) return;
     const msg = event.data;
+    if (msg?.source === 'PIS_MAIN' && msg.type === 'MARKET_HISTORY_EVENT') {
+      if (!['request', 'response', 'invalid_json', 'ignored_socket'].includes(msg.event) ||
+          !Array.isArray(msg.rows) || msg.rows.length > 100) return;
+      chrome.runtime.sendMessage({ type: 'PIS_MARKET_HISTORY_EVENT', event: msg.event, trace: msg.trace, rows: msg.rows })
+        .catch(error => console.warn('[PIS] Histórico de mercado:', error.message));
+      return;
+    }
     if (msg?.source === 'PIS_MAIN' && msg.type === 'MARKET_CORE_BATCH') {
       if (!['sale', 'listing'].includes(msg.kind) || !Array.isArray(msg.rows) ||
           msg.rows.length === 0 || msg.rows.length > 100) return;

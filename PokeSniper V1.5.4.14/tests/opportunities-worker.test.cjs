@@ -13,7 +13,7 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
     key: String(index), currency: 'gold', speciesId: '25', price: 70,
     estimate: { discount: 0.3 }, delivery: 'pending', nextAttemptAt: 0,
   }));
-  const attempts = [], results = [];
+  const attempts = [], results = [], gameAttempts = [];
   const event = { addListener() {} };
   const chrome = {
     storage: { local: { get: async () => ({ opportunitySettings: { notify } }) }, onChanged: event },
@@ -26,15 +26,21 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
   };
   const PISMarketStore = {
     recentOpportunities: async () => rows,
-    markDelivery: async (key, delivered) => { results.push([key, delivered]); },
+    markDelivery: async (key, delivered, _time, channels) => { results.push([key, delivered, channels.desktop, channels.game]); },
   };
+  const PISGameTab = { show: async (_title, message) => {
+    gameAttempts.push(message);
+    return gameAttempts.length === 2;
+  } };
   const alerts = runInNewContext(worker + '\nPISOpportunityAlerts;', {
-    chrome, PISMarketStore, PISOpportunities: rules, console: { warn() {} },
+    chrome, PISMarketStore, PISGameTab, PISOpportunities: rules, console: { warn() {} },
   });
   await alerts.wake();
   assert.deepEqual(attempts, []);
   notify = true;
   await Promise.all([alerts.wake(), alerts.wake()]);
   assert.deepEqual(attempts, ['pis:0', 'pis:1', 'pis:2', 'pis:3', 'pis:4']);
-  assert.deepEqual(results, [['0', true], ['1', false], ['2', true], ['3', true], ['4', true]]);
+  assert.equal(gameAttempts.length, 5);
+  assert.deepEqual(results, [['0', true, true, false], ['1', true, false, true],
+    ['2', true, true, false], ['3', true, true, false], ['4', true, true, false]]);
 });

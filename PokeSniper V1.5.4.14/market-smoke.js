@@ -29,6 +29,15 @@
           estimate: { status: 'estimated', lower: 90, median: 100 } };
         return PISOpportunities.eligible(row) && PISOpportunities.matches(row, PISOpportunities.settings());
       }),
+      check('página de histórico reconhecida sem expor identificadores', () => {
+        const frame = { pagina: 2, aba: 'historicoGlobal', t: 'market', linhas: sales };
+        const wire = JSON.stringify(frame, null, 2);
+        const normalized = PISMarketCore.capture(frame);
+        const receipt = PISHistoryTrace.clean('response', PISMarketCore.historyTrace(frame),
+          { status: 'gravado', accepted: normalized.rows.length, new: normalized.rows.length });
+        return PISMarketCore.historyReply.test(wire) && receipt.pagina === 2 && receipt.novas === 5 &&
+          !JSON.stringify(receipt).includes('sample0');
+      }),
       check('identidade da transação separada do anúncio', () => {
         const row = capture('vitrine', [listing]).rows[0];
         const exposure = PISLiquidity.observe(row, null, now - 60000);

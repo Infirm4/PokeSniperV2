@@ -86,6 +86,23 @@
       ...(closed ? { closed } : {}) };
   }
 
+  const historyReply = /"aba"\s*:\s*"historicoGlobal"/;
+  const historyRequest = /"t"\s*:\s*"market\.historicoGlobal"/;
+  const linkageFields = ['listingId', 'anuncioId', 'idAnuncio', 'anuncio_id', 'listing_id', 'ofertaId', 'idOferta'];
+
+  function historyTrace(frame) {
+    const rows = Array.isArray(frame.linhas) ? frame.linhas : [];
+    return {
+      page: frame.pagina,
+      rows: rows.length,
+      pokemon: rows.filter(row => row?.tipo === 'pokemon').length,
+      withProfile: rows.filter(row => row?.tipo === 'pokemon' && row.ficha && typeof row.ficha === 'object').length,
+      more: frame.temMais,
+      candidateFields: Object.fromEntries(linkageFields.map(key => [key,
+        rows.filter(row => row?.tipo === 'pokemon' && id(row[key]) != null).length])),
+    };
+  }
+
   function capture(frame) {
     if (frame?.t !== 'market' || !Array.isArray(frame.linhas)) return null;
     const kind = frame.aba === 'vitrine' ? 'listing' : frame.aba === 'historicoGlobal' ? 'sale' : null;
@@ -165,7 +182,8 @@
       })) };
   }
 
-  const core = { capture, validate, estimate, sameMarket, WINDOW_MS, MAX_BATCH };
+  const core = { capture, validate, estimate, sameMarket, historyReply, historyRequest, historyTrace, linkageFields,
+    WINDOW_MS, MAX_BATCH };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
 })();

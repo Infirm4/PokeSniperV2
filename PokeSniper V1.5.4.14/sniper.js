@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.13
+// PokeIdle Market Sniper v1.5.4.14
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.13'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.14'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -549,15 +549,35 @@
     }
   }
 
+  function postHistory(event, trace, rows = []) {
+    window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_HISTORY_EVENT', event, trace, rows }, location.origin);
+  }
+
+  function isCurrentGameSocket(ws) {
+    if (ws === st.sock) return true;
+    try {
+      const url = new URL(ws.url);
+      return url.protocol === 'wss:' && /(^|\.)pokeidle\.io$/i.test(url.hostname);
+    } catch { return false; }
+  }
+
   function onMsg(ws, e) {
     const d = e.data;
     if (typeof d !== 'string') return;
     // Resposta de limite pode vir em uma notificação fora de market/estado/batalha.
     if (d.length < 12000 && /devagar\s*a[ií]|muitas mensagens|too many (?:messages|requests)/i.test(d))
       registrarSobrecargaDoServidor('aviso do jogo: excesso de mensagens');
-    if (!d.startsWith('{"t":"estado"') && !d.startsWith('{"t":"market"') && !d.startsWith('{"t":"batalha"')) return;
+    const marketCore = globalThis.PISMarketCore;
+    const history = marketCore?.historyReply.test(d);
+    if (!history && !/^\s*\{\s*"t"\s*:\s*"(estado|market|batalha)"/.test(d)) return;
     let j;
-    try { j = JSON.parse(d); } catch { return; }
+    try { j = JSON.parse(d); }
+    catch { if (history) postHistory('invalid_json', {}); return; }
+    if (j?.t === 'market' && j.aba === 'historicoGlobal' && marketCore) {
+      const trace = marketCore.historyTrace(j);
+      if (isCurrentGameSocket(ws)) postHistory('response', trace, marketCore.capture(j)?.rows);
+      else postHistory('ignored_socket', trace);
+    }
     if (j.t === 'estado' && j.estado) {
       const primeiraConexao = st.sock !== ws;
       st.sock = ws;
@@ -574,7 +594,7 @@
     }
     if (j.t === 'market') aprenderRespostaPokemon(j);
     // Observa páginas conforme chegam, sem consultas adicionais nem efeito sobre o censo.
-    if (ws === st.sock && j.t === 'market') {
+    if (ws === st.sock && j.t === 'market' && j.aba !== 'historicoGlobal') {
       try {
         const batch = globalThis.PISMarketCore?.capture(j);
         if (batch) window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_CORE_BATCH', ...batch }, location.origin);
@@ -606,6 +626,12 @@
     attach(this);
     // espião (só console): mostra o que o PRÓPRIO JOGO envia ao mercado. O bot envia pelo send original e não aparece aqui.
     if (typeof d === 'string' && d.slice(0, 40).includes('market')) dbg('jogo enviou:', d.slice(0, 400));
+    if (typeof d === 'string' && globalThis.PISMarketCore?.historyRequest.test(d) && isCurrentGameSocket(this)) {
+      try {
+        const request = JSON.parse(d);
+        if (request.t === 'market.historicoGlobal') postHistory('request', { page: request.pagina, pokemon: request.tipo === 'pokemon' });
+      } catch { /* A captura não interfere no envio do jogo. */ }
+    }
     aprenderConsultaPokemon(d);
     return osend.apply(this, arguments);
   };

@@ -148,7 +148,7 @@ async function refresh() {
     panelStatus.textContent = rows.length
       ? `${visible.length} de ${rows.length} oportunidades dos últimos 10 min. Confira a oferta no jogo.`
       : 'Nenhuma oportunidade recente atende aos filtros. A vitrine e a Tabela de preços alimentam o painel.';
-    diagnostics.textContent = `${stats.listings} anúncios recentes · ${stats.sales} vendas no banco · ${stats.detailed} avaliados pelo perfil · ${stats.noEstimate} sem avaliação · ${stats.price} acima da faixa · ${stats.filters} barrados pelos filtros · ${stats.matched} oportunidades. Notificações ${config.notify ? 'ligadas' : 'desligadas'} · ${stats.pending} pendentes · ${stats.held} retidas · ${stats.sent} enviadas · ${stats.failed} com falha.`;
+    diagnostics.textContent = `${stats.listings} anúncios recentes · ${stats.sales} vendas no banco · ${stats.detailed} avaliados pelo perfil · ${stats.noEstimate} sem avaliação · ${stats.price} acima da faixa · ${stats.filters} barrados pelos filtros · ${stats.matched} oportunidades. Notificações ${config.notify ? 'ligadas' : 'desligadas'} · ${stats.pending} pendentes · ${stats.held} retidas · ${stats.sent} enviadas (${stats.sentInGame} no jogo · ${stats.sentDesktop} aceitas pelo Chrome) · ${stats.failed} com falha.`;
   } catch (error) {
     if (request === generation) panelStatus.textContent = 'Não foi possível ler as oportunidades. ' + error.message;
   }
@@ -200,6 +200,7 @@ const copyDiagnostics = document.querySelector('#copy-diagnostics');
 const reportBox = document.querySelector('#diagnostic-report');
 const testStatus = document.querySelector('#test-status');
 let testNotification = 'não solicitada';
+let testGameToast = 'não solicitado';
 
 runDiagnostics.addEventListener('click', async () => {
   runDiagnostics.disabled = true;
@@ -211,17 +212,21 @@ runDiagnostics.addEventListener('click', async () => {
       .catch(() => 'indisponível');
     const snapshot = PISMarketStore.diagnosticSnapshot().catch(() => ({ erro: 'falha na leitura do IndexedDB' }));
     const pipeline = PISMarketStore.diagnostics(settings).catch(() => ({ erro: 'falha na leitura da fila' }));
-    const [notificationPermission, database, alerts] = await Promise.all([permission, snapshot, pipeline]);
+    const trace = Promise.resolve().then(() => chrome.storage.session.get(PISHistoryTrace.KEY))
+      .then(value => value[PISHistoryTrace.KEY] ?? []).catch(() => 'indisponível');
+    const [notificationPermission, database, alerts, history] = await Promise.all([permission, snapshot, pipeline, trace]);
     const tests = PISMarketSmoke.run();
     const report = {
       versão: chrome.runtime.getManifest().version,
       testes: tests,
       banco: database,
+      histórico_na_sessão: history,
       alertas: {
         ...alerts,
         notificações_ativadas: settings.notify,
         permissão_do_Chrome: notificationPermission,
         notificação_de_teste: testNotification,
+        aviso_de_teste_no_jogo: testGameToast,
       },
     };
     reportBox.value = JSON.stringify(report, null, 2);
@@ -272,6 +277,18 @@ document.querySelector('#test-notification').addEventListener('click', async () 
   } catch (error) {
     testNotification = 'falhou';
     saveStatus.textContent = 'Falha no teste. ' + error.message;
+  }
+});
+
+document.querySelector('#test-game-toast').addEventListener('click', async () => {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'PIS_TEST_GAME_TOAST' });
+    if (!response?.ok) throw new Error('aba indisponível');
+    testGameToast = 'confirmado pela aba';
+    saveStatus.textContent = 'Aviso exibido dentro da aba do PokéIdle. Volte ao jogo para vê-lo.';
+  } catch {
+    testGameToast = 'aba indisponível';
+    saveStatus.textContent = 'Abra ou recarregue o PokéIdle e deixe o mercado carregar antes de testar.';
   }
 });
 
