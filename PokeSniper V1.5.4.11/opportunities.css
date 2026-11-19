@@ -1,0 +1,19 @@
+:root { color-scheme: dark; font: 13px system-ui, sans-serif; background: #1c1521; color: #f5edf6; }
+body { width: 422px; max-width: calc(100vw - 32px); margin: 16px; }
+header, .offer-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+h1 { margin: 0; font-size: 21px; }
+button, input, select { font: inherit; padding: 6px 8px; border: 1px solid #76576f; border-radius: 5px; background: #38283b; color: inherit; }
+button, summary { cursor: pointer; }
+button:hover { background: #583a54; }
+details { margin-top: 14px; padding: 9px; border: 1px solid #533952; border-radius: 7px; }
+form { display: grid; gap: 8px; margin-top: 8px; }
+.fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+label { display: grid; gap: 4px; }
+input, select { min-width: 0; }
+.check { display: flex; align-items: center; }
+small, #status, .offer-meta, #save-status { color: #d5bdd2; }
+ul { padding: 0; list-style: none; display: grid; gap: 8px; }
+li { padding: 10px; background: #302234; border-radius: 6px; }
+.offer-title strong:last-child { color: #ace6b7; white-space: nowrap; }
+.offer-meta { margin-top: 4px; }
+:focus-visible { outline: 2px solid #f3a5d8; outline-offset: 2px; }

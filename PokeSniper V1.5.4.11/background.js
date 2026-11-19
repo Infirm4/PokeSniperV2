@@ -3,7 +3,7 @@
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwPXSeG3xL5PUwDwsuCp-XWJ8s8w3qmlGxECTJo_haREmZbeKOOnr_5qTfVZtH5xmDS/exec';
 const PIS_HOST = /^https:\/\/(?:[a-z0-9-]+\.)?pokeidle\.io(?:\/|$)/i;
 
-importScripts('market-core.js', 'market-store.js');
+importScripts('market-core.js', 'opportunities.js', 'market-store.js', 'opportunities-worker.js');
 PISMarketStore.initialize().catch(error => {
   console.warn('[PIS] Não foi possível iniciar o banco de mercado:', error.message);
 });
@@ -22,7 +22,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   corePending++;
   PISMarketStore.ingest(req.kind, rows)
-    .then(() => reply({ ok: true }), error => reply({ ok: false, error: String(error.message).slice(0, 300) }))
+    .then(() => { reply({ ok: true }); PISOpportunityAlerts.wake(); }, error => reply({ ok: false, error: String(error.message).slice(0, 300) }))
     .finally(() => { corePending--; });
   return true;
 });

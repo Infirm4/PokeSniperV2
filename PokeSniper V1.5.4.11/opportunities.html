@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Oportunidades · PokeSniper</title>
+  <link rel="stylesheet" href="opportunities.css">
+  <script defer src="market-core.js"></script>
+  <script defer src="opportunities.js"></script>
+  <script defer src="market-store.js"></script>
+  <script defer src="opportunities-popup.js"></script>
+</head>
+<body>
+  <header><h1>Oportunidades</h1><button id="open" type="button">Abrir PokéIdle</button></header>
+  <details>
+    <summary>Filtros e notificações</summary>
+    <form id="settings">
+      <div class="fields">
+        <label>Moeda<select name="currency"><option value="gold">Coins</option><option value="orb">Gemas</option><option value="all">Todas</option></select></label>
+        <label>Desconto mínimo (%)<input name="discount" type="number" min="0" max="99" required></label>
+        <label>Preço máximo<input name="maxPrice" type="number" min="0" required></label>
+      </div>
+      <small>Use 0 para preço sem limite. O teto vale em cada moeda selecionada.</small>
+      <label>Somente espécies<input name="allow" placeholder="Nome ou ID, separados por vírgula" maxlength="1000"></label>
+      <label>Bloquear espécies<input name="block" placeholder="Nome ou ID, separados por vírgula" maxlength="1000"></label>
+      <label class="check"><input name="notify" type="checkbox"> Notificações no Chrome</label>
+      <div><button type="submit">Salvar filtros</button> <button type="button" id="test-notification">Testar notificação</button></div>
+      <span id="save-status" role="status"></span>
+    </form>
+  </details>
+  <p id="status" role="status"></p>
+  <ul id="offers"></ul>
+</body>
+</html>

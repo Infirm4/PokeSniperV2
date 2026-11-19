@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.10
+// PokeIdle Market Sniper v1.5.4.11
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.10'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.11'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura

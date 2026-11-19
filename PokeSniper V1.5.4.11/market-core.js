@@ -29,6 +29,7 @@
       id: recordId,
       pokemonId: id(row.pokemonId),
       speciesId,
+      name: typeof row.ficha.nome === 'string' ? row.ficha.nome.trim().slice(0, 100) : null,
       currency: denomination,
       shiny: shiny(row.ficha.shiny),
       level: number(row.ficha.level ?? row.ficha.nivel),
@@ -59,7 +60,7 @@
     return rows.map(row => row && normalizeRow(kind, {
       tipo: 'pokemon', id: row.id, pokemonId: row.pokemonId, moeda: row.currency,
       preco: row.price, bruto: row.price, em: row.soldAt,
-      ficha: { speciesId: row.speciesId, shiny: row.shiny, level: row.level, nota: row.grade },
+      ficha: { speciesId: row.speciesId, nome: row.name, shiny: row.shiny, level: row.level, nota: row.grade },
     })).filter(Boolean);
   }
 
