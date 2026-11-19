@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.27
+// PokeIdle Market Sniper v1.5.4.28
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.27'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.28'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -554,12 +554,29 @@
     window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_HISTORY_EVENT', event, trace, rows }, location.origin);
   }
 
-  function isCurrentGameSocket(ws) {
-    if (ws === st.sock) return true;
+  const observedGameSockets = new WeakSet();
+  let gameSocketSource = null;
+
+  function isPokeIdleSocket(ws) {
     try {
       const url = new URL(ws.url);
       return url.protocol === 'wss:' && /(^|\.)pokeidle\.io$/i.test(url.hostname);
     } catch { return false; }
+  }
+
+  function bindGameSocket(ws, source) {
+    if (!isPokeIdleSocket(ws) || ws.readyState !== 1) return false;
+    if (st.sock === ws) {
+      if (source === 'estado') gameSocketSource = source;
+      return false;
+    }
+    if (st.sock?.readyState === 1 && source !== 'estado') return false;
+    st.sock = ws;
+    // Nunca reaproveite o saldo da conta/conexão anterior para autorizar compras.
+    st.gold = null;
+    st.off = 0;
+    gameSocketSource = source;
+    return true;
   }
 
   function publishMarketPage(frame, request) {
@@ -580,9 +597,11 @@
     watchOpportunities = event.data.enabled;
   });
   function reportAutomatic(state) {
-    if (state === lastMonitorState) return;
-    lastMonitorState = state;
-    window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_MONITOR', state }, location.origin);
+    const key = state + '|' + gameSocketSource;
+    if (key === lastMonitorState) return;
+    lastMonitorState = key;
+    window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_MONITOR', state,
+      socket: gameSocketSource }, location.origin);
   }
 
   function onMsg(ws, e) {
@@ -594,6 +613,7 @@
       if (marketCore?.historyReply.test(d)) postHistory('invalid_json', {});
       return;
     }
+    if (j.t === 'market' || j.t === 'batalha') bindGameSocket(ws, 'tráfego');
     if (j.t === 'erro' && ws === st.sock) {
       const message = typeof j.msg === 'string' ? j.msg : '';
       const rateLimit = /devagar|desacelera|slow down|rate.?limit|too many|muitas mensagens/i.test(message);
@@ -612,14 +632,14 @@
       const trace = marketCore.historyTrace(j);
       const page = ws === st.sock && coinHistorySeq != null && Number(j.seq) === coinHistorySeq && j.moeda == null
         ? { ...j, moeda: 'gold' } : j;
-      if (isCurrentGameSocket(ws) && !(ws === st.sock && coinHistorySeq != null && Number(j.seq) === coinHistorySeq))
+      if (isPokeIdleSocket(ws) && !(ws === st.sock && coinHistorySeq != null && Number(j.seq) === coinHistorySeq))
         postHistory('response', trace, marketCore.capture(page)?.rows);
-      else if (!isCurrentGameSocket(ws)) postHistory('ignored_socket', trace);
+      else if (!isPokeIdleSocket(ws)) postHistory('ignored_socket', trace);
     }
-    if (j.t === 'estado' && j.estado) {
-      const primeiraConexao = st.sock !== ws;
-      st.sock = ws;
-      if (primeiraConexao) agendarConferenciaVendas(2500);
+    if (j.t === 'estado' && j.estado && isPokeIdleSocket(ws)) {
+      const awaitingState = ws !== st.sock || gameSocketSource !== 'estado';
+      bindGameSocket(ws, 'estado');
+      if (awaitingState) agendarConferenciaVendas(2500);
       if (j.estado.servidorAgora) st.off = j.estado.servidorAgora - Date.now();
       if (typeof j.estado.gold === 'number') st.gold = j.estado.gold;
     }
@@ -648,23 +668,40 @@
   }
 
   function attach(ws) {
-    if (ws.__pis) return;
-    ws.__pis = true;
+    if (!isPokeIdleSocket(ws) || observedGameSockets.has(ws)) return;
+    observedGameSockets.add(ws);
+    ws.addEventListener('open', () => bindGameSocket(ws, 'abertura'));
     ws.addEventListener('message', e => onMsg(ws, e));
+    ws.addEventListener('close', () => {
+      for (let i = waiters.length - 1; i >= 0; i--) {
+        if (waiters[i].ws !== ws) continue;
+        const [waiter] = waiters.splice(i, 1);
+        clearTimeout(waiter.t);
+        waiter.reject(Object.assign(new Error('conexão do jogo fechada'), { queryStatus: 'desconectada' }));
+      }
+      if (st.sock !== ws) return;
+      st.sock = null;
+      st.gold = null;
+      st.off = 0;
+      gameSocketSource = null;
+      if (monitorAtivo()) reportAutomatic('aguardando_socket');
+    });
   }
 
   window.WebSocket = new Proxy(OWS, {
     construct(target, args, nt) {
       const ws = Reflect.construct(target, args, nt);
       attach(ws);
+      bindGameSocket(ws, 'abertura');
       return ws;
     }
   });
   OWS.prototype.send = function (d) {
     attach(this);
+    bindGameSocket(this, 'envio do jogo');
     // espião (só console): mostra o que o PRÓPRIO JOGO envia ao mercado. O bot envia pelo send original e não aparece aqui.
     if (typeof d === 'string' && d.slice(0, 40).includes('market')) dbg('jogo enviou:', d.slice(0, 400));
-    if (typeof d === 'string' && globalThis.PISMarketCore?.historyRequest.test(d) && isCurrentGameSocket(this)) {
+    if (typeof d === 'string' && globalThis.PISMarketCore?.historyRequest.test(d) && isPokeIdleSocket(this)) {
       try {
         const request = JSON.parse(d);
         if (request.t === 'market.historicoGlobal') postHistory('request', { page: request.pagina, pokemon: request.tipo === 'pokemon' });

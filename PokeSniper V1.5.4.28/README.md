@@ -1,4 +1,10 @@
-# PokeIdle Market Sniper (v1.5.4.27)
+# PokeIdle Market Sniper (v1.5.4.28)
+
+O monitor reconhece a conexão do PokéIdle quando ela abre ou quando o jogo
+envia dados por uma conexão que já estava aberta. O diagnóstico mostra como
+a conexão foi reconhecida. Se ela fechar, as consultas pendentes são encerradas
+e o monitor aguarda outra conexão.
+
 
 O monitor aceita respostas mesmo quando o campo de tipo muda de posição no
 JSON. A correlação da vitrine usa página, moeda e sequência quando presentes.

@@ -127,7 +127,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   PISGameTab.remember(sender.tab.id);
   if (req.type === 'PIS_MARKET_QUERY') {
     if (!['gold', 'orb', 'history'].includes(req.route) || !['enviada', 'resposta', 'recuo', 'recusada',
-      'cancelada', 'sem_resposta', 'falha_de_envio'].includes(req.status)) return false;
+      'cancelada', 'sem_resposta', 'falha_de_envio', 'desconectada'].includes(req.status)) return false;
     const query = { status: req.status, at: Date.now(),
       page: Number.isSafeInteger(req.page) && req.page >= 0 ? req.page : null,
       order: ['recentes', 'baratos'].includes(req.order) ? req.order : null };
@@ -145,7 +145,8 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   if (req.type === 'PIS_MARKET_MONITOR') {
     if (!['aguardando_socket', 'rastreador_desligado', 'recuo', 'varrendo', 'falha_ou_recuo'].includes(req.state)) return false;
-    chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now() } })
+    chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now(),
+      socket: ['abertura', 'envio do jogo', 'tráfego', 'estado'].includes(req.socket) ? req.socket : null } })
       .then(() => reply({ ok: true }), () => reply({ ok: false }));
     return true;
   }
