@@ -57,3 +57,33 @@ test('página do censo aceita a moeda da consulta correlacionada e rejeita outra
   assert.equal(core.captureAutomatic(frame, { pagina: 4, moeda: 'gold' }), null);
   assert.equal(core.captureAutomatic({ ...frame, moeda: 'orb' }, { pagina: 3, moeda: 'gold' }), null);
 });
+
+test('reconhece prefixos de Outland, marcador explícito e Pokédex sem confundir speciesId', () => {
+  const { isOutland, capture } = require('../market-core.js');
+  for (const name of ['Trickmaster Gengar', 'Trickamaster Gengar', 'Enrage Tyranitar',
+    'Enraged Typhlosion', 'Furious Scizor', '✨ Shiny Brave Charizard']) {
+    assert.equal(isOutland({ name }), true);
+  }
+  assert.equal(isOutland({ name: 'Mega Charizard', speciesId: '13359' }), false);
+  assert.equal(isOutland({ ficha: { dex: 2019 } }), true);
+  assert.equal(isOutland({ ficha: { isOutland: true } }), true);
+  const batch = capture({ t: 'market', aba: 'vitrine', linhas: [{ ...listing,
+    ficha: { ...listing.ficha, nome: 'Gengar', dex: 2019 } }] });
+  assert.equal(batch.rows[0].outland, true);
+});
+
+test('vendas legadas de Trickmaster Gengar não mudam o preço de Gengar mesmo com o mesmo speciesId', () => {
+  const { estimate } = require('../market-core.js');
+  const now = Date.now();
+  const target = { name: 'Gengar', speciesId: '94', currency: 'gold', shiny: 0, level: 100, grade: 5, price: 80 };
+  const regular = [90, 95, 100, 105, 110].map((price, i) => ({
+    ...target, id: 'regular-' + i, soldAt: now - 1000, price,
+  }));
+  const premium = [...Array(10)].map((_, i) => ({
+    ...target, name: 'Trickmaster Gengar', id: 'premium-' + i, soldAt: now - 1000, price: 1000,
+  }));
+  assert.equal(estimate(target, [...regular, ...premium], now).median, 100);
+  assert.equal(estimate({ ...target, name: 'Trickmaster Gengar' }, premium, now).status, 'excluded_outland');
+  assert.equal(require('../opportunities.js').eligible({ ...premium[0],
+    estimate: { status: 'estimated', median: 2000 } }), false);
+});

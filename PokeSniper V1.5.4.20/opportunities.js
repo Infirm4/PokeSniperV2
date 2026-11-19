@@ -1,5 +1,7 @@
 // Regras puras para o painel e as notificações. Nenhum comando é enviado ao jogo.
 (() => {
+  const { isOutland } = typeof module === 'object' && module.exports
+    ? require('./market-core.js') : globalThis.PISMarketCore;
   const TTL = 10 * 60 * 1000;
   const DEFAULTS = { currency: 'gold', discount: 20, allow: '', block: '', notify: false };
   const tokens = value => String(value || '').toLowerCase().split(',').map(item => item.trim()).filter(Boolean);
@@ -22,7 +24,7 @@
   }
 
   // Indexa ofertas no preço de referência ou abaixo dele. O filtro aplica o desconto salvo.
-  const eligible = (row, now = Date.now()) => !row.closed && (!row.expiresAt || row.expiresAt > now) && row.estimate?.status === 'estimated' && row.estimate.profileReason !== 'rare_profile' && row.estimate.median > 0 && row.price <= row.estimate.median;
+  const eligible = (row, now = Date.now()) => !row.closed && !isOutland(row) && (!row.expiresAt || row.expiresAt > now) && row.estimate?.status === 'estimated' && row.estimate.profileReason !== 'rare_profile' && row.estimate.median > 0 && row.price <= row.estimate.median;
   const key = row => JSON.stringify([row.currency, row.id, row.price]);
 
   // O preço limite deriva do desconto e, quando ativo, do filtro de margem de revenda.

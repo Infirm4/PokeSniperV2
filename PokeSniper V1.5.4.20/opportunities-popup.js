@@ -122,8 +122,10 @@ function card(row, showLiquidity = false) {
       text('div', limit == null ? 'Informe a taxa e selecione uma moeda para calcular o teto de revenda.' :
         `Teto de preço para alerta ${format.format(limit)} ${unit}`, 'offer-meta'));
     if (estimate.profileReason) item.append(text('div', profileStatus[estimate.profileReason], 'offer-meta'));
-  } else item.append(text('div', 'Preço estimado indisponível para esta ficha e amostra.', 'offer-meta'));
-  if (showLiquidity && row.level > 0) {
+  } else item.append(text('div', estimate?.status === 'excluded_outland'
+    ? 'Outlaw excluído da precificação e dos alertas.'
+    : 'Preço estimado indisponível para esta ficha e amostra.', 'offer-meta'));
+  if (showLiquidity && row.level > 0 && estimate?.status !== 'excluded_outland') {
     const summary = text('div', 'Consultando liquidez em 7 dias…', 'offer-meta');
     item.append(summary);
     const price = Math.round(estimate?.median ?? row.price);

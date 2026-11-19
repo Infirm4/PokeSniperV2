@@ -30,6 +30,15 @@
         return PISMarketCore.estimate(target, capture('historicoGlobal', premium).rows, now)
           .status === 'insufficient_sales';
       }),
+      check('Outlaws ficam fora da referência e dos alertas', () => {
+        const target = capture('vitrine', [listing]).rows[0];
+        const history = capture('historicoGlobal', sales).rows;
+        const outlaw = { ...target, name: 'Trickmaster Gengar',
+          estimate: { status: 'estimated', median: 100 } };
+        const premium = history.map(row => ({ ...row, name: 'Trickmaster Gengar', price: 1000 }));
+        return !PISOpportunities.eligible(outlaw) && PISMarketCore.estimate(target, premium, now)
+          .status === 'insufficient_sales';
+      }),
       check('censo captura anúncio sem moeda explícita', () => {
         const frame = { t: 'market', aba: 'vitrine', pagina: 2, linhas: [{ ...listing, moeda: undefined }] };
         const batch = PISMarketCore.captureAutomatic(frame, { pagina: 2, moeda: 'gold' });

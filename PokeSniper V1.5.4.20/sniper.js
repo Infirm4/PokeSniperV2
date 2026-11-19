@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.19
+// PokeIdle Market Sniper v1.5.4.20
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.19'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.20'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -1615,7 +1615,7 @@
     const l = resposta.linhas.find(x => String(x.id) === String(id));
     if (!abertoPoke(l) || (l.moeda != null && l.moeda !== 'gold') || (c.meuNome && l.vendedor === c.meuNome)) return null;
     const p = lerPokemon(l), limite = limitePoke(c);
-    if (!p || !limite || p.preco >= limite || p.qtd !== 1 || p.preco !== Number(precoEsperado)) return null;
+    if (globalThis.PISMarketCore?.isOutland(l) || !p || !limite || p.preco >= limite || p.qtd !== 1 || p.preco !== Number(precoEsperado)) return null;
     if (liberarEm != null && Number(l.compravelEm) !== Number(liberarEm)) return null;
     return { item: l, p, limite };
   }
@@ -1645,7 +1645,7 @@
     if (!limite) return { hits: 0 };
     const r = await consultarPokemon(false);
     if (!st.running || runId !== st.loopId) return { hits: 0 };
-    const abertas = (r.linhas || []).filter(abertoPoke);
+    const abertas = (r.linhas || []).filter(row => abertoPoke(row) && !globalThis.PISMarketCore?.isOutland(row));
     const lidos = abertas.map(lerPokemon).filter(Boolean);
 
     if (abertas.length && !lidos.length) {

@@ -7,7 +7,7 @@ const PISMarketStore = (() => {
   function open() {
     if (opening) return opening;
     opening = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, 6);
+      const request = indexedDB.open(DB_NAME, 7);
       request.onupgradeneeded = event => {
         const db = request.result;
         const tx = request.transaction;
@@ -54,7 +54,7 @@ const PISMarketStore = (() => {
 
   // Leitura indexada por grupo, limitada às vendas mais recentes da janela.
   function recentSales(index, listing, now) {
-    if (listing.shiny == null) return Promise.resolve([]);
+    if (listing.shiny == null || PISMarketCore.isOutland(listing)) return Promise.resolve([]);
     const group = [listing.currency, listing.speciesId, listing.shiny];
     const range = IDBKeyRange.bound([...group, now - PISMarketCore.WINDOW_MS], [...group, now], false, true);
     return new Promise((resolve, reject) => {
@@ -64,7 +64,7 @@ const PISMarketStore = (() => {
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor || rows.length === MAX_COMPARABLES) return resolve(rows);
-        rows.push(cursor.value);
+        if (!PISMarketCore.isOutland(cursor.value)) rows.push(cursor.value);
         cursor.continue();
       };
     });

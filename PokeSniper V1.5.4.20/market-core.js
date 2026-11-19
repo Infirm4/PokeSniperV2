@@ -51,6 +51,20 @@
     };
   }
 
+  const outlandPrefix = /^(?:trickmaster|trickamaster|enraged|enrage|furious|brave|outlaw|outland)\s+\S/i;
+
+  function isOutland(row) {
+    const ficha = row?.ficha;
+    const explicit = [row?.outland, row?.outlaw, row?.isOutland, ficha?.outland, ficha?.outlaw, ficha?.isOutland];
+    if (explicit.some(value => shiny(value) === 1)) return true;
+    // #2001+ se refere à Pokédex do jogo. speciesId é um identificador interno.
+    const dex = number(ficha?.dex ?? ficha?.dexId ?? ficha?.numeroNacional ?? row?.dex);
+    if (Number.isSafeInteger(dex) && dex >= 2001) return true;
+    const name = ficha?.nome ?? row?.name ?? row?.nome;
+    return typeof name === 'string' &&
+      outlandPrefix.test(name.trim().replace(/^✨\s*/u, '').replace(/^shiny\s+/i, ''));
+  }
+
   // Conserva a identidade do anúncio e a da venda em campos e stores distintos.
   // Dados ausentes permanecem nulos. Preço unitário só é comparável para um exemplar.
   function normalizeRow(kind, row, currency) {
@@ -73,6 +87,7 @@
       level: number(row.ficha.level ?? row.ficha.nivel),
       grade: number(row.ficha.nota),
       price: Number(price),
+      outland: isOutland(row) ? true : null,
       ...attributes(row.ficha),
     };
     if (sale) {
@@ -125,7 +140,7 @@
     if (!['sale', 'listing'].includes(kind) || !Array.isArray(rows) ||
       rows.length === 0 || rows.length > MAX_BATCH) return [];
     return rows.map(row => row && normalizeRow(kind, {
-      tipo: 'pokemon', id: row.id, pokemonId: row.pokemonId, moeda: row.currency,
+      tipo: 'pokemon', id: row.id, pokemonId: row.pokemonId, moeda: row.currency, outland: row.outland,
       preco: row.price, bruto: row.price, em: row.soldAt, listingId: row.listingId,
       criadoEm: row.postedAt, compravelEm: row.availableAt, expiraEm: row.expiresAt, estado: row.closed,
       ficha: { speciesId: row.speciesId, nome: row.name, shiny: row.shiny, level: row.level, nota: row.grade,
@@ -134,7 +149,7 @@
     })).filter(Boolean);
   }
 
-  const sameMarket = (a, b) => a.currency === b.currency && a.speciesId === b.speciesId &&
+  const sameMarket = (a, b) => !isOutland(a) && !isOutland(b) && a.currency === b.currency && a.speciesId === b.speciesId &&
     a.shiny === b.shiny && (a.form ?? null) === (b.form ?? null);
 
   // A ficha ausente não prova incompatibilidade, mas também não comprova um especial.
@@ -159,6 +174,7 @@
   // Nota e nível só participam quando presentes dos dois lados. As escalas são
   // parâmetros iniciais para backtest e a faixa descreve os comparáveis observados.
   function estimate(target, sales, now) {
+    if (isOutland(target)) return { status: 'excluded_outland' };
     if (target.shiny == null || !(target.level > 0) || target.grade == null) {
       return { status: 'incomplete_profile' };
     }
@@ -199,7 +215,7 @@
       })) };
   }
 
-  const core = { capture, captureAutomatic, validate, estimate, sameMarket, historyReply, historyRequest, historyTrace, linkageFields,
+  const core = { capture, captureAutomatic, validate, estimate, sameMarket, isOutland, historyReply, historyRequest, historyTrace, linkageFields,
     WINDOW_MS, MAX_BATCH };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
