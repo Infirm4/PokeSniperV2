@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.30
+// PokeIdle Market Sniper v1.5.4.31
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.30'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.31'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -556,7 +556,7 @@
 
   const observedGameSockets = new WeakSet();
   const confirmedGameSockets = new WeakSet();
-  const wire = { recebidos: 0, estados: 0, vitrine: 0, histórico: 0, outros: 0, binários: 0 };
+  const wire = { recebidos: 0, estados: 0, vitrine: 0, histórico: 0, outros: 0, binários: 0, formatos: {} };
   const socketReadyForMarket = () => st.sock?.readyState === 1 && confirmedGameSockets.has(st.sock);
   const confirmSocket = source => ['estado', 'tráfego', 'consulta do jogo'].includes(source);
   let gameSocketSource = null;
@@ -632,6 +632,8 @@
     const j = marketCore?.decodeGameFrame(d);
     if (!j) {
       wire.outros++;
+      const format = marketCore?.otherFrameFormat(d);
+      if (format) wire.formatos[format] = (wire.formatos[format] ?? 0) + 1;
       if (marketCore?.historyReply.test(d)) postHistory('invalid_json', {});
       return;
     }

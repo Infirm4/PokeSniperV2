@@ -3,16 +3,13 @@
   const { isOutland } = typeof module === 'object' && module.exports
     ? require('./market-core.js') : globalThis.PISMarketCore;
   const TTL = 10 * 60 * 1000;
-  const DEFAULTS = { currency: 'gold', discount: 20, allow: '', block: '', notify: false };
-  const tokens = value => String(value || '').toLowerCase().split(',').map(item => item.trim()).filter(Boolean);
+  const DEFAULTS = { currency: 'gold', discount: 20, notify: false };
 
   function settings(raw = {}) {
     const discount = Number(raw.discount ?? DEFAULTS.discount);
     return {
       currency: ['gold', 'orb', 'all'].includes(raw.currency) ? raw.currency : DEFAULTS.currency,
       discount: Number.isFinite(discount) ? Math.min(99, Math.max(0, discount)) : DEFAULTS.discount,
-      allow: typeof raw.allow === 'string' ? raw.allow.slice(0, 1000) : '',
-      block: typeof raw.block === 'string' ? raw.block.slice(0, 1000) : '',
       notify: raw.notify === true,
       resale: raw.resale === true,
       fee: raw.fee != null && raw.fee !== '' && Number.isFinite(Number(raw.fee)) &&
@@ -49,12 +46,8 @@
 
   function matches(row, config) {
     const limit = priceLimit(row, config);
-    const tags = [row.speciesId, row.name?.trim().toLowerCase()];
-    const allow = tokens(config.allow);
     return (config.currency === 'all' || config.currency === row.currency) &&
-      limit != null && row.price <= limit &&
-      (!allow.length || allow.some(tag => tags.includes(tag))) &&
-      !tokens(config.block).some(tag => tags.includes(tag));
+      limit != null && row.price <= limit;
   }
 
   function approved(row, config, now = Date.now()) {

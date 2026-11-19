@@ -18,9 +18,13 @@ test('deduplica pela identidade e pelo preço, independentemente da idade da obs
   assert.notEqual(key(row), key({ ...row, currency: 'orb' }));
 });
 
-test('aplica filtros por moeda, desconto, teto e espécie, com bloqueio prioritário', () => {
-  assert.equal(matches(row, settings({ allow: 'PIKACHU' })), true);
-  assert.equal(matches(row, settings({ allow: '25', block: 'pikachu' })), false);
+test('aplica moeda e desconto, ignorando filtros antigos de espécie', () => {
+  const legacy = { allow: 'Gengar', block: 'Pikachu,25' };
+  const config = settings(legacy);
+  assert.equal(matches(row, config), true);
+  assert.equal(matches(row, { ...config, ...legacy }), true);
+  assert.equal(Object.hasOwn(config, 'allow'), false);
+  assert.equal(Object.hasOwn(config, 'block'), false);
   assert.equal(matches(row, settings({ maxPrice: 69 })), true);
   assert.equal(matches(row, settings({ discount: 31 })), false);
   assert.equal(matches(row, settings({ currency: 'orb' })), false);

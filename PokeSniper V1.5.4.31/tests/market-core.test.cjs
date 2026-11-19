@@ -119,3 +119,13 @@ test('correlaciona a vitrine por sequência ou moeda explícita independente da 
   assert.equal(matchesMarketPage({ ...withCurrency, linhas: [{ moeda: 'gold' }] }, request), false);
   assert.equal(decodeGameFrame('{"t":"chat","msg":"Devagar aí — muitas mensagens."}'), null);
 });
+
+test('classifica o formato do tráfego sem devolver dados da mensagem', () => {
+  const { otherFrameFormat } = require('../market-core.js');
+  assert.equal(otherFrameFormat('{"t":"pong","private":"x"}'), 'ping_pong');
+  assert.equal(otherFrameFormat('42["name",{"secret":"x"}]'), 'json_com_prefixo');
+  assert.equal(otherFrameFormat('{"t":"private"}'), 'json_com_t');
+  assert.equal(otherFrameFormat('{"type":"private"}'), 'json_com_type');
+  assert.equal(otherFrameFormat('{"payload":"x"}'), 'json_sem_tipo');
+  assert.equal(otherFrameFormat('{bad'), 'json_inválido');
+});

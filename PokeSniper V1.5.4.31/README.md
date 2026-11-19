@@ -1,4 +1,9 @@
-# PokeIdle Market Sniper (v1.5.4.30)
+# PokeIdle Market Sniper (v1.5.4.31)
+
+Os filtros **Somente espécies** e **Bloquear espécies** foram removidos.
+Configurações antigas desses campos são ignoradas. O diagnóstico de tráfego
+mostra contagens por formato das mensagens não reconhecidas, sem conteúdo.
+
 
 O monitor espera um sinal de atividade do jogo antes de enviar consultas por
 uma conexão recém-aberta. O diagnóstico inclui contagens de mensagens, sem

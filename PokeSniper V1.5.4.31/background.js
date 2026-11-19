@@ -170,8 +170,14 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     recordMarket('monitor', req.state);
     chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now(),
       socket: ['abertura', 'envio do jogo', 'consulta do jogo', 'tráfego', 'estado'].includes(req.socket) ? req.socket : null,
-      tráfego: Object.fromEntries(['recebidos', 'estados', 'vitrine', 'histórico', 'outros', 'binários']
-        .map(key => [key, Number.isSafeInteger(req.wire?.[key]) && req.wire[key] >= 0 ? req.wire[key] : 0])) } })
+      tráfego: {
+        ...Object.fromEntries(['recebidos', 'estados', 'vitrine', 'histórico', 'outros', 'binários']
+          .map(key => [key, Number.isSafeInteger(req.wire?.[key]) && req.wire[key] >= 0 ? req.wire[key] : 0])),
+        formatos: Object.fromEntries(['fora_do_limite', 'json_com_prefixo', 'texto', 'lista_json',
+          'ping_pong', 'json_com_t', 'json_com_type', 'json_sem_tipo', 'json_inválido']
+          .filter(key => Number.isSafeInteger(req.wire?.formatos?.[key]) && req.wire.formatos[key] > 0)
+          .map(key => [key, req.wire.formatos[key]])),
+      } } })
       .then(() => reply({ ok: true }), () => reply({ ok: false }));
     return true;
   }

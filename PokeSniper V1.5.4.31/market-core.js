@@ -195,6 +195,22 @@
     } catch { return null; }
   }
 
+  // Descreve o formato de mensagens não reconhecidas, sem registrar valores ou campos livres.
+  function otherFrameFormat(text) {
+    if (typeof text !== 'string' || text.length > 262144) return 'fora_do_limite';
+    const input = text.trimStart();
+    if (/^\d+[\[{]/.test(input)) return 'json_com_prefixo';
+    if (!input.startsWith('{') && !input.startsWith('[')) return 'texto';
+    try {
+      const frame = JSON.parse(input);
+      if (Array.isArray(frame)) return 'lista_json';
+      if (['ping', 'pong'].includes(frame.t ?? frame.type)) return 'ping_pong';
+      if (typeof frame.t === 'string') return 'json_com_t';
+      if (typeof frame.type === 'string') return 'json_com_type';
+      return 'json_sem_tipo';
+    } catch { return 'json_inválido'; }
+  }
+
   function matchesMarketPage(frame, request) {
     if (frame?.t !== 'market' || frame.aba !== 'vitrine' || !Array.isArray(frame.linhas) ||
         !money(request.moeda) || (frame.moeda != null && frame.moeda !== request.moeda) ||
@@ -401,7 +417,7 @@
       (!row.availableAt || row.availableAt <= now) && (!row.expiresAt || row.expiresAt > now));
   }
 
-  const core = { decodeGameFrame, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
+  const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
     WINDOW_MS, MAX_BATCH };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
