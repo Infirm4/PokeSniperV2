@@ -4,6 +4,7 @@ const { join } = require('node:path');
 const test = require('node:test');
 const { runInNewContext } = require('node:vm');
 const rules = require('../opportunities.js');
+const PISMarketCore = require('../market-core.js');
 
 const worker = readFileSync(join(__dirname, '../opportunities-worker.js'), 'utf8');
 
@@ -33,7 +34,7 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
     return gameAttempts.length === 2;
   } };
   const alerts = runInNewContext(worker + '\nPISOpportunityAlerts;', {
-    chrome, PISMarketStore, PISGameTab, PISOpportunities: rules, console: { warn() {} },
+    chrome, PISMarketStore, PISGameTab, PISMarketCore, PISOpportunities: rules, console: { warn() {} },
   });
   await alerts.wake();
   assert.deepEqual(attempts, []);
@@ -43,4 +44,36 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
   assert.equal(gameAttempts.length, 5);
   assert.deepEqual(results, [['0', true, true, false], ['1', true, false, true],
     ['2', true, true, false], ['3', true, true, false], ['4', true, true, false]]);
+});
+
+test('tenta a sprite verificada nos dois canais e recupera o ícone fixo se o Chrome recusar a imagem', async () => {
+  const sprite = 'https://pokeidle.io/assets/gengar.png';
+  const row = { key: 'sale', name: 'Gengar', currency: 'gold', price: 78_500_000, sprite,
+    estimate: { discount: 0.215, lower: 90_000_000, upper: 120_000_000 }, delivery: 'pending', nextAttemptAt: 0 };
+  const event = { addListener() {} };
+  const notices = [];
+  const chrome = {
+    storage: { local: { get: async () => ({ opportunitySettings: { notify: true } }) }, onChanged: event },
+    alarms: { get: async () => true, onAlarm: event },
+    notifications: { onClicked: event, async create(_id, options) {
+      notices.push(options);
+      if (options.iconUrl.startsWith('data:')) throw new Error('simulado');
+    } },
+    runtime: { getURL: file => file },
+  };
+  let game;
+  const alerts = runInNewContext(worker + '\nPISOpportunityAlerts;', {
+    chrome, PISMarketCore, PISOpportunities: rules, console: { warn() {} }, AbortSignal, btoa,
+    fetch: async url => {
+      assert.equal(url, sprite);
+      return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': 'image/png' } });
+    },
+    PISGameTab: { async show(...args) { game = args; return true; } },
+    PISMarketStore: { recentOpportunities: async () => [row], markDelivery: async () => {} },
+  });
+  await alerts.wake();
+  assert.match(notices[0].iconUrl, /^data:image\/png;base64,/);
+  assert.equal(notices[1].iconUrl, 'opportunity-icon.png');
+  assert.equal(game[3], sprite);
+  assert.equal(notices[0].message, '21,5% de desconto · 78,5 Mi Coins\nFaixa justa estimada · 90–120 Mi Coins');
 });

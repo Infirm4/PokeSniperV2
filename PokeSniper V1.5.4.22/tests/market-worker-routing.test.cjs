@@ -25,7 +25,7 @@ test('atribui falhas e vendas repetidas à página certa e restringe o teste à 
   };
   const context = {
     chrome, importScripts() {}, console,
-    PISMarketCore: { validate: (_kind, rows) => rows },
+    PISMarketCore: { validate: (_kind, rows) => rows, safeSprite: () => null },
     PISHistoryTrace: { async record(event, details, receipt) { trace.push([event, details.page, receipt?.status, receipt?.existing]); } },
     PISOpportunityAlerts: { wake() {} },
     PISMarketStore: {

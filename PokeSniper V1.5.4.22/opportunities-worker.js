@@ -1,0 +1,99 @@
+const PISOpportunityAlerts = (() => {
+  const ALARM = 'pis-opportunity-alerts';
+  let draining;
+
+  const icons = new Map();
+  const maxBytes = 128 * 1024;
+
+  async function loadIcon(sprite) {
+    try {
+      const response = await fetch(sprite, {
+        credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(2000),
+      });
+      const mime = response.headers.get('content-type')?.split(';')[0].trim();
+      if (!response.ok || !/^image\/(png|jpeg|webp|gif|avif)$/.test(mime || '') || !response.body) return null;
+      const reader = response.body.getReader();
+      let bytes = 0;
+      let raw = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytes += value.length;
+        if (bytes > maxBytes) { await reader.cancel(); return null; }
+        for (let i = 0; i < value.length; i += 8192) raw += String.fromCharCode(...value.subarray(i, i + 8192));
+      }
+      return bytes ? `data:${mime};base64,${btoa(raw)}` : null;
+    } catch { return null; }
+  }
+
+  async function createDesktopNotice(id, title, message, sprite) {
+    const fallback = chrome.runtime.getURL('opportunity-icon.png');
+    let icon = null;
+    if (sprite) {
+      icon = icons.get(sprite);
+      if (!icon) {
+        icon = await loadIcon(sprite);
+        if (icon) {
+          if (icons.size >= 32) icons.delete(icons.keys().next().value);
+          icons.set(sprite, icon);
+        }
+      }
+    }
+    const options = { type: 'basic', iconUrl: icon ?? fallback, title, message,
+      contextMessage: 'Oferta observada no PokéIdle · clique para abrir o jogo' };
+    try { await chrome.notifications.create(id, options); }
+    catch (error) {
+      if (!icon) throw error;
+      await chrome.notifications.create(id, { ...options, iconUrl: fallback });
+    }
+  }
+
+  async function sendPending() {
+    const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
+    const config = PISOpportunities.settings(opportunitySettings);
+    if (!config.notify) return;
+
+    const recent = await PISMarketStore.recentOpportunities(config);
+    const pending = recent.filter(row => row.delivery === 'pending' && row.nextAttemptAt <= Date.now() &&
+      PISOpportunities.notificationEligible(row));
+    for (const row of pending.slice(0, 5)) {
+      // ID determinístico mantém apenas uma notificação para a mesma revisão após uma retomada.
+      const title = row.name || 'Pokémon #' + row.speciesId;
+      const { message } = PISOpportunities.presentation(row);
+      const sprite = PISMarketCore.safeSprite(row.sprite);
+      const inGame = PISGameTab.show(title, message, false, sprite).catch(() => false);
+      let desktop = false;
+      try {
+        await createDesktopNotice('pis:' + row.key, title, message, sprite);
+        desktop = true;
+      } catch {
+        console.warn('[PIS] Aviso visual do Chrome indisponível.');
+      }
+      const game = await inGame;
+      await PISMarketStore.markDelivery(row.key, desktop || game, Date.now(), { desktop, game });
+    }
+  }
+
+  function wake() {
+    if (!draining) {
+      draining = sendPending().catch(error => console.warn('[PIS] Fila de oportunidades:', error.message))
+        .finally(() => { draining = null; });
+    }
+    return draining;
+  }
+
+  async function schedule() {
+    if (!await chrome.alarms.get(ALARM)) await chrome.alarms.create(ALARM, { periodInMinutes: 1 });
+  }
+
+  chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) wake(); });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.opportunitySettings) wake();
+  });
+  chrome.notifications.onClicked.addListener(id => {
+    if (id.startsWith('pis:')) chrome.tabs.create({ url: 'https://pokeidle.io/' })
+      .catch(error => console.warn('[PIS] Não foi possível abrir o jogo:', error.message));
+  });
+  schedule().catch(error => console.warn('[PIS] Agendamento de alertas:', error.message));
+  return { wake };
+})();

@@ -76,7 +76,7 @@
     });
     return {
       lookbackDays: RECENT_MS / DAY_MS,
-      listings: coverage(listings, 'observedAt', { postedAt: positive, availableAt: positive }, now),
+      listings: coverage(listings, 'observedAt', { postedAt: positive, availableAt: positive, sprite: identifier, spriteSource: value => value === 'market' }, now),
       sales: coverage(sales, 'soldAt', { listingId: identifier }, now),
       exposures: { ...exposureCoverage, outcomes },
     };

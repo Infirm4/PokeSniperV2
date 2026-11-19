@@ -15,11 +15,11 @@ const PISGameTab = {
     lastGameTab = tabId;
     chrome.storage.session.set({ [gameTabKey]: tabId }).catch(() => {});
   },
-  async show(title, message, test = false) {
+  async show(title, message, test = false, sprite = null) {
     const tabId = lastGameTab ?? (await chrome.storage.session.get(gameTabKey))[gameTabKey];
     if (!Number.isSafeInteger(tabId)) return false;
     try {
-      const reply = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_TOAST', title, message, test }, { frameId: 0 });
+      const reply = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_TOAST', title, message, test, sprite: PISMarketCore.safeSprite(sprite) }, { frameId: 0 });
       return reply?.ok === true;
     } catch { return false; }
   }

@@ -51,3 +51,19 @@ test('mantém uma referência explícita de Nota e nível quando as vendas não 
   assert.equal(estimate(target).method, 'baseline');
   assert.equal(estimate(target).discount, 0.25);
 });
+
+test('a adaptação e o motor do site dão a mesma faixa em Gemas com as mesmas fichas e vendas', () => {
+  const hist = history('orb', 100).map((row, i) => ({ ...row, price: 85 + i }));
+  const ficha = { nome: 'Gengar', level: 100, potencia: 3, quality: 1.8, nota: 5, shiny: false,
+    ivs: { hp: 20, atk: 20, def: 20, spAtk: 20, spDef: 20, speed: 20 } };
+  const central = ctx.PokeIdleCentral.create(ctx);
+  const engine = ctx.PokeIdlePvePricing;
+  const { rows } = engine.prepare(central, hist.map(row => ({
+    name: row.name, speciesId: 94, currency: 'orb', at: row.soldAt, price: row.price, ficha,
+  })), []);
+  const original = engine.priceSheet(central, ficha, { rows, now, bias: 0 });
+  const integrated = pricing.makeMarket(hist, now, core.isOutland)(target);
+  assert.ok(original.available);
+  assert.deepEqual([integrated.lower, integrated.median, integrated.upper],
+    [original.low, original.median, original.high]);
+});

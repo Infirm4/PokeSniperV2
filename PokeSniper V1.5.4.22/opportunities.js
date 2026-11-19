@@ -55,7 +55,24 @@
       !tokens(config.block).some(tag => tags.includes(tag));
   }
 
-  const core = { TTL, settings, eligible, key, matches, priceLimit, notificationEligible };
+  // Formata o mesmo desconto e os mesmos valores para painel e avisos.
+  function presentation(row) {
+    const coins = row.currency === 'gold';
+    const unit = coins ? 'Mi Coins' : 'Gemas';
+    const money = value => new Intl.NumberFormat('pt-BR', {
+      maximumFractionDigits: coins ? (value < 1e6 ? 6 : 2) : 0,
+    }).format(coins ? value / 1e6 : value);
+    const discount = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 })
+      .format(row.estimate.discount * 100) + '% de desconto';
+    const asking = `${money(row.price)} ${unit}`;
+    const { lower, upper } = row.estimate;
+    const range = Number.isFinite(lower) && Number.isFinite(upper)
+      ? `Faixa justa estimada · ${money(lower)}–${money(upper)} ${unit}` : '';
+    return { discount, asking, range,
+      message: [`${discount} · ${asking}`, range].filter(Boolean).join('\n') };
+  }
+
+  const core = { TTL, settings, eligible, key, matches, priceLimit, notificationEligible, presentation };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISOpportunities = core;
 })();

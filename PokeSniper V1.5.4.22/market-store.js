@@ -216,7 +216,10 @@ const PISMarketStore = (() => {
           }
           const exposure = PISLiquidity.observe(listing, previous, now);
           exposures.put(exposure);
-          observed.push({ ...listing, exposureKey: exposure.key, observedAt: now });
+          const keepSprite = saved?.sprite && saved.spriteSource === 'market' && listing.spriteSource !== 'market' &&
+            saved.pokemonId === listing.pokemonId && saved.speciesId === listing.speciesId && saved.shiny === listing.shiny;
+          const sprite = keepSprite ? { sprite: saved.sprite, spriteSource: saved.spriteSource } : {};
+          observed.push({ ...listing, ...sprite, exposureKey: exposure.key, observedAt: now });
         }
         await reprice(tx, observed, now, true);
       }

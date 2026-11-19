@@ -87,3 +87,20 @@ test('vendas legadas de Trickmaster Gengar não mudam o preço de Gengar mesmo c
   assert.equal(require('../opportunities.js').eligible({ ...premium[0],
     estimate: { status: 'estimated', median: 2000 } }), false);
 });
+
+test('prioriza a sprite exata do anúncio e valida o domínio antes de avisar', () => {
+  const { capture, validate, safeSprite } = require('../market-core.js');
+  const frame = { t: 'market', aba: 'vitrine', linhas: [{ ...listing,
+    ficha: { ...listing.ficha, nome: 'Gengar', sprite: '/assets/market/skin.png', dex: 94 } }] };
+  const batch = capture(frame);
+  assert.equal(batch.rows[0].sprite, 'https://pokeidle.io/assets/market/skin.png');
+  assert.equal(validate('listing', batch.rows)[0].sprite, batch.rows[0].sprite);
+  assert.equal(safeSprite('https://pokeidle.io.evil.example/gengar.png'), null);
+  assert.equal(safeSprite('https://raw.githubusercontent.com/other/repo/main/file.png'), null);
+  assert.equal(safeSprite('//else.example/sprite.png'), null);
+  const fallback = capture({ ...frame, linhas: [{ ...listing, ficha: { ...listing.ficha, dex: 94 } }] });
+  assert.match(fallback.rows[0].sprite, /\/pokemon\/94\.png$/);
+  assert.equal(batch.rows[0].spriteSource, 'market');
+  assert.equal(fallback.rows[0].spriteSource, 'dex');
+  assert.equal(validate('listing', fallback.rows)[0].spriteSource, 'dex');
+});

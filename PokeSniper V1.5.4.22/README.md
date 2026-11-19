@@ -1,5 +1,13 @@
 # PokeIdle Market Sniper (v1.2.0)
 
+## Sprite e preço nos avisos (v1.5.4.22)
+
+O painel e os avisos exibem desconto, preço anunciado e faixa justa estimada.
+Os valores de Coins aparecem em milhões. Gemas continuam em unidades.
+A notificação usa a sprite recebida na ficha do anúncio, quando disponível.
+Se vier apenas uma referência à Pokédex, pode usar a sprite padrão da espécie.
+No Chrome, o ícone fixo serve de fallback quando a imagem está indisponível.
+
 ## Motor de PvE do Briaoale (v1.5.4.21)
 
 O preço usa o motor publicado pelo Briaoale sob licença MIT, sobre as vendas

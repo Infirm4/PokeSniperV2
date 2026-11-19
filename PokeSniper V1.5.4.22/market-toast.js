@@ -42,9 +42,14 @@
         font: 14px/1.35 system-ui, sans-serif;
         overflow-wrap: anywhere;
       }
+      .notice.with-sprite { grid-template-columns: 42px minmax(0, 1fr) auto; }
+      .notice.with-sprite strong, .notice.with-sprite p { grid-column: 2; }
+      .notice.with-sprite button { grid-column: 3; }
+      .sprite { grid-column: 1; grid-row: 1 / span 2; width: 42px; height: 42px;
+        align-self: center; object-fit: contain; image-rendering: pixelated; }
       .notice.test { border-inline-start-color: #8ad6f5; }
       strong { grid-column: 1; }
-      p { grid-column: 1; margin: 0; color: #ebdff4; }
+      p { grid-column: 1; margin: 0; color: #ebdff4; white-space: pre-line; }
       button {
         grid-column: 2;
         grid-row: 1 / span 2;
@@ -77,9 +82,9 @@
     visible.delete(key);
   }
 
-  function show(title, message, test) {
+  function show(title, message, test, sprite) {
     if (!mount()) return false;
-    const key = JSON.stringify([title, message, test]);
+    const key = JSON.stringify([title, message, test, sprite]);
     if (visible.has(key)) {
       const entry = visible.get(key);
       clearTimeout(entry.timer);
@@ -99,6 +104,16 @@
     close.textContent = '×';
     close.setAttribute('aria-label', 'Fechar aviso');
     close.addEventListener('click', () => remove(key));
+    if (sprite) {
+      const img = document.createElement('img');
+      img.className = 'sprite';
+      img.alt = '';
+      img.referrerPolicy = 'no-referrer';
+      img.addEventListener('error', () => { img.remove(); element.classList.remove('with-sprite'); }, { once: true });
+      img.src = sprite;
+      element.classList.add('with-sprite');
+      element.append(img);
+    }
     element.append(heading, text, close);
     container.append(element);
     visible.set(key, { element, timer: setTimeout(() => remove(key), DURATION_MS) });
@@ -109,7 +124,7 @@
     if (sender.id !== chrome.runtime.id || request?.type !== 'PIS_MARKET_TOAST') return false;
     const title = typeof request.title === 'string' ? request.title.trim().slice(0, 120) : '';
     const message = typeof request.message === 'string' ? request.message.trim().slice(0, 400) : '';
-    reply({ ok: Boolean(title && message && show(title, message, request.test === true)) });
+    reply({ ok: Boolean(title && message && show(title, message, request.test === true, typeof request.sprite === 'string' ? request.sprite : null)) });
     return false;
   });
 })();

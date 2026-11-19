@@ -132,8 +132,23 @@ function opportunityCard(row) {
   const details = document.createElement('details');
   const summary = document.createElement('summary');
   summary.className = 'offer-title';
-  summary.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')),
-    text('strong', percent(row.estimate.discount) + ' de desconto'));
+  const offer = PISOpportunities.presentation(row);
+  const block = document.createElement('span');
+  block.className = 'opportunity-copy';
+  block.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')),
+    text('span', `${offer.discount} · ${offer.asking}`, 'opportunity-price'));
+  if (offer.range) block.append(text('span', offer.range, 'offer-meta'));
+  const sprite = PISMarketCore.safeSprite(row.sprite);
+  if (sprite) {
+    const img = document.createElement('img');
+    img.className = 'opportunity-sprite';
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.addEventListener('error', () => img.remove(), { once: true });
+    img.src = sprite;
+    summary.append(img);
+  }
+  summary.append(block);
   details.append(summary);
   details.addEventListener('toggle', () => {
     if (details.open && details.childElementCount === 1) {

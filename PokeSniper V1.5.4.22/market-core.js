@@ -66,6 +66,38 @@
       outlandPrefix.test(name.trim().replace(/^✨\s*/u, '').replace(/^shiny\s+/i, ''));
   }
 
+  function safeSprite(value) {
+    if (typeof value !== 'string' || !value.trim() || value.length > 1000) return null;
+    if (!/^(https:\/\/|\/(?!\/))/.test(value)) return null;
+    try {
+      const url = new URL(value, 'https://pokeidle.io/');
+      if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+      if (/(^|\.)pokeidle\.io$/i.test(url.hostname)) return url.href;
+      if (url.hostname === 'raw.githubusercontent.com' &&
+          /^\/PokeAPI\/sprites\/master\/sprites\/pokemon\/(?:shiny\/)?\d+\.png$/.test(url.pathname) &&
+          !url.search && !url.hash) return url.href;
+    } catch { /* Sprite inválida. */ }
+    return null;
+  }
+
+  function listingSprite(row, isShiny) {
+    const ficha = row.ficha || {};
+    for (const source of [ficha, row]) {
+      for (const key of ['sprite', 'icone', 'icon', 'imagem', 'img', 'url']) {
+        const sprite = safeSprite(source[key]);
+        if (sprite) return { sprite, spriteSource: row.spriteSource === 'dex' ? 'dex' : 'market' };
+      }
+    }
+    // O looktype só serve de fallback quando o sufixo confirma o número da Pokédex.
+    const look = Number(ficha.looktype ?? row.looktype);
+    const internalId = Number(ficha.speciesId ?? ficha.especieId);
+    const explicit = Number(ficha.dex ?? ficha.dexId ?? ficha.numeroNacional ?? row.dex);
+    const number = Number.isInteger(explicit) && explicit >= 1 && explicit <= 1025 ? explicit :
+      Number.isInteger(look) && look >= 60001 && look <= 61025 && internalId % 1000 === look % 1000 ? look - 60000 : null;
+    if (!number || isShiny == null) return { sprite: null, spriteSource: null };
+    return { sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${isShiny ? 'shiny/' : ''}${number}.png`, spriteSource: 'dex' };
+  }
+
   // Conserva a identidade do anúncio e a da venda em campos e stores distintos.
   // Dados ausentes permanecem nulos. Preço unitário só é comparável para um exemplar.
   function normalizeRow(kind, row, currency) {
@@ -98,7 +130,7 @@
     }
     const closed = ['cancelado', 'expirado'].includes(row.estado) ? row.estado : null;
     if ((!closed && row.estado != null && row.estado !== 'aberto') || row.comprador) return null;
-    return { ...profile, postedAt: timestamp(row.criadoEm), availableAt: timestamp(row.compravelEm), expiresAt: timestamp(row.expiraEm),
+    return { ...profile, ...listingSprite(row, profile.shiny), postedAt: timestamp(row.criadoEm), availableAt: timestamp(row.compravelEm), expiresAt: timestamp(row.expiraEm),
       ...(closed ? { closed } : {}) };
   }
 
@@ -143,7 +175,7 @@
     return rows.map(row => row && normalizeRow(kind, {
       tipo: 'pokemon', id: row.id, pokemonId: row.pokemonId, moeda: row.currency, outland: row.outland,
       preco: row.price, bruto: row.price, em: row.soldAt, listingId: row.listingId,
-      criadoEm: row.postedAt, compravelEm: row.availableAt, expiraEm: row.expiresAt, estado: row.closed,
+      sprite: row.sprite, spriteSource: row.spriteSource, criadoEm: row.postedAt, compravelEm: row.availableAt, expiraEm: row.expiresAt, estado: row.closed,
       ficha: { speciesId: row.speciesId, nome: row.name, shiny: row.shiny, level: row.level, nota: row.grade,
         formId: row.form, potencia: row.power, quality: row.quality, ivTotal: row.ivTotal, ivs: row.ivs,
         tmAoe: row.aoe, tmElemental: row.zMove, mega: row.mega },
@@ -216,7 +248,7 @@
       })) };
   }
 
-  const core = { capture, captureAutomatic, validate, estimate, sameMarket, isOutland, historyReply, historyRequest, historyTrace, linkageFields,
+  const core = { capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
     WINDOW_MS, MAX_BATCH };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;

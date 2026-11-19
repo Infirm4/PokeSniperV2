@@ -18,6 +18,14 @@
     };
     return [
       check('captura e preservação de IV zero', () => capture('vitrine', [listing]).rows[0].ivs.speed === 0),
+      check('aviso mostra sprite, desconto, preço e faixa em Mi Coins', () => {
+        const record = capture('vitrine', [{ ...listing,
+          ficha: { ...listing.ficha, sprite: '/assets/teste-pokemon.png' } }]).rows[0];
+        const display = PISOpportunities.presentation({ ...record, price: 75_000_000,
+          estimate: { discount: 0.25, lower: 90_000_000, upper: 110_000_000 } });
+        return record.sprite === 'https://pokeidle.io/assets/teste-pokemon.png' &&
+          display.message.includes('25% de desconto · 75 Mi Coins') && display.range.includes('90–110 Mi Coins');
+      }),
       check('motor PvE calcula 25% com fichas completas', () => {
         const target = { ...capture('vitrine', [listing]).rows[0], price: 75, name: 'Gengar',
           ivs: { hp: 20, attack: 20, defense: 20, specialAttack: 20, specialDefense: 20, speed: 20 } };
