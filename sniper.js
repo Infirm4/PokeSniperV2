@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.7
+// PokeIdle Market Sniper v1.5.4.8
 // Roda no mundo MAIN da página (document_start) e usa o WebSocket que o próprio jogo já abriu.
 // Começa DESLIGADO e em modo SIMULAÇÃO: só registra o que compraria.
 //
@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.7'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.8'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -46,8 +46,8 @@
   const K_POKE_ATIVO = 'pis_pokemon_ativo_v1';       // liga/desliga a compra de Pokémon (padrão: desligado)
   const K_POKE_INV = 'pis_inventario_pokemon_v1';    // Pokémon comprados pelo bot (confirmados no histórico)
   const K_POKE_TPL = 'pis_pokemon_consulta_v1';      // consulta de listagem aprendida do jogo: { req, aba }
-  const K_INTERVALO_CENSO_1547 = 'pis_intervalo_censo_adaptativo_v1547'; // novo teste: começa em 5min, sem herdar patamar antigo
-  const K_INTERVALO_MERCADO_1547 = 'pis_intervalo_mercado_adaptativo_v1547'; // novo teste: começa em 2s, sem herdar patamar antigo
+  const K_INTERVALO_CENSO_1547 = 'pis_intervalo_censo_adaptativo_v1547'; // mantém patamar de SEGURANÇA somente para falhas; censos válidos são contínuos
+  const K_INTERVALO_MERCADO_1547 = 'pis_intervalo_mercado_adaptativo_v1547'; // preserva o intervalo adaptado de 2–7s da v1.5.4.7
 
   // ---------- configuração ----------
   // Editável no painel:
@@ -64,10 +64,11 @@
   const INTERVALO_VARREDURA_MS = 5000;
   // POKEMON tem ciclo PRÓPRIO, mas as consultas usam limitador de frequência compartilhado.
   const INTERVALO_POKE_MS = 15000; // evita spam; limite de consulta compartilhado com o censo
-  // Rastreador independente: executa coleta incremental e censos em intervalos conservadores.
+  // A coleta incremental e os erros têm ciclo de verificação conservador.
+  // Após CENSO VALIDADO, a próxima varredura inicia sem aguardar estes 60s.
   const INTERVALO_RASTREADOR_MS = 60000;
-  // Intervalo entre o FIM de uma cobertura completa e o INÍCIO da próxima.
-  // Essa espera é independente do limitador de consultas (teste adaptativo de 2–7s).
+  // Patamares usados APENAS para retentativas após falha/cobertura inconsistente.
+  // Censos concluídos com sucesso não têm espera fixa entre si.
   const INTERVALOS_CENSO_MS = [5, 7, 10, 15, 20, 30].map(min => min * 60000);
   const COOLDOWN_AJUSTE_CENSO_MS = 10 * 60000; // no máximo um aumento a cada dez minutos
   // Não somar uma pausa fixa de 2,5s ao limitador global: no teste de 2s,
@@ -637,9 +638,9 @@
     return INTERVALOS_CENSO_MS[Math.max(0, Math.min(INTERVALOS_CENSO_MS.length - 1, i))];
   }
 
-  // Quando o servidor sinaliza sobrecarga, AUMENTA o intervalo entre censos.
-  // O nível é persistente para que recarregar o jogo não reinicie o teste em 5 minutos.
-  // Nunca diminui a proteção adaptativa entre requisições nem cancela o backoff da rede.
+  // Quando o servidor sinaliza sobrecarga, aumenta a ESPERA DE RETENTATIVA
+  // após falha. Não insere atraso após um censo que foi concluído e validado.
+  // O patamar de segurança é persistido entre reinicializações.
   function aumentarIntervaloCensoPorSobrecarga(motivo) {
     const agora = Date.now();
     if (st.pkIntervaloCensoIndice >= INTERVALOS_CENSO_MS.length - 1 ||
@@ -647,11 +648,12 @@
     st.pkIntervaloCensoIndice++;
     st.pkUltimoAjusteCenso = agora;
     lsSet(K_INTERVALO_CENSO_1547, {indice:st.pkIntervaloCensoIndice,ajustadoEm:agora});
-    // Não iniciar um censo agendado antes do novo intervalo de proteção.
-    // Enquanto um censo estiver em andamento, o novo intervalo valerá ao terminá-lo.
+    // Se já existe uma retentativa AGENDADA, nunca antecipá-la.
+    // Se um censo está em andamento, a proteção da rede (marketPausaAte)
+    // continua sendo respeitada pela fila única de requisições.
     if (st.pkProximoCenso && st.pkProximoCenso > agora)
       st.pkProximoCenso = Math.max(st.pkProximoCenso, agora + intervaloCensoAtualMs());
-    log(`🕒 Censo: após ${motivo}, espera entre censos aumentada para ${intervaloCensoAtualMs()/60000} min.`, true);
+    log(`🕒 Censo: após ${motivo}, retentativas com pausa de segurança de ${intervaloCensoAtualMs()/60000} min (censos válidos continuam sem espera fixa).`, true);
     return true;
   }
 
@@ -2839,9 +2841,10 @@
     }
   }
 
-  // Primeiro censo completo; depois consulta novas ofertas na primeira página e alterna
-  // outras páginas. Após cada censo válido, espera 5–30 min (adaptativo) para acompanhar
-  // os IDs abertos. Ausências em scans parciais NUNCA provocam mudança de status.
+  // Primeiro censo completo; após um censo VÁLIDO, inicia outro assim que
+  // concluir a persistência e reconciliação, sem pausa entre censos.
+  // Após erro ou censo INCONSISTENTE, mantém retentativa com backoff.
+  // A fila global impõe >=2s entre pedidos e impede concorrência.
   // A primeira varredura completa é BASE: um anúncio antigo já ausente não é vendido retroativamente.
   // Retoma o último patamar adaptativo após reiniciar a aba ou a extensão.
   const ajusteCensoSalvo = lsGet(K_INTERVALO_CENSO_1547, {});
@@ -3012,6 +3015,9 @@
 
   (async function coletaContinua() {
     for (;;) {
+      // Só acelera o próximo ciclo após censo INTEGRALMENTE VALIDADO.
+      // Falhas, interrupções, módulo desligado e coletas parciais não ativam isto.
+      let reiniciarCensoSemEspera = false;
       try {
         if (trackAtivo() && st.sock && st.sock.readyState === 1 && st.pkPronto) {
           const precisaCenso = Date.now() >= st.pkProximoCenso;
@@ -3031,7 +3037,11 @@
                 st.pkDirecaoCenso = completo.sentido === 'asc' ? 'desc' : 'asc';
                 lsSet(K_CENSO_SENTIDO_154, st.pkDirecaoCenso);
                 st.pkFalhasCenso = 0;
-                st.pkProximoCenso = Date.now() + intervaloCensoAtualMs();
+                // Sem os antigos 5 minutos entre censos: pode iniciar outro já.
+                // Se houve sobrecarga, respeitar a pausa da rede, sem sobrepor
+                // duas leituras completas (coletaContinua é uma só rotina async).
+                st.pkProximoCenso = Math.max(Date.now(), st.marketPausaAte);
+                reiniciarCensoSemEspera = true;
                 logPk(`${completo.coberturaRuidosa ? '🟠 Cobertura moderada' : '✅ Censo com cobertura validada'} (${completo.sentido}): ${completo.linhas.length} IDs em ${completo.paginas} páginas; ` +
                   `variação ${completo.desvio}, ${completo.duplicados} IDs deslocados; ` +
                   `cobertura ${(100*completo.densidade).toFixed(2)}%, duração ${Math.round(completo.duracaoMs/60000)} min. ` +
@@ -3085,6 +3095,13 @@
         dbg(`Rastreador ${EXT_VERSION}:`, e.message);
         if (st.pkTrackErros === 1 || st.pkTrackErros % 10 === 0)
           logPk(`⚠️ Rastreador: ${e.message}. Nenhuma ausência inferida nesta tentativa.`);
+      }
+      // Não aplicar a espera de 60s da coleta incremental após um censo válido.
+      // sleep(0) apenas cede o controle ao navegador; a fila global continua
+      // exigindo o intervalo adaptativo antes de cada requisição real.
+      if (reiniciarCensoSemEspera && trackAtivo() && Date.now() >= st.pkProximoCenso) {
+        await sleep(0);
+        continue;
       }
       await sleep(INTERVALO_RASTREADOR_MS);
     }
@@ -3827,13 +3844,12 @@
         (FIXO.sheetsUrl ? ' · Sheets configurado (sem confirmação nesta sessão)' : '');
       const pausaRede = Date.now() < st.marketPausaAte
         ? ` · consultas em pausa (${Math.ceil((st.marketPausaAte-Date.now())/1000)} s)` : '';
-      const intervaloCensoMin = intervaloCensoAtualMs()/60000;
       const intervaloMercadoSeg = intervaloMinMercadoAtualMs()/1000;
       const agendaCenso = info && info.emCenso
-        ? ` · intervalo entre censos ${intervaloCensoMin} min`
+        ? ' · censos contínuos: próximo assim que validar'
         : st.pkProximoCenso > Date.now()
-          ? ` · próximo censo ${new Date(st.pkProximoCenso).toLocaleTimeString('pt-BR')} (${intervaloCensoMin} min após o último)`
-          : ` · censo disponível (intervalo ${intervaloCensoMin} min)`;
+          ? ` · próxima tentativa ${new Date(st.pkProximoCenso).toLocaleTimeString('pt-BR')} (proteção após falha ou sobrecarga)`
+          : ' · censo contínuo (sem espera fixa)';
       textoBanco.textContent = `Banco v${EXT_VERSION}: ${b.vendidos} servidor · ${b.provaveis} prováveis · ${b.cancelados} cancelados · ${b.incertos} incertos · ${b.invalidados} reclassificados · ${b.abertos} abertos` +
         ` · ${b.pendentes} eventos pendentes · ${esperandoRevisao} aguardam outra cobertura · ${incertosRevisao} incertos em revisão` +
         paginas + censoValido + ` · consultas ≥${intervaloMercadoSeg}s` + agendaCenso + pausaRede + erro + sheetsVisto;
@@ -3922,7 +3938,7 @@
   }
 
   // Novo aviso identifica o código injetado; mensagens antigas ficam no histórico local.
-  logPk(`🧭 PokéIdle Sniper v${EXT_VERSION}: teste de consultas ≥${intervaloMinMercadoAtualMs()/1000}s (2→3→4→5→6→7s com sobrecarga); censo a cada ${intervaloCensoAtualMs()/60000} min após conclusão.`);
+  logPk(`🧭 PokéIdle Sniper v${EXT_VERSION}: consultas ≥${intervaloMinMercadoAtualMs()/1000}s (2→3→4→5→6→7s com sobrecarga); censos contínuos sem pausa após censo validado. Falhas mantêm recuo.`);
   if (document.body) buildUI();
   else document.addEventListener('DOMContentLoaded', buildUI);
 })();

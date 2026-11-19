@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokeIdle Market Sniper",
-  "version": "1.5.4.7",
-  "description": "Teste controlado de 2s entre consultas, com backoff adaptativo até 7s; censos 5–30min.",
+  "version": "1.5.4.8",
+  "description": "Censos contínuos sem espera após censo válido, consultas globais ≥2s e backoff adaptativo.",
   "host_permissions": [
     "https://script.google.com/*",
     "https://script.googleusercontent.com/*"

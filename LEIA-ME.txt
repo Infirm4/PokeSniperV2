@@ -1,42 +1,38 @@
-POKÉIDLE SNIPER v1.5.4.7 — TESTE DE 2 SEGUNDOS / CENSO 5 MINUTOS
+POKÉIDLE SNIPER v1.5.4.8 — CENSOS CONTÍNUOS
 
-ATUALIZAÇÃO EXCLUSIVAMENTE DA EXTENSÃO CHROME.
-O GOOGLE APPS SCRIPT ATUAL NÃO PRECISA SER ALTERADO.
+ATUALIZAÇÃO APENAS DA EXTENSÃO CHROME.
+NÃO ATUALIZE O GOOGLE APPS SCRIPT: A VERSÃO EXISTENTE PERMANECE COMPATÍVEL.
 
-Mudanças em relação à v1.5.4.6:
-- Intervalo mínimo GLOBAL das consultas automáticas começa em 2 segundos.
-- Se ocorrer "Devagar aí" ou timeout de market.*, aumenta automaticamente
-  para 3, 4, 5, 6 e 7 segundos, mantendo o backoff de 90s a 15 minutos.
-- Intervalo entre FIM de um censo completo e INÍCIO do próximo começa em
-  5 minutos. Pode aumentar para 7, 10, 15, 20 e 30 minutos após sobrecarga.
-- A pausa fixa extra de 2,5 segundos entre páginas foi removida, pois
-  anulava parte do ganho pretendido. A fila única e o limitador global
-  continuam assegurando que não haja consultas automáticas em paralelo.
-- O novo teste inicia em 2s / 5min independentemente dos patamares salvos
-  pelas versões antigas. Ajustes posteriores desta versão são preservados.
-- Mantém intactos IndexedDB, IDs, regras de censos, histórico, Google Sheets
-  e parâmetros de compra.
-- Exibe "consultas ≥2s" e a agenda do próximo censo na linha Banco.
+Mudança solicitada em relação à v1.5.4.7:
+- REMOVIDOS os 5 minutos de espera após concluir um censo completo VALIDADO.
+- O próximo censo começa assim que terminar a persistência e a reconciliação
+  do anterior, sem aguardar o ciclo incremental de 60 segundos.
+- Cada censo continua percorrendo todas as páginas, alternando ASC e DESC.
+- APENAS UM CENSO de cada vez; consultas automáticas são enfileiradas.
+- Intervalo GLOBAL das consultas permanece >=2 segundos inicialmente, ou
+  3–7 segundos se a versão anterior já detectou sobrecarga.
+- Avisos de 'Devagar aí' e falta de respostas continuam a disparar backoff
+  de 90s até 15min, e não haverá requisições enquanto o bloqueio durar.
+- CENSO INVALIDADO, CANCELADO OU COM ERRO não vira confirmação de ausência:
+  continua sujeito a retentativa de 5–30 min, evitando laços de falhas.
+- Preservados todos os IDs, IndexedDB, envios pendentes, integração Sheets,
+  critérios de cobertura e classificação de Pokémon.
+- O painel indica 'censos contínuos' e informa quando a proteção está ativa.
 
-IMPORTANTE:
-- O intervalo é MÍNIMO; 2s não garante uma página a cada 2s porque
-  a latência do servidor e a renderização do navegador também contam.
-- Se o servidor voltar a alertar "Devagar aí", deixe a extensão pausar;
-  não reinicie repetidamente para tentar evitar o limite.
-- Mesmo sem aviso, o servidor pode rejeitar consultas por outras razões.
-- Para medir o censo, desligue compras automáticas e mantenha somente
-  REGISTRAR MERCADO ativado, preferencialmente uma única aba do PokéIdle.
-- Um censo falho NÃO é utilizado para inferir desaparecimento/venda.
+ATENÇÃO À CARGA NO SERVIDOR:
+- Censos contínuos geram MAIS requisições por hora. O intervalo >=2s
+  não garante ausência de limites de taxa. Use apenas uma aba do jogo.
+- Se aparecer 'Devagar aí', não reinicie repetidamente para tentar driblar
+  o limite; deixe o backoff automático entrar em ação.
 
 INSTALAÇÃO:
-1. Exporte a auditoria CSV e guarde o pacote anterior como rollback.
-2. Desative a extensão antiga em chrome://extensions.
-3. Extraia o RAR e carregue a pasta pokeidle_rastreador_1547 com
-   "Carregar sem compactação" (modo desenvolvedor).
+1. Exporte a auditoria e mantenha a versão anterior para rollback.
+2. Desative a v1.5.4.7 em chrome://extensions.
+3. Extraia o arquivo e carregue a pasta pokeidle_rastreador_1548.
 4. Feche todas as abas do PokéIdle e reabra o jogo.
-5. Confirme "Market sniper v1.5.4.7" e "consultas ≥2s".
-6. Observe o progresso "Censo X/Y pág.", cobertura e avisos no log.
-7. Se aparecer "Devagar aí", observe o recuo e reporte o patamar que falhou.
+5. Confira 'Market sniper v1.5.4.8', 'consultas ≥2s' (ou maior se
+   houve ajuste salvo) e 'censos contínuos' no painel.
+6. Para medir a velocidade, deixe apenas REGISTRAR MERCADO ativo.
 
-VALIDAÇÃO: testes locais e sintaxe JavaScript. Não foi feita medição ao
-vivo contra o servidor do jogo; mantenha backup e acompanhe os censos.
+TESTES: testes automatizados e validação de sintaxe locais. O servidor real
+não foi testado; o tempo de cada censo depende do servidor e das páginas.
