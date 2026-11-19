@@ -10,7 +10,7 @@ test('atribui falhas e vendas repetidas à página certa e restringe o teste à 
   const listeners = [];
   const trace = [];
   const messages = [];
-  const session = {};
+  const session = {}, savedNotices = {};
   const chrome = {
     runtime: {
       id: 'own', getURL: file => 'chrome-extension://own/' + file,
@@ -19,7 +19,8 @@ test('atribui falhas e vendas repetidas à página certa e restringe o teste à 
     storage: { session: {
       async set(values) { Object.assign(session, values); },
       async get(key) { return { [key]: session[key] }; },
-    } },
+    }, local: { async set(values) { Object.assign(savedNotices, values); } } },
+    notifications: { async create() {} },
     tabs: { async sendMessage(id, message) { messages.push([id, message.type]); return { ok: true }; } },
   };
   const context = {
@@ -50,4 +51,10 @@ test('atribui falhas e vendas repetidas à página certa e restringe o teste à 
   const popup = { id: 'own', url: 'chrome-extension://own/opportunities.html' };
   assert.equal((await dispatch({ type: 'PIS_TEST_GAME_TOAST' }, popup)).ok, true);
   assert.deepEqual(messages, [[7, 'PIS_MARKET_TOAST']]);
+  assert.equal((await dispatch({ type: 'PIS_TEST_DESKTOP_TOAST' }, popup)).ok, true);
+  assert.equal(savedNotices.pisGameToastTest.ok, true);
+  assert.equal(savedNotices.pisDesktopToastTest.ok, true);
+  assert.ok(savedNotices.pisGameToastTest.at > 0);
+  assert.equal((await dispatch({ type: 'PIS_MARKET_CORE_BATCH', kind: 'sale', rows: ['known'] })).ok, true);
+  assert.deepEqual(trace.at(-1), ['legacy_batch', undefined, 'gravado', 1]);
 });

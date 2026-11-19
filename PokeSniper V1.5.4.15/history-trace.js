@@ -1,7 +1,7 @@
 // A trilha guarda apenas contagens e número de página. Nunca guarda IDs ou conteúdo de pacotes.
 (() => {
   const KEY = 'marketHistoryTrace';
-  const EVENTS = ['request', 'response', 'invalid_json', 'ignored_socket'];
+  const EVENTS = ['request', 'response', 'invalid_json', 'ignored_socket', 'legacy_batch'];
   const FIELDS = ['listingId', 'anuncioId', 'idAnuncio', 'anuncio_id', 'listing_id', 'ofertaId', 'idOferta'];
   const asCount = value => Number.isSafeInteger(value) && value >= 0 ? Math.min(10000, value) : 0;
   let tail = Promise.resolve();

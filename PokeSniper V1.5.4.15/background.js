@@ -32,10 +32,26 @@ PISMarketStore.initialize().catch(error => {
 let listingPending = 0;
 let salePending = 0;
 chrome.runtime.onMessage.addListener((req, sender, reply) => {
-  if (req?.type === 'PIS_TEST_GAME_TOAST') {
+  if (req?.type === 'PIS_TEST_GAME_TOAST' || req?.type === 'PIS_TEST_DESKTOP_TOAST') {
     if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
-    PISGameTab.show('PokeSniper · Aviso de teste', 'Este aviso aparece dentro da aba do PokéIdle.', true)
-      .then(ok => reply({ ok }), () => reply({ ok: false }));
+    const game = req.type === 'PIS_TEST_GAME_TOAST';
+    (async () => {
+      let ok = false;
+      try {
+        if (game) {
+          ok = await PISGameTab.show('PokeSniper · Aviso de teste', 'Este aviso aparece dentro da aba do PokéIdle.', true);
+        } else {
+          await chrome.notifications.create('pis:test', {
+            type: 'basic', iconUrl: chrome.runtime.getURL('opportunity-icon.png'),
+            title: 'PokeSniper · Teste de notificação', message: 'Aviso de teste enviado ao Chrome.',
+          });
+          ok = true;
+        }
+      } catch { /* O teste guarda a falha sem expor mensagens locais. */ }
+      const key = game ? 'pisGameToastTest' : 'pisDesktopToastTest';
+      await chrome.storage.local.set({ [key]: { ok, at: Date.now() } });
+      reply({ ok });
+    })().catch(() => reply({ ok: false, storageError: true }));
     return true;
   }
   const history = req?.type === 'PIS_MARKET_HISTORY_EVENT';
@@ -45,7 +61,8 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     return false;
   }
   PISGameTab.remember(sender.tab.id);
-  const track = receipt => history ? PISHistoryTrace.record(req.event, req.trace || {}, receipt)
+  const traceEvent = history ? req.event : req.kind === 'sale' ? 'legacy_batch' : null;
+  const track = receipt => traceEvent ? PISHistoryTrace.record(traceEvent, history ? req.trace || {} : {}, receipt)
     .catch(() => console.warn('[PIS] Falha ao guardar o diagnóstico do histórico.')) : Promise.resolve();
   if (history && req.event !== 'response') {
     track().then(() => reply({ ok: true }));

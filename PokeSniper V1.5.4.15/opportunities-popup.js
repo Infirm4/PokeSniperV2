@@ -199,8 +199,7 @@ const runDiagnostics = document.querySelector('#run-diagnostics');
 const copyDiagnostics = document.querySelector('#copy-diagnostics');
 const reportBox = document.querySelector('#diagnostic-report');
 const testStatus = document.querySelector('#test-status');
-let testNotification = 'não solicitada';
-let testGameToast = 'não solicitado';
+
 
 runDiagnostics.addEventListener('click', async () => {
   runDiagnostics.disabled = true;
@@ -214,7 +213,9 @@ runDiagnostics.addEventListener('click', async () => {
     const pipeline = PISMarketStore.diagnostics(settings).catch(() => ({ erro: 'falha na leitura da fila' }));
     const trace = Promise.resolve().then(() => chrome.storage.session.get(PISHistoryTrace.KEY))
       .then(value => value[PISHistoryTrace.KEY] ?? []).catch(() => 'indisponível');
-    const [notificationPermission, database, alerts, history] = await Promise.all([permission, snapshot, pipeline, trace]);
+    const testResults = chrome.storage.local.get(['pisDesktopToastTest', 'pisGameToastTest']).catch(() => ({}));
+    const [notificationPermission, database, alerts, history, notices] =
+      await Promise.all([permission, snapshot, pipeline, trace, testResults]);
     const tests = PISMarketSmoke.run();
     const report = {
       versão: chrome.runtime.getManifest().version,
@@ -225,8 +226,12 @@ runDiagnostics.addEventListener('click', async () => {
         ...alerts,
         notificações_ativadas: settings.notify,
         permissão_do_Chrome: notificationPermission,
-        notificação_de_teste: testNotification,
-        aviso_de_teste_no_jogo: testGameToast,
+        notificação_de_teste: notices.pisDesktopToastTest
+          ? (notices.pisDesktopToastTest.ok ? 'aceita pelo Chrome' : 'falhou') : 'não solicitada',
+        notificação_de_teste_em: notices.pisDesktopToastTest?.at ?? null,
+        aviso_de_teste_no_jogo: notices.pisGameToastTest
+          ? (notices.pisGameToastTest.ok ? 'confirmado pela aba' : 'aba indisponível') : 'não solicitado',
+        aviso_de_teste_no_jogo_em: notices.pisGameToastTest?.at ?? null,
       },
     };
     reportBox.value = JSON.stringify(report, null, 2);
@@ -265,31 +270,21 @@ form.addEventListener('submit', async event => {
   } catch (error) { saveStatus.textContent = 'Falha ao salvar. ' + error.message; }
 });
 
-document.querySelector('#test-notification').addEventListener('click', async () => {
+async function runNoticeTest(type, success, failure) {
   try {
-    await chrome.notifications.create('pis:test', {
-      type: 'basic', iconUrl: chrome.runtime.getURL('opportunity-icon.png'),
-      title: 'PokeSniper · Teste de notificação',
-      message: 'As notificações do Sniper estão funcionando neste navegador.',
-    });
-    testNotification = 'aceita pelo Chrome';
-    saveStatus.textContent = 'Teste enviado ao Chrome.';
-  } catch (error) {
-    testNotification = 'falhou';
-    saveStatus.textContent = 'Falha no teste. ' + error.message;
-  }
+    const response = await chrome.runtime.sendMessage({ type });
+    saveStatus.textContent = response?.storageError ? 'Falha ao salvar o resultado do teste.' :
+      response?.ok ? success : failure;
+  } catch { saveStatus.textContent = 'Recarregue a extensão e tente novamente.'; }
+}
+
+document.querySelector('#test-notification').addEventListener('click', () => {
+  runNoticeTest('PIS_TEST_DESKTOP_TOAST', 'Teste enviado ao Chrome.', 'O Chrome recusou o aviso de teste.');
 });
 
-document.querySelector('#test-game-toast').addEventListener('click', async () => {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'PIS_TEST_GAME_TOAST' });
-    if (!response?.ok) throw new Error('aba indisponível');
-    testGameToast = 'confirmado pela aba';
-    saveStatus.textContent = 'Aviso exibido dentro da aba do PokéIdle. Volte ao jogo para vê-lo.';
-  } catch {
-    testGameToast = 'aba indisponível';
-    saveStatus.textContent = 'Abra ou recarregue o PokéIdle e deixe o mercado carregar antes de testar.';
-  }
+document.querySelector('#test-game-toast').addEventListener('click', () => {
+  runNoticeTest('PIS_TEST_GAME_TOAST', 'Aviso exibido dentro da aba do PokéIdle. Volte ao jogo para vê-lo.',
+    'Abra ou recarregue o PokéIdle e deixe o mercado carregar antes de testar.');
 });
 
 document.querySelector('#open').addEventListener('click', () => {
