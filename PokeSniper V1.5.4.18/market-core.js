@@ -129,6 +129,15 @@
   const sameMarket = (a, b) => a.currency === b.currency && a.speciesId === b.speciesId &&
     a.shiny === b.shiny && (a.form ?? null) === (b.form ?? null);
 
+  // A ficha ausente não prova incompatibilidade, mas também não comprova um especial.
+  function compatibleProfile(target, sale) {
+    if (target.power != null && sale.power != null && target.power !== sale.power) return false;
+    if (target.quality != null && sale.quality != null &&
+        Math.abs(target.quality - sale.quality) > Math.max(0.01, Math.max(target.quality, sale.quality) * 0.20)) return false;
+    return ['aoe', 'zMove', 'mega'].every(flag =>
+      (target[flag] === 1 || sale[flag] === 1) ? target[flag] === sale[flag] : true);
+  }
+
   function quantile(sorted, total, fraction) {
     let cumulative = 0;
     for (const { price, weight } of sorted) {
@@ -146,7 +155,7 @@
       return { status: 'incomplete_profile' };
     }
     const comparable = sales.filter(sale =>
-      sameMarket(target, sale) && sale.soldAt >= now - WINDOW_MS && sale.soldAt < now &&
+      sameMarket(target, sale) && compatibleProfile(target, sale) && sale.soldAt >= now - WINDOW_MS && sale.soldAt < now &&
       sale.price > 0 && sale.level > 0 && sale.grade != null)
       .map(sale => {
         const recency = 2 ** (-(now - sale.soldAt) / (10 * DAY));

@@ -50,6 +50,11 @@ test('valida a distribuição dos IVs em vendas posteriores e distingue perfis c
   assert.ok(fast.validation.after < fast.validation.before);
   assert.ok(fast.validation.below <= 0.27);
   assert.ok(fast.effects.some(effect => effect.name === 'Distribuição dos IVs'));
+  const rare = { ...profile(true), price: 80, ivs: { hp: 15, attack: 15, defense: 0,
+    specialAttack: 15, specialDefense: 15, speed: 60 } };
+  const rarePrice = estimate(rare);
+  assert.equal(rarePrice.profileReason, 'rare_profile');
+  assert.equal(opportunities.eligible({ ...rare, estimate: rarePrice }), false);
   const limited = pricing.prepare(sales.slice(-20), core.estimate, core.sameMarket, now)(profile(true));
   assert.equal(limited.method, 'baseline');
 });
@@ -104,4 +109,39 @@ test('teto de revenda considera taxa e retorno sem mudar o desconto ou usar liqu
   assert.equal(opportunities.priceLimit(row, config), 66);
   assert.equal(opportunities.priceLimit({ ...row, liquidity: 0.99 }, config), 66);
   assert.equal(opportunities.priceLimit(row, opportunities.settings({ resale: true })), null);
+});
+
+test('a referência básica exclui especiais e atributos incompatíveis mesmo em vendas numerosas', () => {
+  const target = profile(true);
+  const variants = [{ aoe: 1 }, { zMove: 1 }, { mega: 1 }, { power: 5 }, { quality: 2.9 }];
+  for (const change of variants) {
+    const sales = Array.from({ length: 10 }, (_, i) => ({
+      ...target, ...change, id: 'premium-' + i, pokemonId: String(i), soldAt: now - 1000, price: 1000,
+    }));
+    assert.equal(core.estimate(target, sales, now).status, 'insufficient_sales');
+  }
+});
+
+test('revendas concentradas na calibração e no teste não aprovam o modelo detalhado', () => {
+  const sales = Array.from({ length: 240 }, (_, i) => ({
+    ...profile(i % 2 === 0), id: 'validation-' + i,
+    pokemonId: i < 132 ? 'train-' + i : i < 184 ? 'cal-' + i % 2 : 'hold-' + i % 2,
+    soldAt: now - (240 - i) * day / 12,
+    price: Math.round((i % 2 === 0 ? 200 : 100) * (1 + 0.05 * Math.sin(i * 2.7))),
+  }));
+  const priced = pricing.prepare(sales, core.estimate, core.sameMarket, now)(profile(true));
+  assert.equal(priced.method, 'baseline');
+  assert.equal(priced.profileReason, 'no_temporal_validation');
+});
+
+test('tenta o IV total validado quando as fichas históricas não preservam a distribuição', () => {
+  const sales = Array.from({ length: 240 }, (_, i) => ({
+    ...profile(i % 2 === 0), id: 'total-' + i, pokemonId: 'total-' + i,
+    ivs: null, ivTotal: i % 2 === 0 ? 120 : 80,
+    soldAt: now - (240 - i) * day / 12,
+    price: Math.round((i % 2 === 0 ? 200 : 100) * (1 + 0.05 * Math.sin(i * 2.7))),
+  }));
+  const priced = pricing.prepare(sales, core.estimate, core.sameMarket, now)(profile(true));
+  assert.equal(priced.method, 'profile_iv_total');
+  assert.ok(priced.validation.profileCount >= 5);
 });

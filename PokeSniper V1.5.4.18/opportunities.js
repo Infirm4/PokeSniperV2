@@ -22,7 +22,7 @@
   }
 
   // Indexa ofertas no preço de referência ou abaixo dele. O filtro aplica o desconto salvo.
-  const eligible = row => !row.closed && row.estimate?.status === 'estimated' && row.estimate.median > 0 && row.price <= row.estimate.median;
+  const eligible = row => !row.closed && row.estimate?.status === 'estimated' && row.estimate.profileReason !== 'rare_profile' && row.estimate.median > 0 && row.price <= row.estimate.median;
   const key = row => JSON.stringify([row.currency, row.id, row.price]);
 
   // O preço limite deriva do desconto e, quando ativo, do filtro de margem de revenda.

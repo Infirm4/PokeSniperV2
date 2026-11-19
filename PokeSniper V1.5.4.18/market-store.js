@@ -7,7 +7,7 @@ const PISMarketStore = (() => {
   function open() {
     if (opening) return opening;
     opening = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, 5);
+      const request = indexedDB.open(DB_NAME, 6);
       request.onupgradeneeded = event => {
         const db = request.result;
         const tx = request.transaction;
@@ -28,15 +28,11 @@ const PISMarketStore = (() => {
           exposures.createIndex('cohort', ['currency', 'speciesId', 'shiny', 'startAt']);
           exposures.createIndex('byPokemon', ['pokemonId', 'currency', 'lastSeen']);
         }
-        if (event.oldVersion === 4) {
-          // Inclui as ofertas recentes que a regra anterior deixou fora da fila, preservando os recibos.
-          const range = IDBKeyRange.lowerBound(Date.now() - PISOpportunities.TTL);
-          result(listings.index('observedAt').getAll(range))
-            .then(async rows => {
-              for (const row of rows) {
-                if (PISOpportunities.eligible(row)) await saveOpportunity(tx, row);
-              }
-            })
+        if (event.oldVersion >= 4) {
+          // Atualiza somente anúncios recentes. Recibos anteriores continuam válidos.
+          const now = Date.now();
+          result(listings.index('observedAt').getAll(IDBKeyRange.lowerBound(now - PISOpportunities.TTL)))
+            .then(rows => reprice(tx, rows, now, true))
             .catch(() => { try { tx.abort(); } catch { /* já encerrada */ } });
         }
         // Atualiza as estimativas legadas na mesma transação que instala o índice.
@@ -279,6 +275,14 @@ const PISMarketStore = (() => {
     });
   }
 
+  async function analyzeListing(row, now = Date.now()) {
+    const db = await open();
+    const index = db.transaction('sales').objectStore('sales').index('comparables');
+    const sales = await recentSales(index, row, now);
+    return { ...row, estimate: PISPricingModel.prepare(sales, PISMarketCore.estimate,
+      PISMarketCore.sameMarket, now)(row) };
+  }
+
   // Leitura local iniciada pelo usuário. Só o resumo agregado sai do banco para o relatório.
   async function diagnosticSnapshot() {
     const db = await open();
@@ -305,6 +309,7 @@ const PISMarketStore = (() => {
     for (const row of listings) {
       if (row.estimate?.method?.startsWith('profile_')) totals.detailed++;
       if (row.estimate?.status !== 'estimated') totals.noEstimate++;
+      else if (row.estimate.profileReason === 'rare_profile') totals.held++;
       else if (!PISOpportunities.eligible(row)) totals.price++;
       else if (!PISOpportunities.matches(row, config)) totals.filters++;
       else {
@@ -324,5 +329,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, initialize: open, recentOpportunities, markDelivery, findListings, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, initialize: open, recentOpportunities, markDelivery, findListings, analyzeListing, diagnosticSnapshot, liquidity, diagnostics };
 })();

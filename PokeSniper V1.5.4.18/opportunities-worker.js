@@ -13,7 +13,7 @@ const PISOpportunityAlerts = (() => {
     for (const row of pending.slice(0, 5)) {
       // ID determinístico mantém apenas uma notificação para a mesma revisão após uma retomada.
       const title = row.name || 'Pokémon #' + row.speciesId;
-      const message = `${row.price.toLocaleString('pt-BR')} ${row.currency === 'gold' ? 'Coins' : 'Gemas'} · ${Math.round(row.estimate.discount * 100)}% abaixo da referência${row.estimate.method === 'baseline' ? ' básica' : ''}`;
+      const message = `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(row.estimate.discount * 100)}% de desconto`;
       const inGame = PISGameTab.show(title, message).catch(() => false);
       let desktop = false;
       try {

@@ -84,17 +84,26 @@
     return sorted[Math.floor((sorted.length - 1) * fraction)];
   }
 
+  // A última venda conhecida de cada exemplar vale uma observação por bloco.
+  function independent(rows) {
+    const unique = new Map();
+    for (const row of rows) {
+      if (row.sale.pokemonId) unique.set(row.sale.pokemonId, row);
+    }
+    return [...unique.values()].sort((a, b) => a.sale.soldAt - b.sale.soldAt);
+  }
+
   function build(rows, allSales, baseline) {
     if (rows.length < MIN_ROWS) return null;
     const calibrationStart = rows[Math.floor(rows.length * 0.55)].sale.soldAt;
     const testStart = rows[Math.floor(rows.length * 0.77)].sale.soldAt;
-    const test = rows.filter(row => row.sale.soldAt >= testStart);
+    const test = independent(rows.filter(row => row.sale.soldAt >= testStart));
     const testIds = new Set(test.map(row => row.sale.pokemonId).filter(Boolean));
-    const calibration = rows.filter(row => row.sale.soldAt >= calibrationStart &&
-      row.sale.soldAt < testStart && !testIds.has(row.sale.pokemonId));
+    const calibration = independent(rows.filter(row => row.sale.soldAt >= calibrationStart &&
+      row.sale.soldAt < testStart && !testIds.has(row.sale.pokemonId)));
     const calibrationIds = new Set(calibration.map(row => row.sale.pokemonId).filter(Boolean));
-    const train = rows.filter(row => row.sale.soldAt < calibrationStart &&
-      !testIds.has(row.sale.pokemonId) && !calibrationIds.has(row.sale.pokemonId));
+    const train = independent(rows.filter(row => row.sale.soldAt < calibrationStart &&
+      !testIds.has(row.sale.pokemonId) && !calibrationIds.has(row.sale.pokemonId)));
     if (train.length < 28 || calibration.length < 12 || test.length < 12) return null;
     const model = fit(train);
     if (!model) return null;
@@ -108,7 +117,7 @@
       if (reference.status !== 'estimated') continue;
       const predicted = model.predict(row.x);
       const actual = Math.log(row.sale.price);
-      tests.push({ baseline: Math.abs(actual - Math.log(reference.median)),
+      tests.push({ sale: row.sale, x: row.x, baseline: Math.abs(actual - Math.log(reference.median)),
         error: Math.abs(actual - predicted - offsets[1]),
         below: actual < predicted + offsets[0],
         covered: actual >= predicted + offsets[0] && actual <= predicted + offsets[2] });
@@ -119,7 +128,8 @@
     const below = tests.filter(row => row.below).length / tests.length;
     const coverage = tests.filter(row => row.covered).length / tests.length;
     if (before <= 0 || after > before * 0.95 || below > 0.27 || coverage < 0.45 || coverage > 0.85) return null;
-    return { model, offsets, validation: { count: tests.length, before, after, below, coverage } };
+    return { model, offsets, tests, validation: { count: tests.length, calibrationCount: calibration.length,
+      trainCount: train.length, before, after, below, coverage } };
   }
 
   function identity(row) {
@@ -129,14 +139,12 @@
 
   function prepare(sales, baseline, sameMarket, now) {
     const local = new Map();
-    return target => {
-      const reference = baseline(target, sales, now);
-      const detailed = STATS.every(key => Number.isFinite(target.ivs?.[key]));
+    function evaluate(target, reference, detailed) {
       const x = features(target, detailed);
       if (!x || reference.status !== 'estimated') return { ...reference, profileReason: 'missing_fields_or_sales' };
       const key = JSON.stringify([target.currency, target.speciesId, target.shiny, target.form ?? null, detailed]);
       if (!local.has(key)) {
-        const available = sales.filter(sale => sameMarket(sale, target) && sale.soldAt < now && sale.price > 0)
+        const available = sales.filter(sale => sameMarket(sale, target) && sale.soldAt >= now - 30 * DAY && sale.soldAt < now && sale.price > 0)
           .sort((a, b) => a.soldAt - b.soldAt);
         const signature = available.map(identity).join('\n');
         let value = cache.get(key);
@@ -150,24 +158,32 @@
       }
       const { rows, calibrated } = local.get(key);
       if (!calibrated) return { ...reference, profileReason: 'no_temporal_validation', profileSales: rows.length };
-      const nearby = rows.filter(({ sale }) =>
+      const similar = candidates => candidates.filter(({ sale }) =>
         sale.power === target.power && EXTRA.every(flag => (sale[flag] ?? null) === (target[flag] ?? null)) &&
         Math.abs(target.grade - sale.grade) <= 0.75 && Math.abs(Math.log(target.level / sale.level)) <= 0.5 &&
         (!detailed || Math.abs(target.ivs.speed - sale.ivs.speed) <= Math.max(1, target.ivTotal / 12)))
-        .map(({ sale, x: values }) => ({
-          sale, distance: Math.abs(target.grade - sale.grade) + Math.abs(Math.log(target.level / sale.level)) +
+        .map(row => {
+          const { sale, x: values } = row;
+          return { ...row, distance: Math.abs(target.grade - sale.grade) + Math.abs(Math.log(target.level / sale.level)) +
             Math.abs(x[6] - values[6]) / Math.max(1, x[6] * 0.15) +
             Math.abs(x[7] - values[7]) / Math.max(1, x[7] * 0.15) +
             (detailed ? x.slice(8, 13).reduce((sum, value, i) =>
               sum + Math.abs(value - values[8 + i]), 0) / Math.max(1, x[7]) : 0),
-        })).filter(row => row.distance <= 2).sort((a, b) => a.distance - b.distance);
+          };
+        }).filter(row => row.distance <= 2).sort((a, b) => a.distance - b.distance);
       const distinct = new Map();
-      for (const row of nearby) {
+      for (const row of similar(rows)) {
         const identity = row.sale.pokemonId || row.sale.id;
         if (!distinct.has(identity)) distinct.set(identity, row);
       }
       const supported = [...distinct.values()];
-      if (supported.length < 5) return { ...reference, profileReason: 'rare_profile', profileSales: supported.length };
+      const validated = similar(calibrated.tests);
+      const localBelow = validated.filter(row => row.below).length;
+      const localCovered = validated.filter(row => row.covered).length;
+      if (supported.length < 5 || validated.length < 5 ||
+          localBelow > validated.length * 0.30 || localCovered < validated.length * 0.40) {
+        return { ...reference, profileReason: 'rare_profile', profileSales: supported.length };
+      }
       const prediction = calibrated.model.predict(x);
       const [lower, median, upper] = calibrated.offsets.map(offset => Math.exp(prediction + offset));
       if (![lower, median, upper].every(value => Number.isFinite(value) && value > 0)) return reference;
@@ -178,11 +194,20 @@
       if (detailed) effects.push(effect('Distribuição dos IVs', 8, 13));
       return { ...reference, method: detailed ? 'profile_iv_distribution' : 'profile_iv_total',
         lower, median, upper, discount: 1 - target.price / median,
-        effects, profileSales: supported.length, baselineMedian: reference.median, validation: calibrated.validation,
+        effects, profileSales: supported.length, baselineMedian: reference.median,
+        validation: { ...calibrated.validation, profileCount: validated.length },
         comparables: supported.slice(0, 5).map(({ sale }) => ({
           id: sale.id, price: sale.price, soldAt: sale.soldAt, grade: sale.grade, level: sale.level,
           power: sale.power, speed: sale.ivs?.speed,
         })) };
+    }
+    return target => {
+      const reference = baseline(target, sales, now);
+      if (!STATS.every(key => Number.isFinite(target.ivs?.[key]))) return evaluate(target, reference, false);
+      const detailed = evaluate(target, reference, true);
+      // Se há evidência de que o perfil de IVs não é bem atendido, o IV total não deve mascará-la.
+      if (detailed.method === 'profile_iv_distribution' || detailed.profileReason === 'rare_profile') return detailed;
+      return evaluate(target, reference, false);
     };
   }
 

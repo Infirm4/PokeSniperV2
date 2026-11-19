@@ -47,7 +47,7 @@ function detailsFor(row, unit) {
   if (estimate?.baselineMedian != null) {
     const adjustment = estimate.median / estimate.baselineMedian - 1;
     const validation = estimate.validation;
-    details.append(text('p', `Ajuste do perfil sobre a referência básica ${percent(adjustment)} · validação em ${validation.count} vendas posteriores`, 'offer-meta'));
+    details.append(text('p', `Ajuste do perfil sobre a referência básica ${percent(adjustment)} · ${estimate.profileSales} comparáveis próximos · validação em ${validation.profileCount ?? validation.count} exemplares do perfil`, 'offer-meta'));
     const drivers = [...(estimate.effects || [])].sort((a, b) => Math.abs(b.logEffect) - Math.abs(a.logEffect))
       .filter(effect => Math.abs(effect.logEffect) >= 0.01).slice(0, 3);
     if (drivers.length) details.append(text('p', 'Ajustes do modelo em relação ao perfil médio · ' +
@@ -113,8 +113,12 @@ function card(row, showLiquidity = false) {
     const method = estimate.method === 'profile_iv_distribution' ? 'perfil e distribuição dos IVs' :
       estimate.method === 'profile_iv_total' ? 'perfil e IV total' : 'referência básica';
     const limit = PISOpportunities.priceLimit(row, config);
+    const sample = estimate.method?.startsWith('profile_')
+      ? `${estimate.profileSales} exemplares próximos do perfil`
+      : `${estimate.count} vendas · n efetivo ${format.format(estimate.effectiveCount)}`;
+
     item.append(text('div', `Desconto ${percent(estimate.discount)} · mediana ${format.format(estimate.median)} · ${method}`, 'offer-meta'),
-      text('div', `Faixa ${format.format(estimate.lower)}–${format.format(estimate.upper)} · ${estimate.count} vendas · n efetivo ${format.format(estimate.effectiveCount)}`, 'offer-meta'),
+      text('div', `Faixa ${format.format(estimate.lower)}–${format.format(estimate.upper)} · ${sample}`, 'offer-meta'),
       text('div', limit == null ? 'Informe a taxa e selecione uma moeda para calcular o teto de revenda.' :
         `Teto de preço para alerta ${format.format(limit)} ${unit}`, 'offer-meta'));
     if (estimate.profileReason) item.append(text('div', profileStatus[estimate.profileReason], 'offer-meta'));
@@ -131,6 +135,26 @@ function card(row, showLiquidity = false) {
   return item;
 }
 
+function opportunityCard(row) {
+  const item = document.createElement('li');
+  const details = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.className = 'offer-title';
+  summary.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')),
+    text('strong', percent(row.estimate.discount) + ' de desconto'));
+  details.append(summary);
+  details.addEventListener('toggle', () => {
+    if (details.open && details.childElementCount === 1) {
+      const panel = card(row, true);
+      const body = document.createElement('div');
+      body.append(...panel.childNodes);
+      details.append(body);
+    }
+  });
+  item.append(details);
+  return item;
+}
+
 async function refresh() {
   const request = ++generation;
   try {
@@ -142,7 +166,7 @@ async function refresh() {
     const signature = JSON.stringify([config, visible]);
     // Não derruba uma simulação aberta durante a atualização automática.
     if (signature !== rendered && !offers.querySelector('details[open]')) {
-      offers.replaceChildren(...visible.map((row, index) => card(row, index < 8)));
+      offers.replaceChildren(...visible.map(opportunityCard));
       rendered = signature;
     }
     panelStatus.textContent = rows.length
@@ -172,7 +196,16 @@ async function searchListings(query) {
       const unit = row.currency === 'gold' ? 'Coins' : 'Gemas';
       const button = text('button', `${name}${row.shiny ? ' · Shiny' : ''} · Nv. ${row.level ?? '?'} · ${format.format(row.price)} ${unit}`);
       button.type = 'button';
-      button.addEventListener('click', () => analysis.replaceChildren(card(row, true)));
+      button.addEventListener('click', async () => {
+        const selection = ++lookupRequest;
+        analysis.replaceChildren(text('li', 'Atualizando a estimativa…'));
+        try {
+          const updated = await PISMarketStore.analyzeListing(row);
+          if (selection === lookupRequest) analysis.replaceChildren(card(updated, true));
+        } catch {
+          if (selection === lookupRequest) analysis.replaceChildren(text('li', 'Não foi possível atualizar a estimativa.'));
+        }
+      });
       item.append(button);
       return item;
     });

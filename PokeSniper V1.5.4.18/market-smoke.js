@@ -24,6 +24,12 @@
         const estimate = PISMarketCore.estimate(target, history, now);
         return estimate.lower === 100 && estimate.median === 110 && estimate.upper === 120;
       }),
+      check('perfil comum exclui vendas com especiais incompatíveis', () => {
+        const target = capture('vitrine', [listing]).rows[0];
+        const premium = sales.map(row => ({ ...row, ficha: { ...row.ficha, tmAoe: true } }));
+        return PISMarketCore.estimate(target, capture('historicoGlobal', premium).rows, now)
+          .status === 'insufficient_sales';
+      }),
       check('desconto dentro da faixa e sem teto antigo', () => {
         const row = { ...capture('vitrine', [listing]).rows[0],
           price: 95, estimate: { status: 'estimated', lower: 90, median: 100 } };
