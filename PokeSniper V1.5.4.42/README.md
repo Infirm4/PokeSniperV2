@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.41)
+# PokeIdle Market Sniper (v1.5.4.42)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -131,6 +131,15 @@ Sheets. O monitor refaz a coleta do histórico e consulta pendências por exempl
 na própria fila de mercado, conferindo a transação antes de completar. O
 relatório mostra `vendas_pendentes_ficha_completa` e a contagem por lote.
 O histórico já sincronizado no Sheets segue disponível na planilha.
+
+## Faixa estimada na vitrine de Coins
+
+Cada anúncio em Coins que o Sniper reconhece mostra a referência (mediana),
+a diferença percentual do preço pedido e a faixa entre os quartis inferior
+e superior. Sinal negativo indica preço abaixo da referência; sinal positivo,
+acima. A faixa indicativa é exibida em cor neutra. Selos usam o histórico
+local e não exigem avisos habilitados. A navegação e os filtros do jogo
+continuam sob controle do jogador.
 
 ## Monitoramento e precificação
 

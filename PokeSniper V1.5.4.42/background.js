@@ -105,14 +105,25 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
         !Array.isArray(req.offers) || req.offers.length > 100) return false;
     const candidates = req.offers.filter(row => ['gold', 'orb'].includes(row?.currency) &&
       typeof row.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(row.id) &&
-      Number.isSafeInteger(row.price) && row.price > 0);
+      Number.isSafeInteger(row.price) && row.price > 0).map(({ id, currency, price, priceTick }) => ({
+      id, currency, price, priceTick: currency === 'gold' && Number.isSafeInteger(priceTick) && priceTick > 1 &&
+        priceTick <= 1e9 ? priceTick : 1,
+    }));
     (async () => {
       const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
       const rows = await PISMarketStore.marketBadges(candidates, PISOpportunities.settings(opportunitySettings));
-      return rows.map(row => {
+      return rows.map(({ offer, row }) => {
+        if (row.currency === 'gold') {
+          const estimate = row.estimate;
+          const quote = estimate?.status === 'estimated' && [estimate.lower, estimate.median, estimate.upper]
+            .every(value => Number.isSafeInteger(value) && value > 0) ? {
+              lower: estimate.lower, median: estimate.median, upper: estimate.upper,
+              indicative: estimate.alertSupported !== true || estimate.bepi === true,
+            } : null;
+          return { ...offer, actualPrice: row.price, quote };
+        }
         const { discount, asking } = PISOpportunities.presentation(row);
-        return { id: row.id, currency: row.currency, price: row.price, discount, asking,
-          sprites: PISOpportunities.spriteCandidates(row) };
+        return { ...offer, discount, asking, sprites: PISOpportunities.spriteCandidates(row) };
       });
     })().then(offers => reply({ offers }), () => reply({ offers: [] }));
     return true;

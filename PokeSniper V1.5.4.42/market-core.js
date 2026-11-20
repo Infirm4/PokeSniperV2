@@ -284,6 +284,14 @@
     return missing;
   }
 
+  function matchesDisplayPrice(actual, offer) {
+    if (actual === offer.price) return true;
+    const tick = offer.priceTick;
+    // Um preço abreviado na vitrine pode ter sido arredondado ou truncado.
+    return offer.currency === 'gold' && Number.isSafeInteger(tick) && tick > 1 && tick <= 1e9 &&
+      actual >= offer.price - tick / 2 && actual < offer.price + tick;
+  }
+
   const sameMarket = (a, b) => !isOutland(a) && !isOutland(b) && a.currency === b.currency && a.speciesId === b.speciesId &&
     a.shiny === b.shiny && (a.form ?? null) === (b.form ?? null);
 
@@ -502,7 +510,7 @@
   }
 
   const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
-    WINDOW_MS, MAX_BATCH, estimateCoins, incompleteSaleFields };
+    WINDOW_MS, MAX_BATCH, estimateCoins, incompleteSaleFields, matchesDisplayPrice };
   if (typeof window === 'undefined' && typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
 })();

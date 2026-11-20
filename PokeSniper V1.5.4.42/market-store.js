@@ -441,9 +441,13 @@ const PISMarketStore = (() => {
   async function marketBadges(offers, config, now = Date.now()) {
     const db = await open();
     const listings = db.transaction('listings').objectStore('listings');
-    const rows = await Promise.all(offers.map(offer => result(listings.get(listingKey(offer))).then(row =>
-      row?.pricingRevision === revisionFor(row) && row.price === offer.price &&
-      row.observedAt >= now - PISOpportunities.TTL && PISOpportunities.approved(row, config, now) ? row : null)));
+    const rows = await Promise.all(offers.map(async offer => {
+      const row = await result(listings.get(listingKey(offer)));
+      if (!row || row.pricingRevision !== revisionFor(row) || !PISMarketCore.matchesDisplayPrice(row.price, offer) ||
+          row.observedAt < now - PISOpportunities.TTL || row.closed || row.expiresAt && row.expiresAt <= now) return null;
+      if (row.currency === 'gold') return PISMarketCore.isOutland(row) ? null : { offer, row };
+      return PISOpportunities.approved(row, config, now) ? { offer, row } : null;
+    }));
     return rows.filter(Boolean);
   }
 
