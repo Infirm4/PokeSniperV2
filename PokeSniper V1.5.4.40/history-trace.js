@@ -19,6 +19,7 @@
       lote: ['gravado', 'sem_registros_validos', 'fila_cheia', 'falha_na_gravação', 'lote_inválido'].includes(receipt.status)
         ? receipt.status : null,
       aceitas: asCount(receipt.accepted),
+      fichasIncompletas: asCount(receipt.incomplete),
       novas: asCount(receipt.new), repetidas: asCount(receipt.existing), conflitos: asCount(receipt.conflicts),
       ganharamIvsCompletos: asCount(receipt.gainedFullIvs),
     };

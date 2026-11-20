@@ -26,6 +26,12 @@
   window.addEventListener('message', event => {
     if (event.source !== window || event.origin !== location.origin) return;
     const msg = event.data;
+    if (msg?.source === 'PIS_MAIN' && msg.type === 'CLAIM_INCOMPLETE_SALE') {
+      chrome.runtime.sendMessage({ type: 'PIS_CLAIM_INCOMPLETE_SALE' }).then(result =>
+        window.postMessage({ source: 'PIS_BRIDGE', type: 'INCOMPLETE_SALE_CANDIDATE',
+          requestId: msg.requestId, row: result?.row ?? null }, location.origin)).catch(() => {});
+      return;
+    }
     if (msg?.source === 'PIS_MAIN' && msg.type === 'MARKET_QUERY') {
       chrome.runtime.sendMessage({ type: 'PIS_MARKET_QUERY', route: msg.route, status: msg.status,
         page: msg.page, order: msg.order }).catch(() => {});

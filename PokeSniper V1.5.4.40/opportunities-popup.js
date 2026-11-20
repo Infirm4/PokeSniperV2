@@ -379,7 +379,7 @@ document.querySelector('#sample-sale').addEventListener('click', async () => {
   button.disabled = true;
   try {
     const row = await PISMarketStore.recentSaleSample();
-    if (!row) { testStatus.textContent = 'Nenhuma venda com moeda e Shiny identificados no banco.'; return; }
+    if (!row) { testStatus.textContent = 'Nenhuma venda com ficha completa no banco.'; return; }
     const { id, pokemonId, speciesId, name, currency, price, soldAt, grade, power, quality, ivTotal, ivs,
       level, shiny, sprite, spriteSource, source } = row;
     reportBox.value = JSON.stringify({ id, pokemonId: pokemonId ?? null, speciesId, name: name ?? null,

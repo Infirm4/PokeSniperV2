@@ -2,11 +2,18 @@
 const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
-  const DB_VERSION = 13;
-  const ESTIMATE_REVISION = 4;
-  const revisionFor = row => row?.currency === 'gold' ? 5 : ESTIMATE_REVISION;
+  const DB_VERSION = 14;
+  const ESTIMATE_REVISION = 6;
+  const revisionFor = row => row?.currency === 'gold' ? 7 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
   let opening;
+
+  function saleWithSprite(row) {
+    // Usa a URL histórica quando presente e o catálogo somente para formas base verificáveis.
+    if (PISMarketCore.safeSprite(row.sprite)) return row;
+    const [sprite] = PISOpportunities.spriteCandidates(row);
+    return sprite ? { ...row, sprite, spriteSource: row.spriteFallback === sprite ? row.spriteSource : 'dex' } : row;
+  }
 
   function createListings(db) {
     const store = db.createObjectStore('listings', { keyPath: ['currency', 'id'] });
@@ -48,15 +55,25 @@ const PISMarketStore = (() => {
           tx.objectStore('sales').createIndex('priceMarket', ['currency', 'shiny', 'soldAt']);
         }
         if (event.oldVersion < 12) db.createObjectStore('salesBackup', { keyPath: ['currency', 'id'] });
-        if (event.oldVersion < 13) {
+        if (event.oldVersion < 14) {
+          const incomplete = db.createObjectStore('incompleteSales', { keyPath: ['currency', 'id'] });
+          incomplete.createIndex('recoveryAt', 'recoveryAt');
           const pending = tx.objectStore('salesBackup');
-          const sales = tx.objectStore('sales').openKeyCursor();
+          const sales = tx.objectStore('sales').openCursor();
           sales.onsuccess = () => {
             const cursor = sales.result;
             if (!cursor) return;
-            // Chaves antigas entram na primeira sincronização sem copiar o banco.
             const [currency, id] = cursor.primaryKey;
-            pending.put({ currency, id, revision: 'schema-13' });
+            const row = saleWithSprite(cursor.value);
+            if (PISMarketCore.incompleteSaleFields(row).length) {
+              incomplete.put({ ...row, recoveryAt: 0 });
+              cursor.delete();
+              pending.delete([currency, id]);
+            } else {
+              if (row !== cursor.value) cursor.update(row);
+              if (event.oldVersion < 13 || row !== cursor.value)
+                pending.put({ currency, id, revision: 'schema-14' });
+            }
             cursor.continue();
           };
         }
@@ -197,6 +214,12 @@ const PISMarketStore = (() => {
     const ivs = Object.values(saved.ivs);
     if (ivs.length === 6 && ivs.every(Number.isInteger)) saved.ivTotal = ivs.reduce((sum, value) => sum + value, 0);
     if (previous.outland || incoming.outland) saved.outland = true;
+    if (incoming.spriteSource === 'market' && saved.spriteSource !== 'market' &&
+        PISMarketCore.safeSprite(incoming.sprite)) {
+      saved.sprite = incoming.sprite;
+      saved.spriteSource = incoming.spriteSource;
+      saved.spriteFallback = incoming.spriteFallback ?? null;
+    }
     saved.stats = { ...supplemental.stats, ...primary.stats };
     if (Object.keys(saved.stats).length === 0) saved.stats = null;
     const changed = Object.entries(saved).some(([key, value]) => (key === 'ivs' || key === 'stats') && value != null
@@ -213,7 +236,7 @@ const PISMarketStore = (() => {
       external = evaluatePublic(snapshot, rows, now);
     }
     const tables = ['sales', 'listings', 'opportunities', 'exposures'];
-    if (kind === 'sale') tables.push('salesBackup');
+    if (kind === 'sale') tables.push('salesBackup', 'incompleteSales');
     const tx = db.transaction(tables, 'readwrite');
     const done = new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
@@ -224,7 +247,7 @@ const PISMarketStore = (() => {
     const sales = tx.objectStore('sales');
     const listings = tx.objectStore('listings');
     const exposures = tx.objectStore('exposures');
-    const savedRows = { new: 0, existing: 0, gainedFullIvs: 0, conflicts: 0 };
+    const savedRows = { new: 0, existing: 0, gainedFullIvs: 0, conflicts: 0, incomplete: 0 };
     const hasFullIvs = row => Object.values(row?.ivs || {}).filter(Number.isFinite).length === 6;
     try {
       if (kind === 'sale') {
@@ -234,17 +257,31 @@ const PISMarketStore = (() => {
           const group = groupOf(row);
           affected.set(JSON.stringify(group), group);
         };
+        const incomplete = tx.objectStore('incompleteSales');
         for (const sale of rows) {
-          const previous = await result(sales.get([sale.currency, sale.id]));
-          const { saved, changed, conflict } = reconcileSale(previous, sale);
-          if (previous) savedRows.existing++;
+          const key = [sale.currency, sale.id];
+          const complete = await result(sales.get(key));
+          const previous = complete ?? await result(incomplete.get(key));
+          const incoming = saleWithSprite(sale);
+          const next = reconcileSale(previous, incoming);
+          if (next.conflict) savedRows.conflicts++;
+          const saved = saleWithSprite(next.saved);
+          if (PISMarketCore.incompleteSaleFields(saved).length) {
+            if (!complete && (next.changed || saved !== next.saved))
+              incomplete.put({ ...saved, recoveryAt: previous?.recoveryAt ?? 0 });
+            savedRows.incomplete++;
+            continue;
+          }
+          if (!complete && previous) incomplete.delete(key);
+          const changed = !complete || next.changed || saved !== next.saved;
+          if (complete) savedRows.existing++;
           else savedRows.new++;
-          if (conflict) savedRows.conflicts++;
           if (!changed) continue;
           addGroup(previous);
           addGroup(saved);
           if (!hasFullIvs(previous) && hasFullIvs(saved)) savedRows.gainedFullIvs++;
-          sales.put(saved);
+          const { recoveryAt, ...record } = saved;
+          sales.put(record);
           tx.objectStore('salesBackup').put({
             currency: saved.currency, id: saved.id, revision: crypto.randomUUID(),
           });
@@ -307,6 +344,34 @@ const PISMarketStore = (() => {
       try { tx.abort(); } catch { /* já encerrada */ }
       throw error;
     }
+  }
+
+  async function claimIncompleteSale(now = Date.now()) {
+    const db = await open();
+    const tx = db.transaction('incompleteSales', 'readwrite');
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error);
+    });
+    done.catch(() => {});
+    const index = tx.objectStore('incompleteSales').index('recoveryAt');
+    const candidate = await new Promise((resolve, reject) => {
+      const request = index.openCursor(IDBKeyRange.upperBound(now - 24 * 3600000));
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) { resolve(null); return; }
+        const row = cursor.value;
+        if (!/^\d+$/.test(row.pokemonId ?? '') || row.soldAt < now - PISMarketCore.WINDOW_MS) {
+          cursor.continue();
+          return;
+        }
+        cursor.update({ ...row, recoveryAt: now });
+        resolve({ id: row.id, currency: row.currency, pokemonId: row.pokemonId });
+      };
+    });
+    await done;
+    return candidate;
   }
 
   async function pendingSalesBackup(limit) {
@@ -548,13 +613,19 @@ const PISMarketStore = (() => {
   // Leitura local iniciada pelo usuário. Só o resumo agregado sai do banco para o relatório.
   async function diagnosticSnapshot() {
     const db = await open();
-    const tx = db.transaction(['listings', 'sales', 'exposures']);
-    const [listings, sales, exposures] = await Promise.all([
+    const tx = db.transaction(['listings', 'sales', 'exposures', 'incompleteSales']);
+    const [listings, sales, exposures, incompleteSales] = await Promise.all([
       result(tx.objectStore('listings').getAll()),
       result(tx.objectStore('sales').getAll()),
       result(tx.objectStore('exposures').getAll()),
+      result(tx.objectStore('incompleteSales').getAll()),
     ]);
-    return { dbVersion: db.version, ...PISMarketDiagnostics.summarize({ listings, sales, exposures }, Date.now()) };
+    const missing = {};
+    for (const row of incompleteSales) {
+      for (const field of PISMarketCore.incompleteSaleFields(row)) missing[field] = (missing[field] ?? 0) + 1;
+    }
+    return { dbVersion: db.version, vendas_pendentes_ficha_completa: incompleteSales.length,
+      campos_faltantes_em_vendas_pendentes: missing, ...PISMarketDiagnostics.summarize({ listings, sales, exposures }, Date.now()) };
   }
 
   async function diagnostics(config, now = Date.now()) {
@@ -622,5 +693,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
 })();

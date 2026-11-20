@@ -45,7 +45,7 @@
         ?? aliases.filter(key => key.startsWith('iv')).map(key => ficha[key]).find(value => value != null)),
     ]));
     const parts = Object.values(ivs);
-    const power = /^p?([1-5])$/i.exec(String(ficha.potencia ?? '').trim());
+    const power = /^p?([1-5])$/i.exec(String(ficha.potencia ?? ficha.power ?? '').trim());
     return {
       form: label(ficha.formId ?? ficha.formaId ?? ficha.forma),
       nature: label(ficha.natureza ?? ficha.nature),
@@ -151,15 +151,16 @@
     const price = sale ? row.bruto : row.preco;
     if (!recordId || !speciesId || !denomination || !positiveInteger(price) ||
       (row.qtd != null && number(row.qtd) !== 1)) return null;
+    const rawName = row.ficha.nome ?? row.ficha.name;
     const profile = {
       id: recordId,
       pokemonId: id(row.pokemonId ?? row.ficha.id),
       speciesId,
-      name: typeof row.ficha.nome === 'string' ? row.ficha.nome.trim().slice(0, 100) : null,
+      name: typeof rawName === 'string' ? rawName.trim().slice(0, 100) || null : null,
       currency: denomination,
       shiny: shiny(row.ficha.shiny),
       level: number(row.ficha.level ?? row.ficha.nivel),
-      grade: number(row.ficha.nota),
+      grade: number(row.ficha.nota ?? row.ficha.grade),
       price: Number(price),
       outland: isOutland(row) ? true : null,
       ...attributes(row.ficha),
@@ -261,6 +262,26 @@
         poder: row.battlePower, potencia: row.power, quality: row.quality, ivTotal: row.ivTotal, ivs: row.ivs,
         tmAoe: row.aoe, tmElemental: row.zMove, mega: row.mega },
     })).filter(Boolean);
+  }
+
+  // A base de preço recebe apenas fichas completas da época da venda.
+  function incompleteSaleFields(row) {
+    const missing = [];
+    for (const key of ['id', 'pokemonId', 'speciesId']) if (!id(row?.[key])) missing.push(key);
+    if (!money(row?.currency)) missing.push('currency');
+    if (!positiveInteger(row?.price)) missing.push('price');
+    if (!timestamp(row?.soldAt)) missing.push('soldAt');
+    if (typeof row?.name !== 'string' || !row.name.trim()) missing.push('name');
+    if (!Number.isInteger(row?.level) || row.level < 1) missing.push('level');
+    if (!Number.isFinite(row?.grade) || row.grade < 0) missing.push('grade');
+    if (!Number.isInteger(row?.power) || row.power < 1 || row.power > 5) missing.push('power');
+    if (!Number.isFinite(row?.quality) || row.quality <= 0) missing.push('quality');
+    if (![0, 1].includes(row?.shiny)) missing.push('shiny');
+    const ivs = Object.keys(statAliases).map(stat => row?.ivs?.[stat]);
+    if (!ivs.every(value => Number.isInteger(value) && value >= 0 && value <= 32)) missing.push('ivs');
+    else if (row.ivTotal !== ivs.reduce((sum, value) => sum + value, 0)) missing.push('ivTotal');
+    if (!safeSprite(row?.sprite) && !safeSprite(row?.spriteFallback)) missing.push('sprite');
+    return missing;
   }
 
   const sameMarket = (a, b) => !isOutland(a) && !isOutland(b) && a.currency === b.currency && a.speciesId === b.speciesId &&
@@ -481,7 +502,7 @@
   }
 
   const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
-    WINDOW_MS, MAX_BATCH, estimateCoins };
+    WINDOW_MS, MAX_BATCH, estimateCoins, incompleteSaleFields };
   if (typeof window === 'undefined' && typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
 })();

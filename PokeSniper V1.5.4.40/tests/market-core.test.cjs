@@ -129,3 +129,19 @@ test('classifica o formato do tráfego sem devolver dados da mensagem', () => {
   assert.equal(otherFrameFormat('{"payload":"x"}'), 'json_sem_tipo');
   assert.equal(otherFrameFormat('{bad'), 'json_inválido');
 });
+
+test('a ficha histórica completa exige todos os atributos e preserva IV igual a zero', () => {
+  const { incompleteSaleFields } = require('../market-core.js');
+  const frame = { t: 'market', aba: 'historicoGlobal', linhas: [{
+    ...sales[0], pokemonId: '42', ficha: { ...ficha, nome: 'Nidoran', potencia: 'P1', quality: 1.777,
+      ivs: { hp: 29, atk: 24, def: 30, spAtk: 23, spDef: 20, speed: 0 },
+      sprite: '/sprites/nidoran.png' },
+  }] };
+  const [sale] = capture(frame).rows;
+  assert.deepEqual(incompleteSaleFields(sale), []);
+  assert.equal(sale.ivTotal, 126);
+  assert.equal(sale.ivs.speed, 0);
+  assert.deepEqual(validate('sale', [sale]), [sale]);
+  assert.deepEqual(incompleteSaleFields({ ...sale, quality: null, sprite: null, ivs: { hp: 29 } }),
+    ['quality', 'ivs', 'sprite']);
+});

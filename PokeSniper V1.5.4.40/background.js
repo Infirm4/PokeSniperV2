@@ -118,12 +118,16 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     return true;
   }
   const history = req?.type === 'PIS_MARKET_HISTORY_EVENT';
-  if (!history && !['PIS_MARKET_CORE_BATCH', 'PIS_MARKET_MONITOR', 'PIS_MARKET_UNAVAILABLE', 'PIS_MARKET_QUERY', 'PIS_COINS_HISTORY_STATUS'].includes(req?.type)) return false;
+  if (!history && !['PIS_MARKET_CORE_BATCH', 'PIS_MARKET_MONITOR', 'PIS_MARKET_UNAVAILABLE', 'PIS_CLAIM_INCOMPLETE_SALE', 'PIS_MARKET_QUERY', 'PIS_COINS_HISTORY_STATUS'].includes(req?.type)) return false;
   if (!sender.tab || !PIS_HOST.test(String(sender.url || sender.tab.url || ''))) {
     reply({ ok: false, error: 'origem inválida' });
     return false;
   }
   PISGameTab.remember(sender.tab.id);
+  if (req.type === 'PIS_CLAIM_INCOMPLETE_SALE') {
+    PISMarketStore.claimIncompleteSale().then(row => reply({ row }), () => reply({ row: null }));
+    return true;
+  }
   if (req.type === 'PIS_MARKET_QUERY') {
     if (!['gold', 'orb', 'history'].includes(req.route) || !['enviada', 'resposta', 'recuo', 'recusada',
       'cancelada', 'sem_resposta', 'falha_de_envio', 'desconectada'].includes(req.status)) return false;

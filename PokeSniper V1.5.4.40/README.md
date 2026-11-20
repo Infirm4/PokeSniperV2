@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.39)
+# PokeIdle Market Sniper (v1.5.4.40)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -111,6 +111,21 @@ válida do IndexedDB na aba antes de gravar.
 **Diagnóstico da versão → Ver uma venda do banco** mostra a venda mais
 recente com moeda e Shiny registrados. A amostra é lida diretamente do
 IndexedDB e fica no painel até você copiá-la.
+
+## Fichas completas no histórico
+
+O IndexedDB **sales** exige identidade da venda e do Pokémon, espécie, data,
+moeda, preço, nome, nível, Nota, Potência, Qualidade, Shiny, os seis IVs, a
+soma de IVs e uma sprite válida. São aceitos IVs zero. Para espécies base
+identificadas, a sprite pode vir do catálogo. Os atributos opcionais continuam
+sendo gravados quando a ficha histórica os traz.
+
+A atualização retira de **sales** os registros incompletos e os separa na fila
+local de recuperação. Eles ficam fora da precificação e dos novos envios ao
+Sheets. O monitor refaz a coleta do histórico e consulta pendências por exemplar
+na própria fila de mercado, conferindo a transação antes de completar. O
+relatório mostra `vendas_pendentes_ficha_completa` e a contagem por lote.
+O histórico já sincronizado no Sheets segue disponível na planilha.
 
 ## Monitoramento e precificação
 
