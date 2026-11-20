@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PokeIdle Market Sniper",
-  "version": "1.5.4.34",
-  "description": "Censos contínuos sem espera após censo válido, consultas globais ≥2s e backoff adaptativo.",
+  "version": "1.5.4.35",
+  "description": "Monitor de anúncios recentes de Pokémon com alertas de desconto em Coins e Gemas.",
   "host_permissions": [
     "https://script.google.com/*",
     "https://script.googleusercontent.com/*",

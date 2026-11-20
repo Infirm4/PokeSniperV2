@@ -292,26 +292,31 @@
     if (target.name && sale.name && target.name.toLowerCase() !== sale.name.toLowerCase()) return null;
     const grade = Math.abs(sale.grade - target.grade);
     const level = Math.abs(Math.log(sale.level / target.level));
-    const power = Number.isFinite(target.power) && Number.isFinite(sale.power) ? target.power - sale.power : 0;
-    // Núcleo de semelhança por Nota, log do nível e Potência, com parâmetros próprios.
-    let distance = ((grade / 0.24) ** 2 + (level / 0.30) ** 2 + (power / 1.25) ** 2) / 2;
-    let close = grade <= 0.5 && level <= Math.log(2) / 2;
+    const precisePower = Number.isFinite(target.power) && Number.isFinite(sale.power);
+    if ((precisePower && target.power !== sale.power) || (Number.isFinite(target.quality) && Number.isFinite(sale.quality) &&
+        Math.abs(target.quality - sale.quality) > Math.max(0.01, Math.max(target.quality, sale.quality) * 0.3))) return null;
+    // A Potência conhecida separa os grupos; Nota e nível têm pesos graduais.
+    let distance = ((grade / 0.24) ** 2 + (level / 0.30) ** 2) / 2;
+    const close = grade <= 0.35 && level <= 0.3 && precisePower;
     const fields = [
-      [target.power, sale.power, 1],
       [target.refinement, sale.refinement, Math.max(1, target.refinement * 0.2)],
       [target.quality, sale.quality, Math.max(0.01, target.quality * 0.12)],
       [target.ivTotal, sale.ivTotal, Math.max(5, target.ivTotal * 0.15)],
-      ...Object.keys(statAliases).map(stat => [target.ivs?.[stat], sale.ivs?.[stat], 6]),
     ];
+    // IVs refinam a semelhança. A diferença em um atributo não elimina uma
+    // venda comparável de Nota, nível e Potência próximos.
+    const ivDistances = Object.keys(statAliases).filter(stat => Number.isFinite(target.ivs?.[stat]))
+      .map(stat => Number.isFinite(sale.ivs?.[stat])
+        ? Math.min(2, Math.abs(target.ivs[stat] - sale.ivs[stat]) / 10) : 0.5);
+    if (ivDistances.length) distance += ivDistances.reduce((sum, value) => sum + value, 0) / ivDistances.length;
     for (const [desired, actual, scale] of fields) {
       if (!Number.isFinite(desired)) continue;
-      if (!Number.isFinite(actual)) { distance += 0.35; close = false; continue; }
+      if (!Number.isFinite(actual)) { distance += 0.25; continue; }
       const delta = Math.abs(desired - actual) / scale;
-      distance += Math.min(2, delta) / 2;
-      close &&= delta <= 1;
+      distance += Math.min(2, delta) / 3;
     }
     for (const field of ['natureId', 'nature', 'aoe', 'zMove', 'mega']) {
-      if (target[field] != null && sale[field] == null) { distance += 0.3; close = false; }
+      if (target[field] != null && sale[field] == null) distance += 0.2;
     }
     return { distance, close };
   }
@@ -333,7 +338,8 @@
   function estimateCoins(target, sales, now) {
     const comparable = [];
     for (const sale of sales) {
-      if (!id(sale.id) || !sameMarket(target, sale) || !compatibleProfile(target, sale) ||
+      if (!id(sale.id) || !sameMarket(target, sale) ||
+          !['aoe', 'zMove', 'mega'].every(flag => (target[flag] === 1) === (sale[flag] === 1)) ||
           !(sale.soldAt >= now - WINDOW_MS && sale.soldAt < now) || !positiveInteger(sale.price) ||
           !(sale.level > 0 && Number.isFinite(sale.grade)) || (sale.pokemonId && sale.pokemonId === target.pokemonId)) continue;
       const profile = coinProfile(target, sale);
@@ -355,22 +361,23 @@
     const similar = distinct.filter(row => row.close);
     const verified = similar.filter(row => row.sale.source === 'game' && id(row.sale.pokemonId));
     const close = trimOutliers(verified);
-    const direct = close.length >= 5 && effective(close) >= 4 &&
-      [target.power, target.quality, target.ivTotal].every(Number.isFinite);
+    const direct = close.length >= 3 && effective(close) >= 2.6 && Number.isFinite(target.power);
     const rows = direct ? close : trimOutliers(distinct);
     const count = rows.length;
     const stats = { count, independentCount: count, effectiveCount: effective(rows),
       closeCount: close.length, outlierCount: (direct ? verified.length : distinct.length) - count };
-    if (count < 5 || stats.effectiveCount < 4) return { status: 'insufficient_sales', ...stats };
+    if (count < (direct ? 3 : 5) || stats.effectiveCount < (direct ? 2.6 : 4))
+      return { status: 'insufficient_sales', ...stats, alertReason: 'comparáveis_insuficientes' };
     const weight = totalWeight(rows);
     const lower = quantile(rows, weight, 0.25);
     const median = quantile(rows, weight, 0.5);
     const upper = quantile(rows, weight, 0.75);
     const spread = Math.log(upper / lower);
     const confidence = stats.effectiveCount >= 8 && spread <= Math.log(1.6) ? 'alta' :
-      stats.effectiveCount >= 4 && spread <= Math.log(2) ? 'média' : 'baixa';
+      stats.effectiveCount >= 2.6 && spread <= Math.log(count <= 4 ? 1.6 : 2) ? 'média' : 'baixa';
     return { status: 'estimated', method: 'coins_comparables', ...stats, lower, median, upper,
       confidence, discount: 1 - target.price / median, alertSupported: direct && confidence !== 'baixa',
+      alertReason: !direct ? 'comparáveis_insuficientes' : confidence === 'baixa' ? 'preços_dispersos' : null,
       comparables: [...rows].sort((a, b) => b.weight - a.weight).slice(0, 5).map(({ sale }) => ({
         id: sale.id, price: sale.price, soldAt: sale.soldAt, grade: sale.grade, level: sale.level,
         power: sale.power, speed: sale.ivs?.speed,
@@ -428,7 +435,7 @@
 
   function purchaseOffer(row) {
     if (row?.currency !== 'gold' || typeof row.name !== 'string' || !row.name.trim() || !id(row.id) || !id(row.pokemonId) || !id(row.speciesId) ||
-        !positiveInteger(row.price) || !timestamp(row.observedAt) || isOutland(row)) return null;
+        !positiveInteger(row.price) || !timestamp(row.observedAt) || row.availableAt > Date.now() || isOutland(row)) return null;
     return { id: id(row.id), pokemonId: id(row.pokemonId), speciesId: id(row.speciesId),
       currency: 'gold', price: Number(row.price), observedAt: row.observedAt,
       name: row.name.trim().slice(0, 100) };

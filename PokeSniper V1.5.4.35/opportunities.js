@@ -3,6 +3,11 @@
   const { isOutland } = typeof module === 'object' && module.exports
     ? require('./market-core.js') : globalThis.PISMarketCore;
   const TTL = 10 * 60 * 1000;
+  // Conserva apenas lançamentos recentes como candidatos à fila de avisos.
+  const NEW_OFFER_AGE = 120000;
+  function freshLaunch(row, now = Date.now()) {
+    return Number.isFinite(row.postedAt) && row.postedAt >= now - NEW_OFFER_AGE && row.postedAt <= now + 15000;
+  }
   const DEFAULTS = { currency: 'gold', discount: 20, notify: false };
 
   function settings(raw = {}) {
@@ -21,7 +26,7 @@
   }
 
   // Indexa ofertas no preço de referência ou abaixo dele. O filtro aplica o desconto salvo.
-  const eligible = (row, now = Date.now()) => !row.closed && (!row.availableAt || row.availableAt <= now) && !isOutland(row) && (!row.expiresAt || row.expiresAt > now) && row.estimate?.status === 'estimated' && row.estimate.profileReason !== 'rare_profile' && row.estimate.median > 0 && row.price <= row.estimate.median;
+  const eligible = (row, now = Date.now()) => !row.closed && !isOutland(row) && (!row.expiresAt || row.expiresAt > now) && row.estimate?.status === 'estimated' && row.estimate.profileReason !== 'rare_profile' && row.estimate.median > 0 && row.price <= row.estimate.median;
   const key = row => JSON.stringify([row.currency, row.id, row.price]);
 
   // O preço limite deriva do desconto e, quando ativo, do filtro de margem de revenda.
@@ -82,7 +87,7 @@
   }
 
   // Formata o mesmo desconto e os mesmos valores para painel e avisos.
-  function presentation(row) {
+  function presentation(row, now = Date.now()) {
     const coins = row.currency === 'gold';
     const unit = coins ? 'Mi Coins' : 'Gemas';
     const money = value => new Intl.NumberFormat('pt-BR', {
@@ -98,11 +103,14 @@
     const lowIvs = Object.entries(stats).filter(([key]) => Number.isInteger(row.ivs?.[key]) && row.ivs[key] < 10)
       .map(([, label]) => label);
     const warning = lowIvs.length ? 'IV baixo: ' + lowIvs.join(', ') : '';
-    return { discount, asking, range, warning,
-      message: [`${discount} · ${asking}`, range, warning].filter(Boolean).join('\n') };
+    const hold = row.availableAt > now ? 'Retido até ' + new Intl.DateTimeFormat('pt-BR', {
+      timeStyle: 'medium', timeZone: 'America/Sao_Paulo',
+    }).format(row.availableAt) + ' (Brasília)' : '';
+    return { discount, asking, range, warning, hold,
+      message: [`${discount} · ${asking}`, range, hold, warning].filter(Boolean).join('\n') };
   }
 
-  const core = { TTL, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation };
+  const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISOpportunities = core;
 })();

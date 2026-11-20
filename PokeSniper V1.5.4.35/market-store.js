@@ -3,7 +3,7 @@ const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
   const DB_VERSION = 11;
-  const ESTIMATE_REVISION = 3;
+  const ESTIMATE_REVISION = 4;
   const listingKey = row => [row.currency, row.id];
   let opening;
 
@@ -121,6 +121,10 @@ const PISMarketStore = (() => {
     });
   }
 
+  // Só as consultas de anúncios novos armam a fila. Visitas manuais e censos atualizam a referência.
+  const trackedLaunch = (row, now) => Number.isFinite(row.alertObservedAt) &&
+    row.alertObservedAt >= now - PISOpportunities.TTL;
+
   async function saveOpportunity(tx, priced) {
     const store = tx.objectStore('opportunities');
     const key = PISOpportunities.key(priced);
@@ -157,7 +161,7 @@ const PISMarketStore = (() => {
           now - previous.sourceAt <= 72 * 3600000 ? previous : null;
         const priced = { ...listing, pricingRevision: ESTIMATE_REVISION, estimate: external || estimate(listing) };
         listings.put(priced);
-        if (recordOpportunities && priced.observedAt >= now - PISOpportunities.TTL &&
+        if (recordOpportunities && trackedLaunch(priced, now) &&
             PISOpportunities.eligible(priced)) {
           await saveOpportunity(tx, priced);
         }
@@ -187,7 +191,7 @@ const PISMarketStore = (() => {
     return { saved, changed, conflict };
   }
 
-  async function ingest(kind, rows, now = Date.now()) {
+  async function ingest(kind, rows, now = Date.now(), { live = false } = {}) {
     const db = await open();
     let external = null;
     if (kind === 'listing' && rows.some(row => row.currency === 'orb')) {
@@ -270,7 +274,11 @@ const PISMarketStore = (() => {
             saved.pokemonId === listing.pokemonId && saved.speciesId === listing.speciesId && saved.shiny === listing.shiny;
           const sprite = keepSprite && saved.form === listing.form && saved.mega === listing.mega ?
             { sprite: saved.sprite, spriteSource: saved.spriteSource, spriteFallback: saved.spriteFallback } : {};
-          observed.push({ ...listing, ...sprite, exposureKey: exposure.key, observedAt: now });
+          const sameLaunch = saved && !saved.closed && saved.price === listing.price &&
+            saved.pokemonId === listing.pokemonId && (listing.postedAt == null || listing.postedAt === saved.postedAt);
+          const alertObservedAt = live && PISOpportunities.freshLaunch(listing, now) ? now :
+            sameLaunch ? saved.alertObservedAt : null;
+          observed.push({ ...listing, ...sprite, exposureKey: exposure.key, observedAt: now, alertObservedAt });
         }
         await reprice(tx, observed, now, true, external);
       }
@@ -291,7 +299,7 @@ const PISMarketStore = (() => {
       .getAll(IDBKeyRange.lowerBound(now - PISOpportunities.TTL)));
     const current = await Promise.all(candidates.map(async candidate => {
       const listing = await result(listings.get(listingKey(candidate)));
-      if (listing?.pricingRevision === ESTIMATE_REVISION && PISOpportunities.key(listing) === candidate.key &&
+      if (listing?.pricingRevision === ESTIMATE_REVISION && trackedLaunch(listing, now) && PISOpportunities.key(listing) === candidate.key &&
           PISOpportunities.eligible(listing, now) && PISOpportunities.matches(listing, config)) {
         return { ...candidate, ...listing };
       }
@@ -306,7 +314,7 @@ const PISMarketStore = (() => {
     const entry = await result(tx.objectStore('opportunities').get(key));
     const listing = entry?.id === id ? await result(tx.objectStore('listings').get(listingKey(entry))) : null;
     if (!entry || (!forReview && (entry.delivery !== 'pending' || entry.nextAttemptAt > now)) || listing?.pricingRevision !== ESTIMATE_REVISION ||
-        listing.observedAt < now - PISOpportunities.TTL || PISOpportunities.key(listing) !== key ||
+        !trackedLaunch(listing, now) || listing.observedAt < now - PISOpportunities.TTL || PISOpportunities.key(listing) !== key ||
         !PISOpportunities.eligible(listing, now) || !PISOpportunities.matches(listing, config) ||
         !PISOpportunities.notificationEligible(listing)) return null;
     return { ...entry, ...listing };
@@ -463,7 +471,7 @@ const PISMarketStore = (() => {
             current.price !== row.price || current.estimate?.sourceAt > estimate.sourceAt) continue;
         const priced = { ...current, pricingRevision: ESTIMATE_REVISION, estimate };
         target.put(priced);
-        if (PISOpportunities.eligible(priced)) await saveOpportunity(update, priced);
+        if (trackedLaunch(priced, now) && PISOpportunities.eligible(priced, now)) await saveOpportunity(update, priced);
       }
       await saved;
     }
@@ -501,15 +509,22 @@ const PISMarketStore = (() => {
     const totals = { listings: listings.length, sales: saleCount, noEstimate: 0, price: 0,
       filters: 0, detailed: 0, matched: 0, held: 0, sent: 0, sentDesktop: 0, sentInGame: 0, sentWithoutChannelInfo: 0, failed: 0, pending: 0 };
     const byKey = new Map(opportunities.map(row => [row.key, row]));
-    const coins = { observados: 0, estimados: 0, confiáveis: 0, ofertas: 0, avisos_reais: 0 };
+    const coins = { observados: 0, novos_capturados: 0, retidos: 0, estimados: 0, confiáveis: 0,
+      sem_comparáveis: 0, preços_dispersos: 0, ofertas: 0, avisos_reais: 0 };
     totals.coins = coins;
     for (const row of listings) {
       if (row.currency === 'gold') {
         coins.observados++;
+        if (trackedLaunch(row, now)) {
+          coins.novos_capturados++;
+          if (row.availableAt > now) coins.retidos++;
+        }
+        if (row.estimate?.alertReason === 'comparáveis_insuficientes') coins.sem_comparáveis++;
+        if (row.estimate?.alertReason === 'preços_dispersos') coins.preços_dispersos++;
         if (row.pricingRevision === ESTIMATE_REVISION && row.estimate?.status === 'estimated') {
           coins.estimados++;
           if (PISOpportunities.notificationEligible(row)) coins.confiáveis++;
-          if (PISOpportunities.approved(row, config, now)) {
+          if (trackedLaunch(row, now) && PISOpportunities.approved(row, config, now)) {
             coins.ofertas++;
             if (byKey.get(PISOpportunities.key(row))?.delivery === 'sent') coins.avisos_reais++;
           }

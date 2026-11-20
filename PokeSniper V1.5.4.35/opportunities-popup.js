@@ -162,6 +162,7 @@ function opportunityCard(row) {
   block.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')),
     text('span', `${offer.discount} · ${offer.asking}`, 'opportunity-price'));
   if (offer.range) block.append(text('span', offer.range, 'offer-meta'));
+  if (offer.hold) block.append(text('span', offer.hold, 'offer-meta'));
   if (offer.warning) block.append(text('span', offer.warning, 'offer-meta'));
   const sprite = document.createElement('img');
   sprite.alt = '';

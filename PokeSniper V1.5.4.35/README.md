@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.34)
+# PokeIdle Market Sniper (v1.5.4.35)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -25,17 +25,28 @@ O identificador do exemplar impede que revendas dominem a referência.
 A precificação de Coins pondera a semelhança de Nota, nível e Potência,
 os atributos comparáveis e a recência. Usa quartis ponderados e filtra
 extremos no cálculo. Os avisos exigem suporte de vendas confirmadas pelo jogo.
+Os IVs individuais pesam na semelhança e o alerta exige pelo menos três
+comparáveis próximos de exemplares diferentes, com amostra efetiva e
+dispersão de preços aceitáveis.
 A margem de revenda, quando ativada, considera a taxa configurada pelo usuário.
 
 **Gerar relatório do mercado** consulta o estado e os registros de avisos reais.
 Os testes locais continuam disponíveis no relatório sem enviar notificações.
 
-Para validar no jogo, salve os filtros em **Coins** com os avisos ligados e
-um desconto mínimo de 5%. Abra a **Tabela de preços** no Mercado e selecione
-**Pokémon** e **Coins**. Espere carregar, feche o Mercado e deixe o jogo
-conectado por dois minutos. Gere um relatório. Confira os lotes de histórico
-gravados e as contagens em **alertas → coins**. O número de avisos reais sobe
-quando surgir uma oferta com comparáveis suficientes e desconto.
+Para validar no jogo, ligue os avisos, salve **Coins** com desconto mínimo
+de 5% e deixe o PokéIdle conectado com o Mercado fechado. Depois de alguns
+minutos, selecione **Diagnóstico da versão → Gerar relatório do mercado**.
+Confira histórico gravado e **alertas → coins**. Abra a vitrine, pesquise uma
+espécie e confirme que a paginação permanece sob seu controle.
+
+Com o Mercado fechado, o monitor prioriza a primeira página de anúncios
+recentes na moeda selecionada. O intervalo normal entre consultas começa em
+2 segundos, com fila compartilhada e recuo do servidor. Com ambas as moedas,
+a rotina reserva dois turnos para Coins e um para Gemas. Com a vitrine
+aberta, o monitor pausa as consultas de anúncios que podem redesenhá-la.
+A leitura do histórico e dos anúncios visitados continua alimentando o banco.
+Anúncios retidos com desconto podem aparecer antes da liberação, com o horário
+de compra. A chegada de um aviso depende da resposta do jogo e dos comparáveis.
 
 
 Os filtros **Somente espécies** e **Bloquear espécies** foram removidos.
@@ -58,7 +69,7 @@ se os anúncios carregam normalmente, feche-a e repita o diagnóstico.
 ## Monitoramento e precificação
 
 Com **Avisos dentro do jogo e no Chrome** ativo e o jogo conectado, o Sniper
-acompanha as duas moedas pela conexão do jogo, incluindo o histórico anterior
+acompanha a moeda selecionada pela conexão do jogo e sincroniza o histórico
 de Coins. Os limites de consulta e o recuo do servidor continuam valendo.
 
 - **Coins:** as transações confirmadas ficam separadas por moeda e ID de venda.
@@ -140,16 +151,15 @@ sem usar o servidor.
 
 ## Monitoramento, histórico e testes
 
-Em **Pokémon**, ative **REGISTRAR MERCADO** e mantenha a aba do PokéIdle
-conectada. A coleta busca anúncios recentes de Coins e Gemas na mesma fila.
-Coins mantém o censo completo. Gemas percorre as outras páginas sem inferir
-vendas ou ausências. A extensão também consulta o histórico oficial de Coins.
-O cursor só avança depois da gravação confirmada de todas as páginas.
+A função **REGISTRAR MERCADO** em **Pokémon** mantém o censo local quando os
+avisos estão desligados e o Mercado está fechado. Com os avisos ligados, a
+fila dá prioridade à captura de anúncios novos. O histórico oficial de Coins
+continua em ambos os modos. Seu cursor só avança após a confirmação de que as
+páginas foram gravadas.
 
-Os alertas esperam a liberação do anúncio e conferem a revisão atual do preço.
-Ofertas com poucos comparáveis próximos ficam disponíveis para análise.
-O desconto usa a mediana estimada e a liquidez continua separada. A notificação
-indica atributos com IV menor que 10, incluindo zero.
+Os alertas conferem a revisão atual do preço. O desconto usa a mediana
+estimada e a liquidez continua separada. A notificação indica atributos com
+IV menor que 10, incluindo zero.
 
 Em **Diagnóstico da versão**, **Testar avisos e gerar relatório** verifica os
 canais e mostra os recibos da coleta. **Testar precisão com vendas locais**

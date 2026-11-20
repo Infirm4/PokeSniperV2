@@ -4,7 +4,7 @@
   if (window.__pisSheetsBridge) return;
   window.__pisSheetsBridge = true;
   const configureMonitor = settings => window.postMessage({ source: 'PIS_BRIDGE',
-    type: 'WATCH_OPPORTUNITIES', enabled: settings?.notify === true }, location.origin);
+    type: 'WATCH_OPPORTUNITIES', enabled: settings?.notify === true, currency: settings?.currency }, location.origin);
   chrome.storage.local.get('opportunitySettings').then(
     data => configureMonitor(data.opportunitySettings), () => {});
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -56,7 +56,7 @@
           (msg.rows.length === 0 && !msg.automatic) || msg.rows.length > 100) return;
       try {
         chrome.runtime.sendMessage({ type: 'PIS_MARKET_CORE_BATCH', kind: msg.kind, rows: msg.rows,
-          automatic: msg.automatic === true, page: msg.page, currency: msg.currency, totalRows: msg.totalRows }, reply => {
+          automatic: msg.automatic === true, live: msg.live === true, page: msg.page, currency: msg.currency, totalRows: msg.totalRows }, reply => {
           const error = chrome.runtime.lastError;
           if (error || !reply?.ok) console.warn('[PIS] Observação de mercado não gravada:', error?.message || reply?.error);
         });

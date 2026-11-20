@@ -146,7 +146,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     return true;
   }
   if (req.type === 'PIS_MARKET_MONITOR') {
-    if (!['aguardando_socket', 'rastreador_desligado', 'aguardando_tráfego', 'parser_indisponível', 'recuo', 'varrendo', 'falha_ou_recuo'].includes(req.state)) return false;
+    if (!['aguardando_socket', 'rastreador_desligado', 'aguardando_tráfego', 'parser_indisponível', 'recuo', 'varrendo', 'vitrine_aberta', 'falha_ou_recuo'].includes(req.state)) return false;
     recordMarket('monitor', req.state);
     chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now(),
       socket: ['abertura', 'envio do jogo', 'consulta do jogo', 'tráfego', 'estado'].includes(req.socket) ? req.socket : null,
@@ -206,7 +206,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   if (isSale) salePending++;
   else listingPending++;
-  PISMarketStore.ingest(kind, rows)
+  PISMarketStore.ingest(kind, rows, undefined, { live: req.automatic === true && req.live === true })
     .then(
       stats => {
         recordMarket(route, stats.conflicts ? 'conflito_de_transação' : 'gravado', page);

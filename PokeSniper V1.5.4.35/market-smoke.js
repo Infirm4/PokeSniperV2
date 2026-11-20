@@ -18,13 +18,18 @@
     };
     return [
       check('captura e preservação de IV zero', () => capture('vitrine', [listing]).rows[0].ivs.speed === 0),
-      check('oferta retida aguarda liberação e IV zero aparece no aviso', () => {
-        const record = capture('vitrine', [{ ...listing, compravelEm: now + 1000 }]).rows[0];
-        const offer = { ...record, estimate: { status: 'estimated', discount: .3, median: 100 } };
-        return !PISOpportunities.eligible(offer, now) && PISOpportunities.eligible(offer, now + 1000) &&
+      check('oferta retida avisa antes da liberação e protege a compra', () => {
+        const record = capture('vitrine', [{ ...listing, compravelEm: now + 60000 }]).rows[0];
+        const offer = { ...record, observedAt: now, estimate: { status: 'estimated', discount: .3, median: 100 } };
+        return PISOpportunities.eligible(offer, now) && PISMarketCore.purchaseOffer(offer) === null &&
+          PISOpportunities.presentation(offer, now).hold.startsWith('Retido até') &&
           PISOpportunities.presentation(offer).warning.includes('Velocidade') &&
           PISMarketCore.isOutland({ name: 'War Heracross' });
       }),
+      check('anúncio novo exige horário recente da publicação', () =>
+        PISOpportunities.freshLaunch({ postedAt: now - 1000 }, now) &&
+        !PISOpportunities.freshLaunch({ postedAt: now - 180000 }, now) &&
+        !PISOpportunities.freshLaunch({ observedAt: now }, now)),
       check('aviso mostra sprite, desconto, preço e faixa em Mi Coins', () => {
         const record = capture('vitrine', [{ ...listing,
           ficha: { ...listing.ficha, sprite: '/assets/teste-pokemon.png' } }]).rows[0];
@@ -39,14 +44,15 @@
         const result = PISCoinsHistory.importRows([row, row, { ...row, id: 12, moeda: 'orb' }], PISMarketCore, now);
         return result.length === 1 && result[0].price === 1000000;
       }),
-      check('comparáveis em Coins calculam 25% com fichas completas', () => {
+      check('três fichas com IVs diferentes sustentam o desconto de Coins', () => {
         const target = { ...capture('vitrine', [listing]).rows[0], price: 75, name: 'Gengar',
           ivs: { hp: 20, attack: 20, defense: 20, specialAttack: 20, specialDefense: 20, speed: 20 } };
-        const history = Array.from({ length: 32 }, (_, i) => ({
-          ...target, source: 'game', price: 100, id: 'pve-sale-' + i, pokemonId: 'pve-' + i, soldAt: now - (i + 1) * 1000,
+        const history = Array.from({ length: 3 }, (_, i) => ({
+          ...target, source: 'game', price: 99 + i, id: 'pve-sale-' + i, pokemonId: 'pve-' + i,
+          soldAt: now - (i + 1) * 1000, ivs: { ...target.ivs, speed: 5 + i, specialDefense: 30 },
         }));
         const result = PISPricingModel.prepare(history, PISMarketCore.estimate, now)(target);
-        return result?.method === 'coins_comparables' && result.median === 100 && result.discount === 0.25;
+        return result?.method === 'coins_comparables' && result.alertSupported && result.median === 100 && result.discount === 0.25;
       }),
       check('faixa e preço de referência', () => {
         const target = capture('vitrine', [listing]).rows[0];
