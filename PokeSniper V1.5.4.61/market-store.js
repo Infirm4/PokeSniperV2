@@ -559,21 +559,40 @@ const PISMarketStore = (() => {
     });
   }
 
+  let publicGemSource, publicGemRead;
+
+  function publicGemEvaluator(snapshot, now) {
+    const stamp = Date.parse(snapshot?.geradoEm);
+    if (!PISPublicGems.freshTimestamp(stamp, now)) return null;
+    if (!publicGemSource || publicGemSource.stamp < stamp) {
+      publicGemSource = { stamp, estimate: PISPublicGems.prepare(snapshot, now) };
+    }
+    return publicGemSource.stamp === stamp ? publicGemSource.estimate : PISPublicGems.prepare(snapshot, now);
+  }
+
+  async function warmInventoryPricing(now = Date.now()) {
+    if (publicGemSource && PISPublicGems.freshTimestamp(publicGemSource.stamp, now)) return publicGemSource.estimate;
+    if (!publicGemRead) {
+      publicGemRead = open().then(db => result(db.transaction('publicPricing').objectStore('publicPricing').get('gems')))
+        .finally(() => { publicGemRead = null; });
+    }
+    return publicGemEvaluator(await publicGemRead, now);
+  }
+
   // A mochila usa a mesma referência da vitrine, sem consultar o jogo nem criar anúncios.
   async function inventoryQuote(profile, now = Date.now()) {
     if (PISMarketCore.isOutland(profile)) return null;
+    const gems = warmInventoryPricing(now).then(estimate => estimate?.({ ...profile, currency: 'orb' })).catch(error => {
+      console.warn('[PIS] Preço público indisponível:', error.message);
+      return null;
+    });
     const db = await open();
-    const tx = db.transaction(['sales', 'publicPricing']);
-    const [sales, snapshot] = await Promise.all([
-      profile.shiny ? Promise.resolve([]) :
-        recentSales(tx.objectStore('sales').index('comparables'), profile, now),
-      result(tx.objectStore('publicPricing').get('gems')),
-    ]);
+    const sales = profile.shiny ? [] :
+      await recentSales(db.transaction('sales').objectStore('sales').index('comparables'), profile, now);
     const gold = profile.shiny ? null : PISMarketCore.estimate(profile, sales, now);
-    const orb = evaluatePublic(snapshot, [{ ...profile, currency: 'orb' }], now).get(profile.id);
     const quote = estimate => estimate?.status === 'estimated' && Number.isSafeInteger(estimate.median) ?
       { median: estimate.median, indicative: estimate.alertSupported !== true || estimate.bepi === true } : null;
-    return { gold: quote(gold), orb: quote(orb) };
+    return { gold: quote(gold), orb: quote(await gems) };
   }
 
   async function analyzeListing(row, now = Date.now()) {
@@ -594,7 +613,8 @@ const PISMarketStore = (() => {
     const estimates = new Map();
     if (!snapshot) return estimates;
     try {
-      const estimate = PISPublicGems.prepare(snapshot, now);
+      const estimate = publicGemEvaluator(snapshot, now);
+      if (!estimate) return estimates;
       for (const row of rows) if (row.currency === 'orb') estimates.set(row.id, estimate(row));
     } catch (error) {
       console.warn('[PIS] Preço público indisponível:', error.message);
@@ -616,6 +636,12 @@ const PISMarketStore = (() => {
     const active = Date.parse(previous?.geradoEm) >= Date.parse(snapshot.geradoEm) ? previous : snapshot;
     if (active === snapshot) store.put(active, 'gems');
     await done;
+    // A leitura compartilhada recebe o novo snapshot depois da gravação.
+    try {
+      publicGemEvaluator(active, now);
+    } catch (error) {
+      console.warn('[PIS] Preço público indisponível:', error.message);
+    }
 
     // O ajuste estatístico não ocupa nenhuma transação de escrita.
     const range = IDBKeyRange.lowerBound(now - PISOpportunities.TTL);
@@ -742,5 +768,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
 })();

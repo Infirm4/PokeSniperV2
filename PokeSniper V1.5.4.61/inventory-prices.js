@@ -7,7 +7,7 @@
   const cache = new Map();
   const MIN_SHEET_GRADE = 3.5;
   let hovered, tooltip, timer, hoverRequest = 0, requestSequence = 0;
-  let sheet, sheetBadge, sheetSignature, sheetFallback, sheetRequest = 0, sheetFrame = false;
+  let sheet, sheetBadge, sheetSignature, sheetRequest = 0, sheetFrame = false;
 
   function candidate(target) {
     if (!(target instanceof Element) || target.closest(excluded)) return null;
@@ -81,17 +81,20 @@
     tooltip.style.top = (below + height <= innerHeight - 8 ? below : Math.max(8, anchor.top - height - 5)) + 'px';
   }
 
-  async function loadQuote(profile) {
+  function loadQuote(profile) {
     const key = JSON.stringify(profile);
     let stored = cache.get(key);
-    if (!stored || stored.until <= Date.now()) {
-      const reply = await chrome.runtime.sendMessage({ type: 'PIS_INVENTORY_QUOTE', profile });
-      if (!reply?.quotes) return;
-      stored = { until: Date.now() + 30000, quotes: reply.quotes };
-      cache.set(key, stored);
-      if (cache.size > 128) cache.delete(cache.keys().next().value);
-    }
-    return stored.quotes;
+    if (stored && stored.until > Date.now()) return stored;
+    stored = { until: Infinity };
+    cache.set(key, stored);
+    if (cache.size > 128) cache.delete(cache.keys().next().value);
+    stored.pending = chrome.runtime.sendMessage({ type: 'PIS_INVENTORY_QUOTE', profile }).then(reply => {
+      stored.quotes = reply?.quotes;
+      return stored.quotes;
+    }).catch(() => undefined).finally(() => {
+      stored.until = stored.quotes ? Date.now() + 30000 : 0;
+    });
+    return stored;
   }
 
   function enter(event) {
@@ -112,22 +115,44 @@
     if (hovered?.contains(event.target) && !hovered.contains(event.relatedTarget)) remove();
   }
 
-  function showSheetPrice(profile, quotes) {
-    const anchor = sheet?.querySelector('.fi-heroi, .fi-acoes');
-    if (!anchor) return;
+  function placeSheetBadge() {
+    const hero = sheet?.querySelector('.fi-heroi');
+    if (!hero || !sheetBadge) return;
+    const grade = hero.querySelector('[data-nota]');
+    let preview = grade;
+    while (preview && preview.parentElement !== hero) preview = preview.parentElement;
+    if (!preview || preview.matches('.fi-heroi-info')) {
+      preview = [...hero.children].find(node => !node.matches('.fi-heroi-info') && node.querySelector('img'));
+    }
+    if (!preview) return;
+    const explicitMeter = preview.querySelector(
+      '[role="meter"], [role="progressbar"], [data-nota-barra], .fi-nota-bar, .fi-nota-barra, .fi-nota-escala, .fi-escala',
+    );
+    // A régua também pode ser um conjunto de segmentos sem classe ou papel semântico.
+    const meter = explicitMeter || [...preview.querySelectorAll('div, span')].find(node =>
+      node.children.length >= 8 && [...node.children].every(segment => segment.childElementCount === 0));
+    if (meter) {
+      if (meter.nextElementSibling !== sheetBadge) meter.after(sheetBadge);
+    } else if (preview.lastElementChild !== sheetBadge) {
+      preview.append(sheetBadge);
+    }
+  }
+
+  function showSheetPrice(profile, quotes, pending = false) {
     sheetBadge?.remove();
     sheetBadge = document.createElement('div');
     sheetBadge.dataset.pisInventoryQuote = '';
     const panel = document.createElement('div');
     panel.setAttribute('aria-label', 'Preço justo no mercado');
     Object.assign(panel.style, {
-      display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 7px',
-      margin: '4px 0 8px', color: '#fff', font: '600 11px/1.3 system-ui',
+      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '4px 7px',
+      margin: '7px 0 4px', color: '#fff', font: '600 11px/1.3 system-ui',
     });
     const title = document.createElement('strong');
     title.textContent = 'Preço justo';
     panel.append(title);
-    for (const label of priceLabels(profile, quotes)) {
+    const labels = pending ? ['Consultando…'] : quotes ? priceLabels(profile, quotes) : ['Preço indisponível'];
+    for (const label of labels) {
       const pill = document.createElement('span');
       pill.textContent = label;
       Object.assign(pill.style, { background: '#30283c', borderTop: '1px solid #86749b',
@@ -135,8 +160,7 @@
       panel.append(pill);
     }
     sheetBadge.attachShadow({ mode: 'open' }).append(panel);
-    const hero = sheet.querySelector('.fi-heroi') ?? anchor;
-    hero.after(sheetBadge);
+    placeSheetBadge();
   }
 
   function visibleSheet() {
@@ -144,70 +168,32 @@
       getComputedStyle(sheet).visibility !== 'hidden');
   }
 
-  function sheetDetails() {
-    const text = sheet.innerText || sheet.textContent;
-    const id = [...sheet.querySelectorAll('.txt-num')].map(node =>
-      /^#(\d{1,64})$/.exec(node.textContent.trim())?.[1]).find(Boolean);
-    const name = sheet.querySelector('.fi-nome, .fi-heroi h2, .fi-heroi h3')?.textContent.trim();
-    const levelText = sheet.querySelector('.fi-nivel-chip')?.textContent || text;
-    const level = Number(/(?:nv(?:l)?\.?|nível|level)\s*([\d.]+)/iu.exec(levelText)?.[1]?.replaceAll('.', ''));
-    const score = sheet.querySelector('[data-nota]')?.dataset.nota?.trim() ||
-      /(\d{1,2}[.,]\d{2,4})\s*\/\s*10(?=[,./\s]|$)/u.exec(text)?.[1];
-    const grade = score ? Number(score.replace(',', '.')) : null;
-    const own = [...sheet.querySelectorAll('button, [role="button"]')].some(button =>
-      /^reduzir (?:o )?n[ií]vel$/iu.test(button.textContent.trim()));
-    let fallback = null;
-    if (own && name && Number.isSafeInteger(level) && level > 0 && grade >= MIN_SHEET_GRADE) {
-      const power = Number(/pot[eê]ncia\s*P\s*([1-5])/iu.exec(text)?.[1]);
-      const quality = /qualidade\s*(\d+[.,]\d+)/iu.exec(text)?.[1];
-      const statsArea = text.split(/stats atuais/iu)[1]?.split(/iv ao lado|stats-base/iu)[0] ?? '';
-      const labels = { hp: 'HP', attack: 'ATK', defense: 'DEF', specialAttack: 'SP[. ]*ATK',
-        specialDefense: 'SP[. ]*DEF', speed: 'SPD' };
-      const ivs = {};
-      for (const [key, label] of Object.entries(labels)) {
-        const raw = new RegExp('(?:^|\\s)' + label + '\\s*[\\d.,]+\\s*IV\\s*(\\d{1,2})(?!\\d)', 'iu').exec(statsArea)?.[1];
-        if (raw != null && Number(raw) <= 32) ivs[key] = Number(raw);
-      }
-      const extras = [...sheet.querySelectorAll('[title], [aria-label]')].map(node =>
-        node.title + ' ' + (node.getAttribute('aria-label') ?? '')).join(' ');
-      fallback = { catalogFallback: true, pokemonId: id ?? null, name, grade, level,
-        power: Number.isInteger(power) ? power : null,
-        quality: quality ? Number(quality.replace(',', '.')) : null,
-        shiny: /\bshiny\b|✨/iu.test(name + ' ' + text + ' ' + extras) ? 1 : 0,
-        aoe: /\b(?:tm )?aoe\b/iu.test(extras) ? 1 : null,
-        zMove: /\bz[- ]?move\b|tm elemental/iu.test(extras) ? 1 : null, ivs };
-    }
-    return { id, name, level, grade, fallback };
-  }
-
-  function drawSheetQuote(profile, requestId) {
-    loadQuote(profile).then(quotes => {
-      if (quotes && requestId === sheetRequest && visibleSheet()) showSheetPrice(profile, quotes);
-    }).catch(() => {});
-  }
-
   function inspectSheet() {
     sheetFrame = false;
-    let signature = null, input;
+    let signature = null, id;
     if (visibleSheet() && sheet.querySelector('.fi-heroi, .fi-acoes')) {
-      input = sheetDetails();
-      if (input.name && (input.id || input.fallback) &&
-          (input.grade == null || !Number.isFinite(input.grade) || input.grade >= MIN_SHEET_GRADE))
-        signature = JSON.stringify(input);
+      // A identidade da ficha permite consultar apenas o exemplar encontrado no inventário.
+      const identifiers = [...sheet.querySelectorAll('.txt-num')].map(node =>
+        /^#(\d{1,64})$/.exec(node.textContent.trim())?.[1]).filter(Boolean);
+      [id] = identifiers;
+      const name = sheet.querySelector('.fi-nome')?.textContent.trim();
+      const level = sheet.querySelector('.fi-nivel-chip')?.textContent.trim();
+      const visibleGrade = sheet.querySelector('[data-nota]')?.dataset.nota?.trim();
+      const grade = visibleGrade ? Number(visibleGrade.replace(',', '.')) : null;
+      if (id && name && (grade == null || !Number.isFinite(grade) || grade >= MIN_SHEET_GRADE))
+        signature = JSON.stringify([id, name, level, visibleGrade]);
     }
-    if (signature === sheetSignature && (!sheetBadge || sheetBadge.isConnected)) return;
+    if (signature === sheetSignature) {
+      placeSheetBadge();
+      return;
+    }
     sheetSignature = signature;
     sheetBadge?.remove();
     sheetBadge = null;
-    sheetFallback = null;
     sheetRequest = 0;
     if (!signature) return;
     sheetRequest = ++requestSequence;
-    sheetFallback = input.fallback;
-    if (sheetFallback) showSheetPrice(sheetFallback, null);
-    if (input.id) window.postMessage({ source: 'PIS_BRIDGE', type: 'INVENTORY_PROFILE',
-      requestId: sheetRequest, ids: [input.id] }, location.origin);
-    else if (sheetFallback) drawSheetQuote(sheetFallback, sheetRequest);
+    window.postMessage({ source: 'PIS_BRIDGE', type: 'INVENTORY_PROFILE', requestId: sheetRequest, ids: [id], waitForProfile: true }, location.origin);
   }
 
   function scheduleSheet() {
@@ -234,17 +220,20 @@
   window.addEventListener('message', event => {
     const result = event.data;
     if (event.source !== window || event.origin !== location.origin || result?.source !== 'PIS_MAIN' ||
-        result.type !== 'INVENTORY_PROFILE') return;
+        result.type !== 'INVENTORY_PROFILE' || !result.profile?.id) return;
     const { profile, requestId } = result;
-    if (hovered && profile?.id && requestId === hoverRequest) {
+    if (hovered && requestId === hoverRequest) {
       const card = hovered;
-      loadQuote(profile).then(quotes => {
+      loadQuote(profile).pending.then(quotes => {
         if (quotes && requestId === hoverRequest && card === hovered) show(card, profile, quotes);
-      }).catch(() => {});
+      });
     }
-    if (requestId === sheetRequest) {
-      if (profile?.grade >= MIN_SHEET_GRADE) drawSheetQuote(profile, requestId);
-      else if (sheetFallback) drawSheetQuote(sheetFallback, requestId);
+    if (requestId === sheetRequest && profile.grade >= MIN_SHEET_GRADE) {
+      const quote = loadQuote(profile);
+      showSheetPrice(profile, quote.quotes, !quote.quotes);
+      if (!quote.quotes) quote.pending.then(quotes => {
+        if (requestId === sheetRequest && visibleSheet()) showSheetPrice(profile, quotes);
+      });
     }
   });
   document.addEventListener('pointerover', enter);

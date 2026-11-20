@@ -44,6 +44,9 @@ importScripts('opportunities-worker.js', 'public-gems-worker.js', 'sales-backup.
 PISMarketStore.initialize().catch(error => {
   console.warn('[PIS] Não foi possível iniciar o banco de mercado:', error.message);
 });
+PISMarketStore.warmInventoryPricing?.().catch(error => {
+  console.warn('[PIS] Não foi possível preparar a base de Gemas:', error.message);
+});
 
 function recordMarket(route, status, page) {
   globalThis.PISMarketEventLog?.record(chrome.storage.local, route, status, page);
@@ -104,20 +107,11 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !sender.tab ||
         !PIS_HOST.test(String(sender.url || sender.tab.url || ''))) return false;
     const profile = req.profile;
-    const fallback = profile?.catalogFallback === true;
-    const catalogName = fallback && typeof profile.name === 'string' && profile.name.length <= 100
-      ? profile.name.trim().replace(/^✨\s*|^shiny\s+/giu, '').toLowerCase() : '';
-    const species = catalogName ? globalThis.PI_ESPECIES?.find(entry => entry.n.toLowerCase() === catalogName) : null;
-    if (fallback && (!species || !Number.isFinite(profile.grade) || profile.grade < 3.5)) return false;
     const [target] = PISMarketCore.validate('listing', [{
-      ...profile, speciesId: fallback ? species.id : profile?.speciesId,
-      id: profile?.pokemonId ?? (fallback ? 'consulta-ficha' : null), currency: 'gold', price: 1,
+      ...profile, id: profile?.pokemonId, currency: 'gold', price: 1,
     }]);
     if (!target || !target.name || !(target.level > 0)) return false;
-    PISMarketStore.inventoryQuote(target).then(quotes => {
-      if (fallback && quotes) for (const quote of Object.values(quotes)) if (quote) quote.indicative = true;
-      reply({ quotes });
-    }, () => reply({ quotes: null }));
+    PISMarketStore.inventoryQuote(target).then(quotes => reply({ quotes }), () => reply({ quotes: null }));
     return true;
   }
   if (req?.type === 'PIS_MARKET_BADGES') {

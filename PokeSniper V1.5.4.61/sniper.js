@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.60'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.61'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -556,6 +556,7 @@
 
   const observedGameSockets = new WeakSet();
   const inventoryProfiles = new Map();
+  let inventorySheetRequest;
   const confirmedGameSockets = new WeakSet();
   const wire = { recebidos: 0, estados: 0, vitrine: 0, histórico: 0, outros: 0, binários: 0, formatos: {} };
   const socketReadyForMarket = () => st.sock?.readyState === 1 && confirmedGameSockets.has(st.sock);
@@ -593,8 +594,13 @@
     if (event.source !== window || event.origin !== location.origin || message?.source !== 'PIS_BRIDGE' ||
         message.type !== 'INVENTORY_PROFILE' || !Number.isSafeInteger(message.requestId)) return;
     const profile = globalThis.PISMarketCore.findInventoryProfile(inventoryProfiles, message);
-    window.postMessage({ source: 'PIS_MAIN', type: 'INVENTORY_PROFILE', requestId: message.requestId, profile }, location.origin);
+    if (message.waitForProfile === true) inventorySheetRequest = profile ? undefined : message;
+    publishInventoryProfile(message.requestId, profile);
   });
+
+  function publishInventoryProfile(requestId, profile) {
+    window.postMessage({ source: 'PIS_MAIN', type: 'INVENTORY_PROFILE', requestId, profile }, location.origin);
+  }
 
   function publishMarketPage(frame, request, live) {
     const core = globalThis.PISMarketCore;
@@ -698,6 +704,13 @@
         inventoryProfiles.set(profile.id, profile);
       }
       while (inventoryProfiles.size > 6000) inventoryProfiles.delete(inventoryProfiles.keys().next().value);
+      if (inventorySheetRequest) {
+        const profile = marketCore.findInventoryProfile(inventoryProfiles, inventorySheetRequest);
+        if (profile) {
+          publishInventoryProfile(inventorySheetRequest.requestId, profile);
+          inventorySheetRequest = undefined;
+        }
+      }
     }
     if (j.t === 'batalha' && ws === st.sock && Array.isArray(j.ev)) {
       for (const ev of j.ev) {
