@@ -1,0 +1,114 @@
+// Exercita os mesmos módulos usados pela extensão com dados sintéticos, sem gravar vendas de teste.
+(() => {
+  function run() {
+    const now = Date.now();
+    const ficha = { speciesId: '1', nome: 'Teste local', shiny: false, level: 100, nota: 5,
+      potencia: 3, quality: 1, ivs: { hp: 10, attack: 10, defense: 10,
+        specialAttack: 10, specialDefense: 10, speed: 0 } };
+    const common = { pokemonId: 'example', moeda: 'gold', ficha };
+    const listing = { ...common, id: 'offer', preco: 70 };
+    const sales = [90, 100, 110, 120, 130].map((bruto, index) => ({
+      ...common, tipo: 'pokemon', pokemonId: 'sample' + index,
+      id: 'sale' + index, bruto, em: now - 60000,
+    }));
+    const capture = (aba, linhas) => PISMarketCore.capture({ t: 'market', aba, linhas });
+    const check = (name, test) => {
+      try { return { teste: name, resultado: test() ? 'ok' : 'falhou' }; }
+      catch { return { teste: name, resultado: 'falhou' }; }
+    };
+    return [
+      check('captura e preservação de IV zero', () => capture('vitrine', [listing]).rows[0].ivs.speed === 0),
+      check('oferta retida avisa antes da liberação e protege a compra', () => {
+        const record = capture('vitrine', [{ ...listing, compravelEm: now + 60000 }]).rows[0];
+        const offer = { ...record, observedAt: now, estimate: { status: 'estimated', discount: .3, median: 100 } };
+        return PISOpportunities.eligible(offer, now) && PISMarketCore.purchaseOffer(offer) === null &&
+          PISOpportunities.presentation(offer, now).hold.startsWith('Retido até') &&
+          PISOpportunities.presentation(offer).warning.includes('Speed') &&
+          PISMarketCore.isOutland({ name: 'War Heracross' });
+      }),
+      check('anúncio novo exige horário recente da publicação', () =>
+        PISOpportunities.freshLaunch({ postedAt: now - 1000 }, now) &&
+        !PISOpportunities.freshLaunch({ postedAt: now - 180000 }, now) &&
+        !PISOpportunities.freshLaunch({ observedAt: now }, now)),
+      check('aviso mostra sprite, desconto, preço e faixa em Mi Coins', () => {
+        const record = capture('vitrine', [{ ...listing,
+          ficha: { ...listing.ficha, sprite: '/assets/teste-pokemon.png' } }]).rows[0];
+        const display = PISOpportunities.presentation({ ...record, price: 75_000_000,
+          estimate: { discount: 0.25, lower: 90_000_000, upper: 110_000_000 } });
+        return record.sprite === 'https://pokeidle.io/assets/teste-pokemon.png' &&
+          display.message.includes('25% de desconto · 75 Mi Coins') && display.range.includes('90–110 Mi Coins');
+      }),
+      check('importação em Coins deduplica backup e separa Gemas', () => {
+        const row = { id: 11, moeda: 'gold', em: now - 1000, preco: 1000000, speciesId: 94,
+          nome: 'Gengar', level: 100, nota: 5, potencia: 3, quality: 1, shiny: false };
+        const result = PISCoinsHistory.importRows([row, row, { ...row, id: 12, moeda: 'orb' }], PISMarketCore, now);
+        return result.length === 1 && result[0].price === 1000000;
+      }),
+      check('três fichas com IVs diferentes sustentam o desconto de Coins', () => {
+        const target = { ...capture('vitrine', [listing]).rows[0], price: 75, name: 'Gengar',
+          ivs: { hp: 20, attack: 20, defense: 20, specialAttack: 20, specialDefense: 20, speed: 20 } };
+        const history = Array.from({ length: 3 }, (_, i) => ({
+          ...target, source: 'game', price: 99 + i, id: 'pve-sale-' + i, pokemonId: 'pve-' + i,
+          soldAt: now - (i + 1) * 1000, ivs: { ...target.ivs, speed: 5 + i, specialDefense: 30 },
+        }));
+        const result = PISPricingModel.prepare(history, PISMarketCore.estimate, now)(target);
+        return result?.method === 'coins_comparables' && result.alertSupported && result.median === 100 && result.discount === 0.25;
+      }),
+      check('faixa e preço de referência', () => {
+        const target = capture('vitrine', [listing]).rows[0];
+        const history = capture('historicoGlobal', sales).rows;
+        const estimate = PISMarketCore.estimate(target, history, now);
+        return estimate.lower === 100 && estimate.median === 110 && estimate.upper === 120;
+      }),
+      check('extras no comparável não sustentam alerta para perfil comum', () => {
+        const target = capture('vitrine', [listing]).rows[0];
+        const premium = sales.map(row => ({ ...row, ficha: { ...row.ficha, tmAoe: true } }));
+        const quote = PISMarketCore.estimate(target, capture('historicoGlobal', premium).rows, now);
+        return quote.status === 'estimated' && quote.alertSupported === false;
+      }),
+      check('Outlaws ficam fora da referência e dos alertas', () => {
+        const target = capture('vitrine', [listing]).rows[0];
+        const history = capture('historicoGlobal', sales).rows;
+        const outlaw = { ...target, name: 'Trickmaster Gengar',
+          estimate: { status: 'estimated', median: 100 } };
+        const premium = history.map(row => ({ ...row, name: 'Trickmaster Gengar', price: 1000 }));
+        return !PISOpportunities.eligible(outlaw) && PISMarketCore.estimate(target, premium, now)
+          .status === 'insufficient_sales';
+      }),
+      check('censo captura anúncio sem moeda explícita', () => {
+        const frame = { t: 'market', aba: 'vitrine', pagina: 2, linhas: [{ ...listing, moeda: undefined }] };
+        const batch = PISMarketCore.captureAutomatic(frame, { pagina: 2, moeda: 'gold' });
+        return batch?.rows[0]?.currency === 'gold' && !PISMarketCore.captureAutomatic(frame, { pagina: 3, moeda: 'gold' });
+      }),
+      check('desconto dentro da faixa e sem teto antigo', () => {
+        const row = { ...capture('vitrine', [listing]).rows[0],
+          price: 95, estimate: { status: 'estimated', lower: 90, median: 100 } };
+        return PISOpportunities.eligible(row) &&
+          PISOpportunities.matches(row, PISOpportunities.settings({ discount: 5, maxPrice: 1 }));
+      }),
+      check('página de histórico reconhecida sem expor identificadores', () => {
+        const frame = { pagina: 2, aba: 'historicoGlobal', t: 'market', linhas: sales };
+        const wire = JSON.stringify(frame, null, 2);
+        const normalized = PISMarketCore.capture(frame);
+        const receipt = PISHistoryTrace.clean('response', PISMarketCore.historyTrace(frame),
+          { status: 'gravado', accepted: normalized.rows.length, new: normalized.rows.length });
+        return PISMarketCore.historyReply.test(wire) && receipt.pagina === 2 && receipt.novas === 5 &&
+          !JSON.stringify(receipt).includes('sample0');
+      }),
+      check('identidade da transação separada do anúncio', () => {
+        const row = capture('vitrine', [listing]).rows[0];
+        const exposure = PISLiquidity.observe(row, null, now - 60000);
+        const [sale] = capture('historicoGlobal', [{ ...sales[0], pokemonId: row.pokemonId, bruto: row.price }]).rows;
+        return PISLiquidity.possibleSale(exposure, sale) &&
+          !PISLiquidity.saleMatches(exposure, sale) &&
+          PISLiquidity.saleMatches(exposure, { ...sale, listingId: row.id });
+      }),
+      check('liquidez se abstém sem desfechos', () => {
+        const target = capture('vitrine', [listing]).rows[0];
+        const report = PISLiquidity.estimate(target, [], now, PISMarketCore.sameMarket);
+        return report.horizons.every(row => row.status === 'insufficient_outcomes');
+      }),
+    ];
+  }
+  globalThis.PISMarketSmoke = { run };
+})();
