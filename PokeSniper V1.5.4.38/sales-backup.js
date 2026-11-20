@@ -1,6 +1,6 @@
-// Converte fichas validadas e lê o CSV emitido pela aba Vendas confirmadas.
+// Converte fichas validadas e lê o CSV emitido pela aba de vendas.
 (() => {
-  const FORMAT = 'pis_sales_backup_v1';
+  const FORMAT = 'pis_sales_backup_v2';
   const COLUMN = 'Dados da venda (JSON)';
 
   function normalize(rows, core) {
@@ -40,9 +40,13 @@
   }
 
   function restore(contents, core) {
-    const [headers, ...data] = csvRows(contents);
-    const column = headers?.indexOf(COLUMN) ?? -1;
-    if (column < 0 || !data.length) throw new Error('Use o CSV da aba Vendas confirmadas');
+    const rowsInFile = csvRows(contents);
+    const headerRow = rowsInFile.slice(0, 3).findIndex(row => row.includes(COLUMN));
+    if (headerRow < 0) throw new Error('Use o CSV da aba de vendas com a coluna ' + COLUMN);
+    const column = rowsInFile[headerRow].indexOf(COLUMN);
+    // Linhas anteriores, anotações e registros legados sem ficha ficam fora da restauração.
+    const data = rowsInFile.slice(headerRow + 1).filter(row => row[column]?.trim());
+    if (!data.length) throw new Error('O CSV não contém fichas de vendas para restaurar');
     const rows = [];
     for (let i = 0; i < data.length; i += core.MAX_BATCH) {
       const batch = data.slice(i, i + core.MAX_BATCH).map((row, index) => {

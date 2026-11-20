@@ -1,5 +1,7 @@
 (() => {
   const ALARM = 'pis-sales-backup-hourly';
+  const INITIAL = 'pisSalesBackupInitialLayout';
+  const INITIAL_ALARM = 'pis-sales-backup-catchup';
   const STATUS = 'pisSalesBackupStatus';
   let active;
 
@@ -19,7 +21,8 @@
     const receipt = await response.json().catch(() => null);
     if (receipt?.ok !== true || receipt.tipo !== PISSalesBackup.FORMAT || receipt.lote !== lote ||
         receipt.vendas_confirmadas !== batch.length) {
-      throw new Error('Apps Script não confirmou o lote. Confira a implantação do receptor.');
+      const details = typeof receipt?.erro === 'string' ? ' ' + receipt.erro.slice(0, 150) : '';
+      throw new Error('Apps Script não confirmou o lote. Confira a implantação do receptor.' + details);
     }
     await PISMarketStore.acknowledgeSalesBackup(batch);
   }
@@ -46,6 +49,17 @@
     return active;
   }
 
+  async function syncInitialLayout() {
+    const saved = await chrome.storage.local.get([INITIAL, STATUS]);
+    if (saved[INITIAL] === PISSalesBackup.FORMAT) return saved[STATUS] ?? { saved: 0, pending: 0 };
+    const status = await sync();
+    if (!status.error && status.pending != null) {
+      if (status.pending === 0) await chrome.storage.local.set({ [INITIAL]: PISSalesBackup.FORMAT });
+      else await chrome.alarms.create(INITIAL_ALARM, { delayInMinutes: 1 });
+    }
+    return status;
+  }
+
   function ensureAlarm() {
     (async () => {
       const alarm = await chrome.alarms.get(ALARM);
@@ -55,11 +69,20 @@
 
   chrome.runtime.onInstalled.addListener(ensureAlarm);
   chrome.runtime.onStartup.addListener(ensureAlarm);
-  chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) sync().catch(console.warn); });
+  chrome.alarms.onAlarm.addListener(alarm => {
+    if (alarm.name === ALARM || alarm.name === INITIAL_ALARM) syncInitialLayoutOrHourly(alarm.name).catch(console.warn);
+  });
+
+  async function syncInitialLayoutOrHourly(name) {
+    const state = await chrome.storage.local.get(INITIAL);
+    if (state[INITIAL] !== PISSalesBackup.FORMAT) return syncInitialLayout();
+    if (name === ALARM) return sync();
+  }
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
-    if (message?.type !== 'PIS_SYNC_SALES_BACKUP' ||
+    if (!['PIS_SYNC_SALES_BACKUP', 'PIS_START_SALES_BACKUP'].includes(message?.type) ||
         sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
-    sync().then(reply, () => reply({ error: 'Falha ao ler o banco local.' }));
+    const run = message.type === 'PIS_START_SALES_BACKUP' ? syncInitialLayout : sync;
+    run().then(reply, () => reply({ error: 'Falha ao ler o banco local.' }));
     return true;
   });
   ensureAlarm();

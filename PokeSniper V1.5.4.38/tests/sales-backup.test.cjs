@@ -15,7 +15,7 @@ const csvCell = value => '"' + String(value).replaceAll('"', '""') + '"';
 
 test('backup restaura CSV com preço inteiro, IV zero, identidade textual e moeda', () => {
   const [gold, gem] = backup.normalize([sale, { ...sale, currency: 'orb', price: 123 }], core);
-  const csv = '\uFEFFData,' + backup.COLUMN + '\r\n' +
+  const csv = '\uFEFFRelatório,2026\r\n\r\nData,' + backup.COLUMN + '\r\n' +
     '2026-11-19,' + csvCell(JSON.stringify(gold)) + '\r\n' +
     '2026-11-19,' + csvCell(JSON.stringify(gem));
   assert.deepEqual(backup.restore(csv, core), [gold, gem]);
@@ -23,13 +23,22 @@ test('backup restaura CSV com preço inteiro, IV zero, identidade textual e moed
 });
 
 test('Apps Script reconcilia reenvio sem duplicar, mantém vendas homônimas em moedas distintas e permite enriquecimento', () => {
-  const data = [];
+  const headers = ['', 'Data', 'Sprite', 'Pokemon', 'Nível', 'Preço (Mi)', 'Potência', 'Nota',
+    'IV ATQ', 'IV SPED', 'IV SP.ATQ', 'IV SP.DEF', 'IV DEF', 'IV HP', 'Qualidade', 'IV Total',
+    'Shiny', 'Status de Compra'];
+  const data = [['Título preservado'], [], [...headers]];
+  const hidden = [];
   const readCell = (row, col) => data[row - 1]?.[col - 1] ?? '';
   const sheet = {
-    getMaxColumns: () => 50, getMaxRows: () => 50, getLastRow: () => data.length, setFrozenRows() {},
+    getMaxColumns: () => 50, getMaxRows: () => 50, getLastRow: () => data.length,
+    getLastColumn: () => Math.max(...data.map(row => row.length)), getName: () => 'Sheet',
+    hideColumns: (start, count) => hidden.push([start, count]),
     getRange(row, col, height = 1, width = 1) {
-      return { getValues: () => Array.from({ length: height }, (_, y) =>
-        Array.from({ length: width }, (_, x) => readCell(row + y, col + x))),
+      const matrix = produce => Array.from({ length: height }, (_, y) =>
+        Array.from({ length: width }, (_, x) => produce(row + y, col + x)));
+      return { getValues: () => matrix(readCell), getDisplayValues: () => matrix(readCell),
+        getFormulas: () => matrix(() => ''), getNumberFormats: () => matrix(() => 'General'),
+        setNumberFormats() {},
         getValue: () => readCell(row, col),
         setValues(values) {
           values.forEach((line, y) => {
@@ -59,18 +68,25 @@ test('Apps Script reconcilia reenvio sem duplicar, mantém vendas homônimas em 
   assert.equal(send({ ...gold, ivs: { ...gold.ivs, hp: 31 } }).atualizadas, 1);
   assert.equal(send(gold).atualizadas, 0);
   assert.equal(send(gold, gold).ok, false);
-  assert.equal(data.length, 3);
-  assert.equal(data[1][1], '00042');
-  assert.equal(data[1][4], 123.456789);
-  assert.equal(data[2][4], '');
-  assert.equal(data[2][18], 123);
-  assert.equal(JSON.parse(data[1].at(-1)).ivs.hp, 31);
-  assert.equal(JSON.parse(data[1].at(-1)).ivs.speed, 0);
+  assert.equal(data.length, 5);
+  assert.deepEqual(data[0], ['Título preservado']);
+  assert.deepEqual(data[2].slice(0, 18), headers);
+  assert.deepEqual(hidden, [[19, data[2].length - 18]]);
+  const col = title => data[2].indexOf(title);
+  assert.equal(data[3][col('#ID')], '00042');
+  assert.equal(data[3][col('Preço (Mi)')], 123.456789);
+  assert.equal(data[3][col('IV SPED')], 0);
+  assert.equal(data[4][col('Preço (Mi)')], '123 Gemas');
+  assert.equal(data[4][col('Preço exato')], 123);
+  const restored = JSON.parse(data[3][col(backup.COLUMN)]);
+  assert.equal(restored.ivs.hp, 31);
+  assert.equal(restored.ivs.speed, 0);
 });
 
 test('o alarme é horário e só dá baixa com confirmação do lote enviado', async () => {
   let listener, alarmSchedule, acknowledged = 0, confirm = false;
   const queue = [{ row: sale }];
+  const storage = {};
   const worker = runInNewContext(read('sales-backup-worker.js'), {
     PISSalesBackup: backup, PISMarketCore: core, SHEETS_URL: 'https://example.invalid/exec',
     crypto: webcrypto, AbortSignal, console,
@@ -81,7 +97,7 @@ test('o alarme é horário e só dá baixa com confirmação do lote enviado', a
     },
     chrome: {
       alarms: { get: async () => null, create: async (_, options) => { alarmSchedule = options; }, onAlarm: { addListener() {} } },
-      storage: { local: { set: async () => {} } },
+      storage: { local: { get: async () => ({ ...storage }), set: async value => Object.assign(storage, value) } },
       runtime: { getURL: page => page, onInstalled: { addListener() {} }, onStartup: { addListener() {} },
         onMessage: { addListener(fn) { listener = fn; } } },
     },
@@ -100,4 +116,12 @@ test('o alarme é horário e só dá baixa com confirmação do lote enviado', a
   confirm = true;
   assert.equal((await sync()).pending, 0);
   assert.equal(acknowledged, 1);
+  queue.push({ row: sale });
+  const openPanel = () => new Promise(resolve =>
+    listener({ type: 'PIS_START_SALES_BACKUP' }, { url: 'opportunities.html' }, resolve));
+  assert.equal((await openPanel()).pending, 0);
+  assert.equal(acknowledged, 2);
+  queue.push({ row: sale });
+  await openPanel();
+  assert.equal(acknowledged, 2);
 });

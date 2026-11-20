@@ -332,16 +332,18 @@ const salesBackupNow = document.querySelector('#sales-backup-now');
 const salesBackupRestore = document.querySelector('#sales-backup-restore');
 const salesBackupStatus = document.querySelector('#sales-backup-status');
 
-salesBackupNow.addEventListener('click', async () => {
+async function runSalesBackup(initial = false) {
+  if (salesBackupNow.disabled) return;
   salesBackupNow.disabled = true;
   salesBackupStatus.textContent = 'Sincronizando vendas confirmadas…';
   try {
-    const result = await chrome.runtime.sendMessage({ type: 'PIS_SYNC_SALES_BACKUP' });
+    const result = await chrome.runtime.sendMessage({ type: initial ? 'PIS_START_SALES_BACKUP' : 'PIS_SYNC_SALES_BACKUP' });
     if (!result || result.error) throw new Error(result?.error || 'Sem resposta da extensão.');
     salesBackupStatus.textContent = `${result.saved} confirmadas no Sheets · ${result.pending ?? '?'} pendentes.`;
   } catch (error) { salesBackupStatus.textContent = error.message; }
   finally { salesBackupNow.disabled = false; }
-});
+}
+salesBackupNow.addEventListener('click', () => runSalesBackup());
 
 salesBackupRestore.addEventListener('change', async () => {
   const file = salesBackupRestore.files[0];
@@ -510,6 +512,7 @@ document.querySelector('#open').addEventListener('click', () => {
 (async () => {
   const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
   config = PISOpportunities.settings(opportunitySettings);
+  void runSalesBackup(true);
   for (const [name, value] of Object.entries(config)) {
     if (name === 'notify') continue;
     if (typeof value === 'boolean') form.elements[name].checked = value;

@@ -2,7 +2,7 @@
 const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
-  const DB_VERSION = 12;
+  const DB_VERSION = 13;
   const ESTIMATE_REVISION = 4;
   const revisionFor = row => row?.currency === 'gold' ? 5 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
@@ -47,15 +47,16 @@ const PISMarketStore = (() => {
         if (event.oldVersion < 8) {
           tx.objectStore('sales').createIndex('priceMarket', ['currency', 'shiny', 'soldAt']);
         }
-        if (event.oldVersion < 12) {
-          const pending = db.createObjectStore('salesBackup', { keyPath: ['currency', 'id'] });
+        if (event.oldVersion < 12) db.createObjectStore('salesBackup', { keyPath: ['currency', 'id'] });
+        if (event.oldVersion < 13) {
+          const pending = tx.objectStore('salesBackup');
           const sales = tx.objectStore('sales').openKeyCursor();
           sales.onsuccess = () => {
             const cursor = sales.result;
             if (!cursor) return;
             // Chaves antigas entram na primeira sincronização sem copiar o banco.
             const [currency, id] = cursor.primaryKey;
-            pending.put({ currency, id, revision: 'initial' });
+            pending.put({ currency, id, revision: 'schema-13' });
             cursor.continue();
           };
         }

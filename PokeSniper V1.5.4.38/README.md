@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.37)
+# PokeIdle Market Sniper (v1.5.4.38)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -77,28 +77,30 @@ se os anúncios carregam normalmente, feche-a e repita o diagnóstico.
 
 ## Backup de vendas no Google Sheets
 
-O Chrome envia a cada hora as vendas do IndexedDB para **Vendas confirmadas**,
-na planilha vinculada ao Apps Script. A primeira sincronização inclui o histórico
-local já existente, em lotes. O backup registra Coins e Gemas com seus preços
-inteiros e preserva a origem dos registros importados. A mesma moeda e ID de
-transação identificam uma linha. Cada lote continua pendente até confirmação.
-O histórico original continua no IndexedDB.
+Na primeira abertura do painel, o Chrome inicia o envio das vendas já
+armazenadas no IndexedDB. Em seguida, há uma sincronização por hora com
+o Chrome aberto, inclusive com o PokéIdle fechado. Lotes continuam pendentes
+até o Sheets confirmar. Uma migração reenfileira as vendas locais da versão
+anterior para preencher o novo modelo.
 
-Atualize o código no Apps Script com `google-apps-script.gs`. Em **Implantar →
-Gerenciar implantações**, edite a implantação existente, selecione **Nova versão**
-e implante para manter a URL `/exec`. A vinculação existente da planilha é usada
-pela nova rota. A aba **Vendas confirmadas** é criada no primeiro lote.
+Na planilha vinculada, use na **linha 3** os títulos da tabela de vendas.
+O receptor prefere **Sheet** quando ela tem os títulos esperados. Se não
+tiver, procura uma única aba com o modelo. Os dados vão da **linha 4** em
+diante. As colunas existentes conservam sua posição. As categorias extras
+são acrescentadas à direita e ocultadas na primeira gravação. A chave de
+venda contém moeda e ID da transação. Quando **Sheet** recebe as vendas
+confirmadas, a auditoria de anúncios continua na aba **eventos**.
 
-Para verificar logo, clique em **Diagnóstico da versão → Sincronizar vendas
-com o Sheets**. O relatório também inclui `backup_sheets`, com o horário,
-o total confirmado na última execução, o total pendente e possíveis erros.
-A agenda funciona com o Chrome aberto, inclusive com o PokéIdle fechado.
+Atualize o Apps Script com `google-apps-script.gs`. Em **Implantar →
+Gerenciar implantações**, edite a implantação existente e publique uma
+**Nova versão**, mantendo a URL `/exec`. A versão nova usa a mesma planilha
+vinculada. A aba de backup criada pela versão anterior é preservada.
 
-Para recuperar o banco, selecione a aba **Vendas confirmadas** no Google Sheets
-e use **Arquivo → Fazer download → CSV (página atual)**. No painel da extensão,
-use **Restaurar vendas do CSV da aba Vendas confirmadas**. Mantenha a coluna
-**Dados da venda (JSON)** no arquivo, pois ela guarda as fichas completas,
-preços inteiros e IDs originais.
+Para testar, use **Diagnóstico da versão → Sincronizar vendas com o Sheets**
+e confira a tabela. O relatório também mostra o estado em `backup_sheets`.
+Para restaurar, reexiba **Dados da venda (JSON)** na planilha antes de baixar
+o CSV da página atual, depois use **Restaurar vendas do CSV da planilha**.
+O importador também aceita o CSV da antiga aba **Vendas confirmadas**.
 
 ## Monitoramento e precificação
 

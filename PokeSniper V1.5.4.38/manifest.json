@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PokeIdle Market Sniper",
-  "version": "1.5.4.37",
+  "version": "1.5.4.38",
   "description": "Monitor de anúncios recentes de Pokémon com alertas de desconto em Coins e Gemas.",
   "host_permissions": [
     "https://script.google.com/*",

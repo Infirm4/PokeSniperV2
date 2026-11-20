@@ -49,7 +49,7 @@ const NOME_RESUMO = 'Sheet';
 const LINHA_CABECALHO_RESUMO = 3;
 const LINHA_DADOS_RESUMO = 4;
 
-const VERSAO = '1.5.4.37';
+const VERSAO = '1.5.4.38';
 
 // A linha 3 da aba Sheet é a única fonte de verdade dos títulos.
 // Nenhum novo cabeçalho é escrito ou movido automaticamente.
@@ -114,7 +114,7 @@ function doPost(e) {
     // Interpretar eventos
     // ---------------------------------------------
 
-    if (dados.tipo === 'pis_sales_backup_v1') {
+    if (['pis_sales_backup_v1', 'pis_sales_backup_v2'].includes(dados.tipo)) {
       return resposta(receberBackupVendas_(dados));
     }
 
@@ -197,15 +197,16 @@ function doPost(e) {
         .join(', ')
     );
 
-    // Evitar sucesso parcial de auditoria quando resumo ainda não foi configurado.
-    if (PropertiesService.getScriptProperties().getProperty(PROP_REPARO) !== 'sim')
-      throw new Error('Execute repararMarketplaceUmaVez() antes de receber eventos');
     const resumoVerificado = planilha.getSheetByName(NOME_RESUMO);
     if (!resumoVerificado) throw new Error('Aba Sheet não encontrada');
-    mapaMarketplace_(resumoVerificado);
-    // A validação acontece ANTES do append na auditoria. Se #ID foi convertido
-    // em data/duplicado, a resposta falha sem gravar parcialmente o lote.
-    checarIDsResumo_(resumoVerificado, true);
+    const somenteAuditoria = abaTemModeloVendas_(resumoVerificado);
+    // O resumo antigo identifica anúncios. A tabela nova identifica vendas.
+    if (!somenteAuditoria) {
+      if (PropertiesService.getScriptProperties().getProperty(PROP_REPARO) !== 'sim')
+        throw new Error('Execute repararMarketplaceUmaVez() antes de receber eventos');
+      mapaMarketplace_(resumoVerificado);
+      checarIDsResumo_(resumoVerificado, true);
+    }
 
     // ---------------------------------------------
     // Gravar auditoria
@@ -227,7 +228,7 @@ function doPost(e) {
 
     console.log('Iniciando atualização do resumo');
 
-    const resumo =
+    const resumo = somenteAuditoria ? { novas: 0, atualizadas: 0, antigas: 0, semId: 0 } :
       atualizarPorId(planilha, linhas);
 
     console.log(
@@ -725,6 +726,7 @@ function repararMarketplaceUmaVez() {
     const ss = abrirPlanilhaConfigurada();
     const aba = ss.getSheetByName(NOME_RESUMO);
     if (!aba) throw new Error('Aba Sheet não encontrada.');
+    if (abaTemModeloVendas_(aba)) throw new Error('A aba Sheet está reservada para vendas confirmadas.');
     const mapa = mapaMarketplace_(aba); // valida títulos antes de qualquer alteração
     const eventos = lerEventosAuditoria_(ss);
     const unicos = consolidarEventos_(eventos);
@@ -746,6 +748,7 @@ function reconstruirMarketplaceNovamente() {
     const ss = abrirPlanilhaConfigurada();
     const aba = ss.getSheetByName(NOME_RESUMO);
     if (!aba) throw new Error('Aba Sheet não encontrada.');
+    if (abaTemModeloVendas_(aba)) throw new Error('A aba Sheet está reservada para vendas confirmadas.');
     const mapa = mapaMarketplace_(aba);
     const unicos = consolidarEventos_(lerEventosAuditoria_(ss));
     if (!unicos.size) throw new Error('Auditoria sem anúncios para reconstrução.');
@@ -871,6 +874,7 @@ function repararIDsMarketplaceSeguro() {
   try {
     const ss=abrirPlanilhaConfigurada(), original=ss.getSheetByName(NOME_RESUMO);
     if (!original) throw new Error('Aba Sheet ausente');
+    if (abaTemModeloVendas_(original)) throw new Error('A aba Sheet está reservada para vendas confirmadas.');
     const mapa=mapaMarketplace_(original);
     const auditoria=lerEventosAuditoria_(ss);
     if (!auditoria.length) throw new Error('Aba eventos vazia. Reparo interrompido.');
@@ -962,7 +966,6 @@ function repararIDsMarketplaceSeguro() {
   } finally {lock.releaseLock();}
 }
 
-const ABA_BACKUP_VENDAS = 'Vendas confirmadas';
 const CABECALHO_BACKUP_VENDAS = [
   'Data', '#ID', 'Sprite', 'Pokemon', 'Preço (Mi)', 'Potência', 'Nota',
   'IV ATQ', 'IV SPED', 'IV SP.ATQ', 'IV SP.DEF', 'IV DEF', 'IV HP', 'Qualidade',
@@ -971,6 +974,81 @@ const CABECALHO_BACKUP_VENDAS = [
   'Shadow', 'Raridade', 'Lendário', 'AoE', 'Z-Move', 'Mega', 'Refino', 'Poder',
   'Outland', 'Origem', 'Chave da venda', 'Dados da venda (JSON)'
 ];
+
+const TITULOS_VISIVEIS_VENDAS = [
+  'Data', 'Sprite', 'Pokemon', 'Nível', 'Preço (Mi)', 'Potência', 'Nota',
+  'IV ATQ', 'IV SPED', 'IV SP.ATQ', 'IV SP.DEF', 'IV DEF', 'IV HP', 'Qualidade',
+  'IV Total', 'Shiny', 'Status de Compra'
+];
+
+function titulosVendas_(sheet) {
+  const width = sheet.getLastColumn();
+  if (!width || sheet.getLastRow() < LINHA_CABECALHO_RESUMO) return [];
+  return sheet.getRange(LINHA_CABECALHO_RESUMO, 1, 1, width).getDisplayValues()[0];
+}
+
+function abaTemModeloVendas_(sheet) {
+  if (!sheet) return false;
+  const titles = new Set(titulosVendas_(sheet).map(normalizarTitulo));
+  return TITULOS_VISIVEIS_VENDAS.every(title => titles.has(normalizarTitulo(title)));
+}
+
+function escolherAbaVendas_(book) {
+  const preferred = book.getSheetByName(NOME_RESUMO);
+  if (abaTemModeloVendas_(preferred)) return preferred;
+  const candidates = book.getSheets().filter(abaTemModeloVendas_);
+  if (candidates.length === 1) return candidates[0];
+  throw new Error(candidates.length ?
+    'Mais de uma aba tem os títulos de vendas na linha 3. Use o nome Sheet na aba desejada.' :
+    'Modelo de vendas ausente: confira os cabeçalhos da linha 3 na planilha vinculada.');
+}
+
+function colunasBackupVendas_(sheet) {
+  const titles = titulosVendas_(sheet);
+  const byTitle = new Map();
+  const expected = new Set(CABECALHO_BACKUP_VENDAS.map(normalizarTitulo));
+  titles.forEach((title, index) => {
+    const key = normalizarTitulo(title);
+    if (!expected.has(key)) return;
+    if (byTitle.has(key)) throw new Error('Cabeçalho de vendas repetido: ' + title);
+    byTitle.set(key, index + 1);
+  });
+  const missing = CABECALHO_BACKUP_VENDAS.filter(title => !byTitle.has(normalizarTitulo(title)));
+  if (missing.length) {
+    const first = titles.length + 1;
+    const last = titles.length + missing.length;
+    if (last > sheet.getMaxColumns()) sheet.insertColumnsAfter(sheet.getMaxColumns(), last - sheet.getMaxColumns());
+    sheet.getRange(LINHA_CABECALHO_RESUMO, first, 1, missing.length).setValues([missing]);
+    sheet.hideColumns(first, missing.length);
+    missing.forEach((title, index) => byTitle.set(normalizarTitulo(title), first + index));
+  }
+  return CABECALHO_BACKUP_VENDAS.map(title => byTitle.get(normalizarTitulo(title)));
+}
+
+function escreverLinhasBackup_(sheet, columns, firstRow, records) {
+  const first = Math.min(...columns);
+  const last = Math.max(...columns);
+  const width = last - first + 1;
+  const range = sheet.getRange(firstRow, first, records.length, width);
+  const values = range.getValues();
+  const formulas = range.getFormulas();
+  const formats = range.getNumberFormats();
+  const idFields = new Set(['#ID', 'ID Pokémon', 'ID espécie', 'ID anúncio', 'ID natureza', 'Chave da venda']);
+  for (let row = 0; row < records.length; row++) {
+    for (let i = 0; i < width; i++) if (formulas[row][i]) values[row][i] = formulas[row][i];
+    const incoming = records[row];
+    columns.forEach((column, index) => {
+      const title = CABECALHO_BACKUP_VENDAS[index];
+      const offset = column - first;
+      values[row][offset] = incoming[index];
+      if (idFields.has(title)) formats[row][offset] = '@';
+      else if (title === 'Data') formats[row][offset] = 'yyyy-mm-dd hh:mm:ss';
+    });
+  }
+  // A chave, a ficha e o texto da venda entram juntos no mesmo intervalo de linhas.
+  range.setNumberFormats(formats);
+  range.setValues(values);
+}
 
 function limparVendaBackup_(row) {
   if (!row || !['gold', 'orb'].includes(row.currency) ||
@@ -1035,7 +1113,7 @@ function linhaVendaBackup_(row) {
   const sprite = row.sprite || row.spriteFallback;
   return [
     new Date(row.soldAt), row.id, sprite ? '=IMAGE("' + sprite + '")' : '', text(row.name),
-    row.currency === 'gold' ? row.price / 1000000 : '', row.power, row.grade,
+    row.currency === 'gold' ? row.price / 1000000 : row.price + ' Gemas', row.power, row.grade,
     ivs.attack, ivs.speed, ivs.specialAttack, ivs.specialDefense, ivs.defense, ivs.hp,
     row.quality, row.ivTotal, flag(row.shiny), 'Vendido', row.currency === 'gold' ? 'Coins' : 'Gemas',
     row.price, row.pokemonId, row.speciesId, row.listingId, row.level,
@@ -1052,45 +1130,35 @@ function receberBackupVendas_(request) {
   const incoming = request.vendas.map(limparVendaBackup_);
   const sales = new Map(incoming.map(row => [row.currency + ':' + row.id, row]));
   if (sales.size !== incoming.length) throw new Error('Lote de backup com IDs repetidos');
-  const book = abrirPlanilhaConfigurada();
-  const sheet = book.getSheetByName(ABA_BACKUP_VENDAS) || book.insertSheet(ABA_BACKUP_VENDAS);
-  const width = CABECALHO_BACKUP_VENDAS.length;
-  if (sheet.getMaxColumns() < width)
-    sheet.insertColumnsAfter(sheet.getMaxColumns(), width - sheet.getMaxColumns());
-  const header = sheet.getRange(1, 1, 1, width);
-  if (!sheet.getLastRow()) {
-    header.setValues([CABECALHO_BACKUP_VENDAS]).setFontWeight('bold');
-    sheet.setFrozenRows(1);
-  } else if (header.getValues()[0].some((label, i) => label !== CABECALHO_BACKUP_VENDAS[i])) {
-    throw new Error('Cabeçalhos da aba Vendas confirmadas foram alterados');
-  }
-  const last = sheet.getLastRow();
-  const keys = last > 1 ? sheet.getRange(2, width - 1, last - 1, 1).getValues() : [];
+  const sheet = escolherAbaVendas_(abrirPlanilhaConfigurada());
+  const columns = colunasBackupVendas_(sheet);
+  const colKey = columns[CABECALHO_BACKUP_VENDAS.indexOf('Chave da venda')];
+  const colJson = columns[CABECALHO_BACKUP_VENDAS.indexOf('Dados da venda (JSON)')];
+  const start = LINHA_DADOS_RESUMO;
+  const last = Math.max(start - 1, sheet.getLastRow());
+  const keys = last >= start ? sheet.getRange(start, colKey, last - start + 1, 1).getValues() : [];
   const positions = new Map();
   keys.forEach(([key], index) => {
     if (!key) return;
-    if (positions.has(key)) throw new Error('Chave repetida na aba Vendas confirmadas');
-    positions.set(key, index + 2);
+    if (positions.has(key)) throw new Error('Chave de venda repetida na aba ' + sheet.getName());
+    positions.set(key, index + start);
   });
 
   const updates = [], additions = [];
   for (const [key, sale] of sales) {
     const position = positions.get(key);
     if (!position) { additions.push(linhaVendaBackup_(sale)); continue; }
-    const cell = sheet.getRange(position, width).getValue();
-    const old = JSON.parse(cell);
-    const merged = limparVendaBackup_(juntarVendaBackup_(limparVendaBackup_(old), sale));
+    const cell = sheet.getRange(position, colJson).getValue();
+    const old = limparVendaBackup_(JSON.parse(cell));
+    if (old.currency + ':' + old.id !== key) throw new Error('Chave e ficha não correspondem na linha ' + position);
+    const merged = limparVendaBackup_(juntarVendaBackup_(old, sale));
     if (JSON.stringify(merged) !== cell) updates.push([position, linhaVendaBackup_(merged)]);
   }
-  // Uma reentrega depois de perda da resposta reconcilia pela mesma chave.
-  for (const [position, values] of updates) sheet.getRange(position, 1, 1, width).setValues([values]);
+  for (const [position, values] of updates) escreverLinhasBackup_(sheet, columns, position, [values]);
   if (additions.length) {
     if (last + additions.length > sheet.getMaxRows())
       sheet.insertRowsAfter(sheet.getMaxRows(), last + additions.length - sheet.getMaxRows());
-    for (const col of [2, 20, 21, 22, 26])
-      sheet.getRange(last + 1, col, additions.length, 1).setNumberFormat('@');
-    sheet.getRange(last + 1, 1, additions.length, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
-    sheet.getRange(last + 1, 1, additions.length, width).setValues(additions);
+    escreverLinhasBackup_(sheet, columns, last + 1, additions);
   }
   SpreadsheetApp.flush();
   return { ok: true, tipo: request.tipo, lote: request.lote, vendas_confirmadas: incoming.length,
