@@ -36,3 +36,5 @@ li { padding: 10px; background: #302234; border-radius: 6px; }
 .opportunity-copy { display: grid; gap: 3px; flex: 1; }
 .opportunity-price { color: #ace6b7; font-weight: 600; }
 .opportunity-sprite { width: 42px; height: 42px; object-fit: contain; image-rendering: pixelated; }
+
+.notice-controls { align-items: center; margin: 8px 0; }

@@ -1,4 +1,9 @@
-# PokeIdle Market Sniper (v1.5.4.32)
+# PokeIdle Market Sniper (v1.5.4.33)
+
+O topo do painel mostra **Ligar avisos** ou **Desligar avisos**, com o estado
+atual ao lado. A mudança vale imediatamente. **Salvar filtros** grava apenas
+as condições de preço e moeda, preservando o estado dos avisos.
+
 
 O parser do mercado é carregado no navegador mesmo quando a página expõe
 um objeto de módulos JavaScript. O relatório mostra se o parser e o coletor

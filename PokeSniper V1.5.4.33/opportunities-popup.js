@@ -2,6 +2,9 @@ const form = document.querySelector('#settings');
 const offers = document.querySelector('#offers');
 const panelStatus = document.querySelector('#status');
 const saveStatus = document.querySelector('#save-status');
+const saveFilters = document.querySelector('#save-filters');
+const toggleNotices = document.querySelector('#toggle-notices');
+const noticeStatus = document.querySelector('#notice-status');
 const format = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 let config;
 let generation = 0;
@@ -419,19 +422,40 @@ copyDiagnostics.addEventListener('click', async () => {
   }
 });
 
-form.addEventListener('submit', async event => {
-  event.preventDefault();
-  const next = PISOpportunities.settings({
-    ...Object.fromEntries(new FormData(form)),
-    notify: form.elements.notify.checked,
-    resale: form.elements.resale.checked,
-  });
+function showNoticeStatus() {
+  toggleNotices.textContent = config.notify ? 'Desligar avisos' : 'Ligar avisos';
+  noticeStatus.textContent = config.notify ? 'Avisos ligados' : 'Avisos desligados';
+}
+
+async function saveOpportunitySettings(next, status, success) {
+  toggleNotices.disabled = saveFilters.disabled = true;
   try {
     await chrome.storage.local.set({ opportunitySettings: next });
     config = next;
-    saveStatus.textContent = 'Filtros salvos.';
+    showNoticeStatus();
+    if (success) status.textContent = success;
     await refresh();
-  } catch (error) { saveStatus.textContent = 'Falha ao salvar. ' + error.message; }
+  } catch {
+    status.textContent = 'Falha ao salvar. Tente novamente.';
+  } finally {
+    toggleNotices.disabled = saveFilters.disabled = false;
+  }
+}
+
+toggleNotices.addEventListener('click', () => {
+  if (!config || toggleNotices.disabled) return;
+  return saveOpportunitySettings({ ...config, notify: !config.notify }, noticeStatus);
+});
+
+form.addEventListener('submit', event => {
+  event.preventDefault();
+  if (!config || saveFilters.disabled) return;
+  const next = PISOpportunities.settings({
+    ...Object.fromEntries(new FormData(form)),
+    notify: config.notify,
+    resale: form.elements.resale.checked,
+  });
+  return saveOpportunitySettings(next, saveStatus, 'Filtros salvos.');
 });
 
 document.querySelector('#open').addEventListener('click', () => {
@@ -443,9 +467,12 @@ document.querySelector('#open').addEventListener('click', () => {
   const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
   config = PISOpportunities.settings(opportunitySettings);
   for (const [name, value] of Object.entries(config)) {
-    if (name === 'notify' || name === 'resale') form.elements[name].checked = value;
+    if (name === 'notify') continue;
+    if (name === 'resale') form.elements[name].checked = value;
     else form.elements[name].value = value ?? '';
   }
+  showNoticeStatus();
+  toggleNotices.disabled = saveFilters.disabled = false;
   await refresh();
   setInterval(refresh, 5000);
 })().catch(error => { panelStatus.textContent = 'Não foi possível iniciar o painel. ' + error.message; });
