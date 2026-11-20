@@ -2,7 +2,7 @@
 (() => {
   const SCALES = { mil: 1000, k: 1000, mi: 1000000, m: 1000000, bi: 1000000000, b: 1000000000 };
   const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 2 });
-  const percent = new Intl.NumberFormat('pt-BR', { style: 'percent', signDisplay: 'exceptZero', maximumFractionDigits: 1 });
+  const percent = new Intl.NumberFormat('pt-BR', { style: 'percent', maximumFractionDigits: 1 });
 
   function displayPrice(value, currency) {
     const text = String(value ?? '').trim().toLowerCase()
@@ -24,13 +24,15 @@
     if (!quote) return { label: 'Sem estimativa em Coins', range: '', tone: 'neutral' };
     const { lower, median, upper, indicative } = quote;
     const delta = (actualPrice - median) / median;
-    const variation = percent.format(delta).replace(/^-/, '−');
+    const formatted = percent.format(delta < 0 ? -delta : actualPrice / median);
+    const variation = delta < 0 ? (formatted === '0%' ? '<0,1%' : formatted) + ' de desconto' :
+      delta > 0 && formatted === '100%' ? '>100%' : formatted;
     const amount = value => compact.format(value)
       .replace(/\b(?:mi|bi)$/, unit => unit[0].toUpperCase() + unit.slice(1));
     return {
       label: '≈' + amount(median) + ' ~ ' + variation,
       range: 'Faixa ' + amount(lower) + '–' + amount(upper) + (indicative ? ' · Indicativa' : ''),
-      tone: variation === '0%' || indicative ? 'neutral' : delta < 0 ? 'below' : 'above',
+      tone: delta === 0 || indicative ? 'neutral' : delta < 0 ? 'below' : 'above',
     };
   }
 
