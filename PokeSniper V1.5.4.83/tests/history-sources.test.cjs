@@ -116,14 +116,14 @@ test('o aviso classifica a velocidade e exibe o ataque da mesma forma usada no m
   const { noticePresentation } = ctx.PISOpportunities;
   const quote = { ...target, estimate: { median: 100, discount: 0.25 },
     ivs: { hp: 20, attack: 26, defense: 20, specialAttack: 17, specialDefense: 20, speed: 15 } };
-  assert.match(noticePresentation(quote).message, /IVs: Speed 15 \(média\), Sp Atk 17 \(média\)$/);
+  assert.match(noticePresentation(quote).message, /15 Spe \(média\) · 17 Sp Atk \(média\)$/);
   const dragonite = { ...quote, name: 'Dragonite', ivs: { ...quote.ivs, speed: 25 } };
-  assert.match(noticePresentation(dragonite).message, /IVs: Speed 25 \(Pica\), Atk 26 \(Pica\)$/);
+  assert.match(noticePresentation(dragonite).message, /25 Spe \(Pica\) · 26 Atk \(Pica\)$/);
   const mixed = { ...quote, name: 'Meganium' };
-  assert.match(noticePresentation(mixed).message, /IVs: Speed 15 \(média\), Atk 26 \(Pica\), Sp Atk 17 \(média\)$/);
+  assert.match(noticePresentation(mixed).message, /15 Spe \(média\) · 26 Atk \(Pica\) · 17 Sp Atk \(média\)$/);
   assert.match(noticePresentation({ ...mixed, ivs: { ...mixed.ivs, attack: 0, specialAttack: null } }).message,
-    /IVs: Speed 15 \(média\), Atk 0 \(crítico\)$/);
+    /15 Spe \(média\) · 0 Atk \(crítico\)$/);
   const haunter = { ...quote, name: 'Haunter', ivs: { ...quote.ivs, speed: 14 } };
-  assert.match(noticePresentation(haunter).message, /IVs: Speed 14 \(crítico\), Sp Atk 17 \(média\)$/);
-  assert.match(noticePresentation({ ...quote, ivs: { ...quote.ivs, speed: null } }).message, /Speed indisponível/);
+  assert.match(noticePresentation(haunter).message, /14 Spe \(crítico\) · 17 Sp Atk \(média\)$/);
+  assert.match(noticePresentation({ ...quote, ivs: { ...quote.ivs, speed: null } }).message, /Spe indisponível/);
 });

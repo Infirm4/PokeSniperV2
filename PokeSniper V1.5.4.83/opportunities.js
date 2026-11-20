@@ -120,12 +120,12 @@
   function noticeIvs(row) {
     const rating = value => value < 15 ? 'crítico' : value < 25 ? 'média' : 'Pica';
     const speed = row.ivs?.speed;
-    const entries = [validIv(speed) ? `Speed ${speed} (${rating(speed)})` : 'Speed indisponível'];
+    const entries = [validIv(speed) ? `${speed} Spe (${rating(speed)})` : 'Spe indisponível'];
     const style = attackProfile(row)?.style;
     const attacks = style === 'mixed' ? ['attack', 'specialAttack'] : style ? [style] : [];
     for (const stat of attacks) {
       const value = row.ivs?.[stat];
-      if (validIv(value)) entries.push(`${IV_LABELS[stat]} ${value} (${rating(value)})`);
+      if (validIv(value)) entries.push(`${value} ${IV_LABELS[stat]} (${rating(value)})`);
     }
     return entries;
   }
@@ -149,8 +149,9 @@
       ? noticeIvs(row)
       : coins ? coinIvs(row, IV_LABELS) : Object.keys(IV_LABELS)
         .filter(key => isLowIv(row.ivs?.[key])).map(key => IV_LABELS[key]);
-    const warning = [ivs.length ? (noticeIvsOnly ? 'IVs: ' : 'IV baixo: ') + ivs.join(', ') : '',
-      coins && row.estimate.qualityBelow ? 'Qualidade abaixo dos comparáveis' : ''].filter(Boolean).join(' · ');
+    const ivWarning = noticeIvsOnly ? ivs.join(' · ') : ivs.length ? 'IV baixo: ' + ivs.join(', ') : '';
+    const warning = [ivWarning, coins && row.estimate.qualityBelow ? 'Qualidade abaixo dos comparáveis' : '']
+      .filter(Boolean).join(' · ');
     const { confidence, bepi, powerCounts } = row.estimate;
     const label = coins ? bepi ? 'BEPI' : ({ alta: 'Confiança alta', média: 'Confiança média', baixa: 'Confiança baixa' })[confidence] : '';
     const composition = coins && bepi && powerCounts ? 'Registros: ' + Object.entries(powerCounts)

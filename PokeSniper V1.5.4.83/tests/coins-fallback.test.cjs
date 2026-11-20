@@ -135,6 +135,6 @@ test('a liquidez de Gemas usa cinco exemplares locais distintos na própria moed
   assert.equal(liquidity.label, 'baixa');
   assert.equal(market.gemLiquidity(gem, quote, [...sales.slice(1), sales[1], sale()], queue, [0, 1], now), null);
   const formatted = opportunity.noticePresentation({ ...gem, estimate: quote, liquidityHours: liquidity });
-  assert.match(formatted.desktopMessage, /IVs: Speed 20 \(média\)\nLiquidez baixa$/);
+  assert.match(formatted.desktopMessage, /20 Spe \(média\)\nLiquidez baixa$/);
   assert.doesNotMatch(formatted.desktopMessage, /~\d/);
 });
