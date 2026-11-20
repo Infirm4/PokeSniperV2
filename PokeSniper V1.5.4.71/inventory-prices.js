@@ -163,7 +163,7 @@
       const quick = formatPrice(lower, currency);
       const wait = formatPrice(upper, currency);
       const line = document.createElement('span');
-      line.textContent = `${icon} Venda: (${quick}, ${wait}) ${unit}`;
+      line.textContent = `${icon} Venda entre: (${quick}, ${wait}) ${unit}`;
       line.title = `Vender rápido: ${quick} ${unit}. Esperar: ${wait} ${unit}. Cerca de 1 em cada 4 vendas comparáveis fica acima do valor de espera na estimativa.`;
       ranges.append(line);
     }

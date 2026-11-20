@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.70)
+# PokeIdle Market Sniper (v1.5.4.71)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -183,7 +183,7 @@ Ao abrir a ficha de um Pokémon próprio no Depósito ou na Coleção, o selo
 aparece logo abaixo da barra da Nota para exemplares com Nota 3,500 ou maior.
 O selo reaproveita a consulta da mochila e mostra «Consultando…» se a cotação
 ainda estiver em andamento após o reconhecimento do exemplar. A ficha mostra
-**Venda: (vender rápido, esperar)** nas moedas com faixa disponível. Os limites
+**Venda entre: (vender rápido, esperar)** nas moedas com faixa disponível. Os limites
 são os quartis de 25% e 75% das vendas comparáveis ponderadas, com os ajustes
 da cotação da ficha. São referências de preço, sem estimativa de prazo.
 
@@ -238,8 +238,9 @@ e ausência de resposta. A seção da última página confirma se houve gravaç�
 
 Ao salvar **Avisos dentro do jogo e no Chrome**, o monitor de oportunidades
 começa a coletar anúncios em Coins e Gemas com a aba do jogo conectada.
-O diagnóstico mostra o último recibo de cada moeda. A opção **REGISTRAR
-MERCADO** do painel antigo também pode manter a coleta ligada.
+O diagnóstico mostra o último recibo de cada moeda. A varredura de anúncios
+novos roda com a vitrine fechada. Enquanto ela está aberta, o Sniper lê as
+páginas que o jogador visita.
 
 Em **Testar revisão de compra**, o jogo confirma que abriu a janela simulada
 antes de a extensão trazer a aba à frente. **Simular confirmação** não envia
@@ -249,9 +250,10 @@ mantendo o treino anterior à janela de teste.
 
 ## Histórico automático de Coins e compra confirmada
 
-Com **REGISTRAR MERCADO** ativo e o PokéIdle conectado, o Sniper busca as vendas
-gerais de Coins, incluindo o histórico anterior à instalação. Os lotes usam a
-fila compartilhada de consultas e retomam de uma página já gravada. O
+Com o PokéIdle conectado, o Sniper verifica o histórico geral de Coins em
+segundo plano. O ciclo verifica a cada minuto se precisa atualizar a janela
+recente, normalmente atualizada a cada cinco minutos. Os lotes usam a fila
+compartilhada de consultas e a coleta retroativa retoma de uma página já gravada. O
 **Diagnóstico da versão** mostra a página e a data mais antiga alcançada. A
 busca termina ao chegar ao fim das páginas disponíveis ou ao corte de 30 dias.
 
