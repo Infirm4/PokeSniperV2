@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.71)
+# PokeIdle Market Sniper (v1.5.4.72)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -78,9 +78,18 @@ diagnóstico continuar em `aguardando_tráfego`, abra a vitrine uma vez, veja
 se os anúncios carregam normalmente, feche-a e repita o diagnóstico.
 
 
+## Painel no PokéIdle
+
+Use **Poke Sniper V2**, no canto inferior esquerdo do jogo. **Planilhas**
+reúne a conexão e a sincronização do Sheets, **Filtros** reúne moeda,
+desconto e o controle de avisos, e **Oportunidades** mostra os avisos dos
+últimos 10 minutos ao selecionar a aba. Os filtros de lançamento Shiny e
+Nota da evolução final aparecem indisponíveis porque ainda não há regras
+para eles. O relatório do mercado está em **Filtros → Diagnóstico da versão**.
+
 ## Backup de vendas no Google Sheets
 
-O painel antigo dentro do jogo está pausado. O menu da extensão reúne a
+O painel antigo dentro do jogo está pausado. A aba **Planilhas** reúne a
 seção **Planilha de vendas**. Na primeira abertura do menu, o Chrome inicia o envio das vendas já
 armazenadas no IndexedDB. Ao abrir ou reabrir o PokéIdle, a extensão também
 envia as vendas completas que ainda estão pendentes. Há uma sincronização
@@ -103,7 +112,7 @@ Em **Implantar → Gerenciar implantações**, edite a implantação existente e
 publique uma **Nova versão**, mantendo a URL `/exec`. A planilha precisa
 estar vinculada como antes.
 
-Em cada perfil, abra **Planilha de vendas → Conectar histórico compartilhado**
+Em cada perfil, abra **Planilhas → Conectar histórico compartilhado**
 e use a mesma chave. O envio e a leitura sincronizam ao abrir o PokéIdle e
 a cada hora, enquanto o Chrome está aberto. **Sincronizar com o Sheets agora**
 faz os dois imediatamente. Históricos grandes são lidos em páginas, com
@@ -112,8 +121,7 @@ continuação automática. Guarde a chave com as pessoas que podem ler o banco.
 Os dois PCs enviam para a mesma planilha. O receptor usa um bloqueio e a chave
 **moeda + ID da transação** para atualizar a mesma linha, e os registros
 importados do Sheets entram no IndexedDB sem voltar para a fila de envio.
-O CSV continua disponível para recuperação manual. O relatório de diagnóstico
-mostra a última sincronização em `backup_sheets`.
+O relatório de diagnóstico mostra a última sincronização em `backup_sheets`.
 
 No editor do Apps Script, **diagnosticarLinhasForaDoBanco** mostra quantas
 linhas da tabela não têm chave nem ficha de venda. **limparLinhasForaDoBanco**

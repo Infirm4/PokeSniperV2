@@ -3,7 +3,15 @@ const offers = document.querySelector('#offers');
 const panelStatus = document.querySelector('#status');
 const saveStatus = document.querySelector('#save-status');
 const saveFilters = document.querySelector('#save-filters');
-const toggleNotices = document.querySelector('#toggle-notices');
+const noticeToggles = [...document.querySelectorAll('#toggle-notices, #filter-notices')];
+const offersEmpty = document.querySelector('#offers-empty');
+const offersPanel = document.querySelector('#panel-offers');
+const tabs = [...document.querySelectorAll('[role="tab"]')];
+const inOverlay = window.parent !== window;
+const main = document.querySelector('.pis-v2-main');
+const header = document.querySelector('.pis-v2-header');
+const navigation = document.querySelector('.pis-v2-tabs');
+let panelVisible = !inOverlay;
 const noticeStatus = document.querySelector('#notice-status');
 const format = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 let config;
@@ -40,16 +48,16 @@ function detailsFor(row, unit) {
   const details = document.createElement('details');
   details.append(text('summary', 'Comparáveis e simulação de revenda'));
   const ivs = row.ivs || {};
-  details.append(text('p', `P${row.power ?? '?'} · Qualidade ${row.quality ?? '?'} · IV total ${row.ivTotal ?? '?'} · Velocidade ${ivs.speed ?? '?'}`, 'offer-meta'));
-  details.append(text('p', `IVs HP ${ivs.hp ?? '?'} · Atq ${ivs.attack ?? '?'} · Def ${ivs.defense ?? '?'} · Atq Esp ${ivs.specialAttack ?? '?'} · Def Esp ${ivs.specialDefense ?? '?'}`, 'offer-meta'));
+  details.append(text('p', `P${row.power ?? '?'} · Qualidade ${row.quality ?? '?'} · IV total ${row.ivTotal ?? '?'} · Velocidade ${ivs.speed ?? '?'}`, 'pis-v2-meta'));
+  details.append(text('p', `IVs HP ${ivs.hp ?? '?'} · Atq ${ivs.attack ?? '?'} · Def ${ivs.defense ?? '?'} · Atq Esp ${ivs.specialAttack ?? '?'} · Def Esp ${ivs.specialDefense ?? '?'}`, 'pis-v2-meta'));
   const estimate = row.estimate;
   for (const sale of estimate?.comparables || []) {
-    details.append(text('div', `${format.format(sale.price)} ${unit} · Nv. ${sale.level} · Nota ${format.format(sale.grade)} · P${sale.power ?? '?'} · Vel. ${sale.speed ?? '?'} · ${new Date(sale.soldAt).toLocaleDateString('pt-BR')}`, 'offer-meta'));
+    details.append(text('div', `${format.format(sale.price)} ${unit} · Nv. ${sale.level} · Nota ${format.format(sale.grade)} · P${sale.power ?? '?'} · Vel. ${sale.speed ?? '?'} · ${new Date(sale.soldAt).toLocaleDateString('pt-BR')}`, 'pis-v2-meta'));
   }
 
   const simulator = document.createElement('form');
   const fields = document.createElement('div');
-  fields.className = 'fields';
+  fields.className = 'pis-v2-fields';
   const input = (name, label, value) => {
     const wrapper = text('label', label);
     const field = document.createElement('input');
@@ -64,7 +72,7 @@ function detailsFor(row, unit) {
   input('level', 'Nível simulado', row.level);
   input('price', 'Preço de revenda', Math.round(estimate?.median ?? row.price));
   const run = text('button', 'Simular liquidez');
-  const output = text('div', '', 'offer-meta');
+  const output = text('div', '', 'pis-v2-meta');
   output.setAttribute('aria-live', 'polite');
   simulator.append(fields, run, output);
   simulator.addEventListener('submit', async event => {
@@ -92,13 +100,13 @@ function detailsFor(row, unit) {
 function card(row, showLiquidity = false) {
   const item = document.createElement('li');
   const title = document.createElement('div');
-  title.className = 'offer-title';
+  title.className = 'pis-v2-offer-title';
   const unit = row.currency === 'gold' ? 'Coins' : 'Gemas';
   title.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')),
     text('strong', format.format(row.price) + ' ' + unit));
   const estimate = row.estimate;
   const minutes = Math.max(0, Math.floor((Date.now() - row.observedAt) / 60000));
-  item.append(title, text('div', `Anúncio #${row.id} · Nv. ${row.level ?? '?'} · Nota ${row.grade ?? '?'} · observado há ${minutes} min`, 'offer-meta'));
+  item.append(title, text('div', `Anúncio #${row.id} · Nv. ${row.level ?? '?'} · Nota ${row.grade ?? '?'} · observado há ${minutes} min`, 'pis-v2-meta'));
   if (estimate?.status === 'estimated') {
     const method = estimate.method === 'briaoale_public' ? 'histórico público · Briaoale' :
       estimate.method === 'coins_comparables' ? 'comparáveis em Coins' : estimate.method === 'briaoale_pve' ? 'motor de PvE · histórico local' : 'referência básica';
@@ -107,20 +115,20 @@ function card(row, showLiquidity = false) {
       ? `${estimate.profileSales} vendas próximas da espécie · ${estimate.marketCount} na base do modelo`
       : `${estimate.count} vendas · n efetivo ${format.format(estimate.effectiveCount)}`;
 
-    item.append(text('div', `Desconto ${percent(estimate.discount)} · mediana ${format.format(estimate.median)} · ${method}`, 'offer-meta'),
-      text('div', `Faixa ${format.format(estimate.lower)}–${format.format(estimate.upper)} · ${sample}`, 'offer-meta'),
-      text('div', `Teto de preço para alerta ${format.format(limit)} ${unit}`, 'offer-meta'));
-    if (estimate.confidence) item.append(text('div', 'Confiança: ' + estimate.confidence, 'offer-meta'));
-    if (estimate.alertSupported === false) item.append(text('div', 'Referência com poucos comparáveis próximos. Alerta suspenso.', 'offer-meta'));
+    item.append(text('div', `Desconto ${percent(estimate.discount)} · mediana ${format.format(estimate.median)} · ${method}`, 'pis-v2-meta'),
+      text('div', `Faixa ${format.format(estimate.lower)}–${format.format(estimate.upper)} · ${sample}`, 'pis-v2-meta'),
+      text('div', `Teto de preço para alerta ${format.format(limit)} ${unit}`, 'pis-v2-meta'));
+    if (estimate.confidence) item.append(text('div', 'Confiança: ' + estimate.confidence, 'pis-v2-meta'));
+    if (estimate.alertSupported === false) item.append(text('div', 'Referência com poucos comparáveis próximos. Alerta suspenso.', 'pis-v2-meta'));
     if (estimate.sourceAt) {
-      item.append(text('div', 'Base de Gemas atualizada em ' + new Date(estimate.sourceAt).toLocaleString('pt-BR'), 'offer-meta'));
+      item.append(text('div', 'Base de Gemas atualizada em ' + new Date(estimate.sourceAt).toLocaleString('pt-BR'), 'pis-v2-meta'));
     }
-    if (estimate.profileReason) item.append(text('div', profileStatus[estimate.profileReason], 'offer-meta'));
+    if (estimate.profileReason) item.append(text('div', profileStatus[estimate.profileReason], 'pis-v2-meta'));
   } else item.append(text('div', estimate?.status === 'excluded_outland'
     ? 'Outlaw excluído da precificação e dos alertas.'
-    : 'Preço estimado indisponível para esta ficha e amostra.', 'offer-meta'));
+    : 'Preço estimado indisponível para esta ficha e amostra.', 'pis-v2-meta'));
   if (showLiquidity && row.level > 0 && estimate?.status !== 'excluded_outland') {
-    const summary = text('div', 'Consultando liquidez em 7 dias…', 'offer-meta');
+    const summary = text('div', 'Consultando liquidez em 7 dias…', 'pis-v2-meta');
     item.append(summary);
     const price = Math.round(estimate?.median ?? row.price);
     PISMarketStore.liquidity(row, row.level, price)
@@ -150,22 +158,22 @@ function opportunityCard(row) {
   const details = document.createElement('details');
   details.dataset.offerKey = row.key;
   const summary = document.createElement('summary');
-  summary.className = 'offer-title';
+  summary.className = 'pis-v2-offer-title';
   const offer = PISOpportunities.presentation(row, row.deliveredAt, { noticeIvsOnly: true });
   const block = document.createElement('span');
-  block.className = 'opportunity-copy';
+  block.className = 'pis-v2-opportunity-copy';
   block.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')),
-    text('span', `${offer.discount} · ${offer.asking}`, 'opportunity-price'));
-  if (offer.tier) block.append(text('span', offer.tier, 'offer-meta'));
-  if (offer.composition) block.append(text('span', offer.composition, 'offer-meta'));
-  if (offer.range) block.append(text('span', offer.range, 'offer-meta'));
-  if (offer.warning) block.append(text('span', offer.warning, 'offer-meta'));
-  const time = text('time', noticeTime.format(row.deliveredAt), 'offer-meta');
+    text('span', `${offer.discount} · ${offer.asking}`, 'pis-v2-opportunity-price'));
+  if (offer.tier) block.append(text('span', offer.tier, 'pis-v2-meta'));
+  if (offer.composition) block.append(text('span', offer.composition, 'pis-v2-meta'));
+  if (offer.range) block.append(text('span', offer.range, 'pis-v2-meta'));
+  if (offer.warning) block.append(text('span', offer.warning, 'pis-v2-meta'));
+  const time = text('time', noticeTime.format(row.deliveredAt), 'pis-v2-meta');
   time.dateTime = new Date(row.deliveredAt).toISOString();
   block.append(time);
   const sprite = document.createElement('img');
   sprite.alt = '';
-  sprite.className = 'opportunity-sprite';
+  sprite.className = 'pis-v2-opportunity-sprite';
   if (PISOpportunities.mountSprite(sprite, PISOpportunities.spriteCandidates(row))) summary.append(sprite);
   summary.append(block);
   details.append(summary);
@@ -173,6 +181,7 @@ function opportunityCard(row) {
     if (details.open && details.childElementCount === 1) {
       const panel = card(row, true);
       const body = document.createElement('div');
+      body.className = 'pis-v2-offer-extra';
       body.append(...panel.childNodes);
       if (PISMarketCore.purchaseOffer(row) && PISOpportunities.notificationEligible(row, config)) {
         const checkout = text('button', 'Revisar compra no jogo');
@@ -196,6 +205,7 @@ function opportunityCard(row) {
 }
 
 async function refresh() {
+  if (!config || !panelVisible || offersPanel.hidden) return;
   const request = ++generation;
   try {
     const rows = await PISMarketStore.deliveredOpportunities();
@@ -212,6 +222,7 @@ async function refresh() {
       }));
       rendered = signature;
     }
+    offersEmpty.hidden = visible.length !== 0;
     panelStatus.textContent = visible.length === 1 ? '1 aviso nos últimos 10 min.' : visible.length
       ? `${visible.length} avisos nos últimos 10 min.`
       : 'Nenhum aviso nos últimos 10 min.';
@@ -221,14 +232,20 @@ async function refresh() {
       expiryTimer = setTimeout(refresh, Math.max(0, expiresAt - Date.now()));
     }
   } catch {
-    if (request === generation) panelStatus.textContent = 'Não foi possível ler os avisos recentes.';
+    if (request === generation) {
+      offersEmpty.hidden = true;
+      panelStatus.textContent = 'Não foi possível ler os avisos recentes.';
+    }
   }
+}
+
+async function refreshDiagnosticStats() {
+  if (!config) return;
   try {
     const stats = await PISMarketStore.diagnostics(config);
-    if (request !== generation) return;
     diagnostics.textContent = `${stats.listings} anúncios recentes · ${stats.sales} vendas no banco · ${stats.detailed} avaliados pelo perfil · ${stats.noEstimate} sem avaliação · ${stats.price} acima do preço de referência · ${stats.filters} barrados pelos filtros · ${stats.matched} oportunidades. Notificações ${config.notify ? 'ligadas' : 'desligadas'} · ${stats.pending} pendentes · ${stats.held} retidas · ${stats.sent} enviadas (${stats.sentInGame} no jogo · ${stats.sentDesktop} aceitas pelo Chrome) · ${stats.failed} com falha.`;
   } catch {
-    if (request === generation) diagnostics.textContent = 'Não foi possível ler o diagnóstico do mercado.';
+    diagnostics.textContent = 'Não foi possível ler o diagnóstico do mercado.';
   }
 }
 
@@ -273,9 +290,7 @@ coinsImport.addEventListener('change', async () => {
 });
 
 const salesBackupNow = document.querySelector('#sales-backup-now');
-const salesBackupRestore = document.querySelector('#sales-backup-restore');
 const salesBackupStatus = document.querySelector('#sales-backup-status');
-const salesRestoreStatus = document.querySelector('#sales-restore-status');
 
 const sheetAccess = document.querySelector('#sheet-access');
 const sheetKey = document.querySelector('#sheet-key');
@@ -333,30 +348,6 @@ sheetAccess.addEventListener('submit', event => {
 });
 disconnectSheetAccess.addEventListener('click', () => configureSheetAccess(''));
 showSheetAccess().catch(() => { sheetAccessStatus.textContent = 'Não foi possível verificar a conexão.'; });
-
-salesBackupRestore.addEventListener('change', async () => {
-  const file = salesBackupRestore.files[0];
-  if (!file) return;
-  salesBackupRestore.disabled = true;
-  try {
-    if (file.size > 25 * 1024 * 1024) throw new Error('O CSV excede 25 MiB.');
-    const rows = PISSalesBackup.restore(await file.text(), PISMarketCore);
-    let added = 0, incomplete = 0;
-    for (let offset = 0; offset < rows.length; offset += PISMarketCore.MAX_BATCH) {
-      const receipt = await PISMarketStore.ingest('sale', rows.slice(offset, offset + PISMarketCore.MAX_BATCH), Date.now(), { fromSheet: true });
-      added += receipt.new;
-      incomplete += receipt.incomplete;
-      salesRestoreStatus.textContent = `${Math.min(rows.length, offset + PISMarketCore.MAX_BATCH)} de ${rows.length} processadas…`;
-    }
-    salesRestoreStatus.textContent = `${added} novas vendas no banco de ${rows.length} registros lidos.` +
-      (incomplete ? ` ${incomplete} fichas incompletas ignoradas.` : '');
-    await refresh();
-  } catch (error) { salesRestoreStatus.textContent = 'Falha na restauração. ' + error.message; }
-  finally {
-    salesBackupRestore.disabled = false;
-    salesBackupRestore.value = '';
-  }
-});
 
 const runDiagnostics = document.querySelector('#run-diagnostics');
 const compareGemAttackIv = document.querySelector('#compare-gem-attack-iv');
@@ -495,12 +486,16 @@ copyDiagnostics.addEventListener('click', async () => {
 });
 
 function showNoticeStatus() {
-  toggleNotices.textContent = config.notify ? 'Desligar avisos' : 'Ligar avisos';
+  for (const toggle of noticeToggles) {
+    toggle.setAttribute('aria-checked', String(config.notify));
+    toggle.title = config.notify ? 'Desligar avisos' : 'Ligar avisos';
+  }
+  noticeStatus.parentElement.dataset.enabled = String(config.notify);
   noticeStatus.textContent = config.notify ? 'Avisos ligados' : 'Avisos desligados';
 }
 
 async function saveOpportunitySettings(next, status, success) {
-  toggleNotices.disabled = saveFilters.disabled = true;
+  setSettingsDisabled(true);
   try {
     await chrome.storage.local.set({ opportunitySettings: next });
     config = next;
@@ -510,14 +505,21 @@ async function saveOpportunitySettings(next, status, success) {
   } catch {
     status.textContent = 'Falha ao salvar. Tente novamente.';
   } finally {
-    toggleNotices.disabled = saveFilters.disabled = false;
+    setSettingsDisabled(false);
   }
 }
 
-toggleNotices.addEventListener('click', () => {
-  if (!config || toggleNotices.disabled) return;
-  return saveOpportunitySettings({ ...config, notify: !config.notify }, noticeStatus);
-});
+function setSettingsDisabled(disabled) {
+  saveFilters.disabled = disabled;
+  for (const toggle of noticeToggles) toggle.disabled = disabled;
+}
+
+for (const toggle of noticeToggles) {
+  toggle.addEventListener('click', () => {
+    if (!config || toggle.disabled) return;
+    return saveOpportunitySettings({ ...config, notify: !config.notify }, noticeStatus);
+  });
+}
 
 form.addEventListener('submit', event => {
   event.preventDefault();
@@ -529,9 +531,77 @@ form.addEventListener('submit', event => {
   return saveOpportunitySettings(next, saveStatus, 'Filtros salvos.');
 });
 
-document.querySelector('#open').addEventListener('click', () => {
-  chrome.tabs.create({ url: 'https://pokeidle.io/' })
-    .catch(error => { panelStatus.textContent = 'Não foi possível abrir o jogo. ' + error.message; });
+function stopOfferRefresh() {
+  ++generation;
+  clearTimeout(expiryTimer);
+}
+
+function selectTab(tab) {
+  for (const option of tabs) {
+    const selected = option === tab;
+    option.setAttribute('aria-selected', String(selected));
+    option.tabIndex = selected ? 0 : -1;
+    document.getElementById(option.getAttribute('aria-controls')).hidden = !selected;
+  }
+  main.scrollTop = 0;
+  stopOfferRefresh();
+  void refresh();
+}
+
+for (const tab of tabs) {
+  tab.addEventListener('click', () => selectTab(tab));
+  tab.addEventListener('keydown', event => {
+    const i = tabs.indexOf(tab);
+    const next = { ArrowLeft: (i + tabs.length - 1) % tabs.length,
+      ArrowRight: (i + 1) % tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
+    if (!Number.isInteger(next)) return;
+    event.preventDefault();
+    tabs[next].focus();
+    selectTab(tabs[next]);
+  });
+}
+
+function closePanel() {
+  if (inOverlay) window.parent.postMessage({ type: 'PIS_V2_CLOSE_PANEL' }, '*');
+  else window.close();
+}
+
+document.querySelector('#close-panel').addEventListener('click', closePanel);
+document.addEventListener('keydown', event => { if (event.key === 'Escape') closePanel(); });
+const diagnosticsPanel = document.querySelector('#diagnostics-panel');
+diagnosticsPanel.addEventListener('toggle', () => { if (diagnosticsPanel.open) void refreshDiagnosticStats(); });
+
+if (inOverlay) {
+  document.body.dataset.overlay = '';
+  function reportPanelSize() {
+    if (!panelVisible) return;
+    const section = main.querySelector('section:not([hidden])');
+    const { paddingTop, paddingBottom } = getComputedStyle(main);
+    const height = header.offsetHeight + navigation.offsetHeight + (section?.offsetHeight ?? 0) +
+      parseFloat(paddingTop) + parseFloat(paddingBottom);
+    window.parent.postMessage({ type: 'PIS_V2_PANEL_SIZE', height }, '*');
+  }
+  const layout = new ResizeObserver(reportPanelSize);
+  [header, navigation, ...main.children].forEach(node => layout.observe(node));
+  window.addEventListener('message', event => {
+    if (event.source !== window.parent || !/^https:\/\/(?:[a-z0-9-]+\.)?pokeidle\.io$/i.test(event.origin) ||
+        event.data?.type !== 'PIS_V2_PANEL_VISIBILITY') return;
+    panelVisible = event.data.open === true;
+    if (panelVisible) {
+      reportPanelSize();
+      tabs.find(tab => tab.getAttribute('aria-selected') === 'true')?.focus({ preventScroll: true });
+      void refresh();
+    } else stopOfferRefresh();
+  });
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.opportunitySettings || !config) return;
+  const next = PISOpportunities.settings(changes.opportunitySettings.newValue);
+  if (next.currency !== config.currency) form.elements.currency.value = next.currency;
+  if (next.discount !== config.discount) form.elements.discount.value = next.discount;
+  config = next;
+  showNoticeStatus();
 });
 
 (async () => {
@@ -541,7 +611,7 @@ document.querySelector('#open').addEventListener('click', () => {
   form.elements.currency.value = config.currency;
   form.elements.discount.value = config.discount;
   showNoticeStatus();
-  toggleNotices.disabled = saveFilters.disabled = false;
-  await refresh();
+  setSettingsDisabled(false);
+  void refresh();
   setInterval(refresh, 5000);
-})().catch(error => { panelStatus.textContent = 'Não foi possível iniciar o painel. ' + error.message; });
+})().catch(error => { noticeStatus.textContent = 'Não foi possível iniciar o painel. ' + error.message; });

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Poke Sniper V2</title>
+  <link rel="stylesheet" href="opportunities.css">
+  <script defer src="market-core.js"></script>
+  <script defer src="opportunities.js"></script>
+  <script defer src="vendor/briaoale/especies.js"></script>
+  <script defer src="vendor/briaoale/pve-power.js"></script>
+  <script defer src="vendor/briaoale/market-bonuses.js"></script>
+  <script defer src="vendor/briaoale/central.js"></script>
+  <script defer src="vendor/briaoale/nota.js"></script>
+  <script defer src="vendor/briaoale/pve-pricing.js"></script>
+  <script defer src="pricing-model.js"></script>
+  <script defer src="liquidity.js"></script>
+  <script defer src="market-diagnostics.js"></script>
+  <script defer src="market-smoke.js"></script>
+  <script defer src="history-trace.js"></script>
+  <script defer src="public-gems.js"></script>
+  <script defer src="coins-history.js"></script>
+  <script defer src="market-backtest.js"></script>
+  <script defer src="market-store.js"></script>
+  <script defer src="opportunities-popup.js"></script>
+</head>
+<body class="pis-v2">
+  <header class="pis-v2-header">
+    <div class="pis-v2-brand"><span class="pis-v2-mark" aria-hidden="true">◈</span><h1>Poke Sniper V2</h1></div>
+    <button id="close-panel" class="pis-v2-close" type="button" aria-label="Recolher painel" title="Recolher painel">×</button>
+    <div class="pis-v2-notices">
+      <span id="notice-status" role="status">Carregando avisos…</span>
+      <button id="toggle-notices" class="pis-v2-switch" type="button" role="switch" aria-checked="false" aria-label="Avisos" disabled></button>
+    </div>
+  </header>
+  <nav class="pis-v2-tabs" role="tablist" aria-label="Seções do painel">
+    <button id="tab-sheets" type="button" role="tab" aria-controls="panel-sheets" aria-selected="true"><span aria-hidden="true">▤</span>Planilhas</button>
+    <button id="tab-filters" type="button" role="tab" aria-controls="panel-filters" aria-selected="false" tabindex="-1"><span aria-hidden="true">≡</span>Filtros</button>
+    <button id="tab-offers" type="button" role="tab" aria-controls="panel-offers" aria-selected="false" tabindex="-1"><span aria-hidden="true">✧</span>Oportunidades</button>
+  </nav>
+  <main class="pis-v2-main">
+    <section id="panel-sheets" role="tabpanel" aria-labelledby="tab-sheets" tabindex="0">
+      <div class="pis-v2-card pis-v2-sync">
+        <h2>Planilha de vendas</h2>
+        <button type="button" id="sales-backup-now" class="pis-v2-primary">Sincronizar com o Sheets agora</button>
+        <p id="sales-backup-status" role="status" class="pis-v2-meta">Consultando a sincronização…</p>
+      </div>
+      <details class="pis-v2-disclosure">
+        <summary>Conectar histórico compartilhado</summary>
+        <form id="sheet-access">
+          <label>Chave de leitura do Apps Script
+            <input id="sheet-key" type="password" maxlength="128" autocomplete="off" required>
+          </label>
+          <div class="pis-v2-actions">
+            <button id="save-sheet-access" class="pis-v2-primary" type="submit">Conectar e sincronizar</button>
+            <button id="disconnect-sheet-access" type="button" disabled>Desconectar leitura</button>
+          </div>
+        </form>
+        <p id="sheet-access-status" role="status" class="pis-v2-meta"></p>
+      </details>
+    </section>
+    <section id="panel-filters" role="tabpanel" aria-labelledby="tab-filters" tabindex="0" hidden>
+      <form id="settings" class="pis-v2-card pis-v2-filter">
+        <div class="pis-v2-filter-row">
+          <label for="filter-notices">Alertar pechinchas</label>
+          <button id="filter-notices" class="pis-v2-switch" type="button" role="switch" aria-checked="false" aria-label="Alertar pechinchas" disabled></button>
+        </div>
+        <div class="pis-v2-fields">
+          <label>Moeda<select name="currency"><option value="gold">Coins</option><option value="orb">Gemas</option><option value="all">Todas</option></select></label>
+          <label>Desconto mínimo (%)<input name="discount" type="number" min="0" max="99" required></label>
+        </div>
+        <fieldset class="pis-v2-shiny" disabled aria-describedby="shiny-unavailable">
+          <div class="pis-v2-filter-row">
+            <label for="shiny-alert-preview">Avisar shiny novo</label>
+            <input id="shiny-alert-preview" class="pis-v2-switch" type="checkbox" role="switch">
+          </div>
+          <label class="pis-v2-filter-row">Nota mínima na evolução final <input type="number" value="7.2" min="0" max="10" step="0.1"></label>
+          <small id="shiny-unavailable">Filtros de Shiny da referência ainda indisponíveis.</small>
+        </fieldset>
+        <div class="pis-v2-actions">
+          <button id="save-filters" class="pis-v2-primary" type="submit" disabled>Salvar filtros</button>
+          <span id="save-status" class="pis-v2-meta" role="status"></span>
+        </div>
+      </form>
+      <details id="diagnostics-panel" class="pis-v2-disclosure">
+        <summary>Diagnóstico da versão</summary>
+        <button type="button" id="copy-smart-coins">Copiar cache de Coins do Smart Market</button>
+        <p class="pis-v2-meta">Também é possível importar um backup JSON de outro perfil.</p>
+        <input type="file" id="coins-import" accept=".json,application/json" aria-label="Backup de vendas em Coins">
+        <p role="status" class="pis-v2-meta" id="coins-import-status"></p>
+        <p id="diagnostics" class="pis-v2-meta"></p>
+        <p class="pis-v2-meta">Mostra o estado da conexão, os testes locais e os avisos reais da fila. O relatório não inclui registros individuais.</p>
+        <div class="pis-v2-actions">
+          <button type="button" id="sample-sale">Ver uma venda do banco</button>
+          <button type="button" id="run-diagnostics">Gerar relatório do mercado</button>
+          <button type="button" id="test-purchase-review">Simular revisão de compra</button>
+          <button type="button" id="run-backtest">Testar precisão com vendas locais</button>
+          <button type="button" id="copy-diagnostics" disabled>Copiar resultado</button>
+          <button type="button" id="download-diagnostics" disabled>Baixar diagnóstico (.json)</button>
+        </div>
+        <label>Pokémon para comparar em Gemas (opcional)
+          <input id="gem-comparison-name" type="search" maxlength="100" placeholder="Ex.: Dragonite">
+        </label>
+        <div class="pis-v2-actions"><button type="button" id="compare-gem-attack-iv">Comparar ajuste de IV em Gemas</button></div>
+        <p id="test-status" class="pis-v2-meta" role="status"></p>
+        <textarea id="diagnostic-report" aria-label="Resultado do diagnóstico" rows="10" readonly hidden></textarea>
+      </details>
+    </section>
+    <section id="panel-offers" role="tabpanel" aria-labelledby="tab-offers" tabindex="0" hidden>
+      <p id="status" class="pis-v2-count" role="status">Carregando avisos…</p>
+      <div id="offers-empty" class="pis-v2-empty" hidden>
+        <span aria-hidden="true">✧</span>
+        <strong>Nenhum aviso recente</strong>
+        <p>Quando uma oferta gerar um aviso, ela aparece aqui por 10 minutos.</p>
+      </div>
+      <ul id="offers" class="pis-v2-offers"></ul>
+    </section>
+  </main>
+</body>
+</html>
