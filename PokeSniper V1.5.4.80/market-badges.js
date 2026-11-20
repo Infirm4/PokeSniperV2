@@ -36,7 +36,7 @@
       return millions.format(Number(valueInMillions.toFixed(decimals))) + 'MI';
     };
     return {
-      label: '≈' + amount(median) + ' ' + variation,
+      label: '≈' + amount(median) + (currency === 'orb' ? ' 💎 ' : ' ') + variation,
       range: 'Faixa ' + amount(lower) + '–' + amount(upper) +
         (currency === 'orb' ? ' Gemas · Base pública do Briaoale' : '') +
         (indicative ? ' · Indicativa' : ''),

@@ -40,8 +40,10 @@ test('Gemas usam K e identificam a base pública na faixa', () => {
   const quote = { lower: 2500, median: 2900, upper: 3500, indicative: true };
   const cheaper = quoteBadge({ currency: 'orb', actualPrice: 2320, quote });
   const expensive = quoteBadge({ currency: 'orb', actualPrice: 3480, quote });
-  assert.equal(cheaper.label, '≈2,9K 20%');
-  assert.equal(expensive.label, '≈2,9K 120%');
+  assert.equal(cheaper.label, '≈2,9K 💎 20%');
+  assert.equal(quoteBadge({ currency: 'orb', actualPrice: 8, quote: { lower: 9, median: 11, upper: 20 } }).label,
+    '≈11 💎 27,3%');
+  assert.equal(expensive.label, '≈2,9K 💎 120%');
   assert.equal(expensive.tone, 'above');
   assert.equal(expensive.range, 'Faixa 2,5K–3,5K Gemas · Base pública do Briaoale · Indicativa');
 });
