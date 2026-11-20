@@ -145,3 +145,17 @@ test('a ficha histórica completa exige todos os atributos e preserva IV igual a
   assert.deepEqual(incompleteSaleFields({ ...sale, quality: null, sprite: null, ivs: { hp: 29 } }),
     ['quality', 'ivs', 'sprite']);
 });
+
+test('identifica Pokémon da mochila por ID e exige nome e nível únicos no fallback', () => {
+  const { inventoryProfiles, findInventoryProfile } = require('../market-core');
+  const first = { id: '11', speciesId: 94, nome: 'Gengar', level: 100, nota: 4, shiny: false };
+  const results = inventoryProfiles({ deposito: { lista: [first, { ...first, id: '12' }] }, nick: 'privado' });
+  const byId = new Map(results.map(row => [row.id, row]));
+  assert.equal(findInventoryProfile(byId, { ids: ['11'] }).id, '11');
+  assert.equal(findInventoryProfile(byId, { ids: [], name: 'Gengar', level: 100 }), null);
+  assert.equal(findInventoryProfile(byId, { ids: ['11', '12'] }), null);
+  byId.delete('12');
+  assert.equal(findInventoryProfile(byId, { ids: [], name: 'gengar', level: 100 }).id, '11');
+  assert.equal(findInventoryProfile(byId, { ids: ['99'], name: 'Gengar', level: 100 }), null);
+  assert.equal(Object.hasOwn(results[0], 'nick'), false);
+});

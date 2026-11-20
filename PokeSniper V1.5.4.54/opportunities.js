@@ -16,14 +16,6 @@
       currency: ['gold', 'orb', 'all'].includes(raw.currency) ? raw.currency : DEFAULTS.currency,
       discount: Number.isFinite(discount) ? Math.min(99, Math.max(0, discount)) : DEFAULTS.discount,
       notify: raw.notify === true,
-      coinBepi: raw.coinBepi === true,
-      coinStrongOnly: raw.coinStrongOnly === true,
-      resale: raw.resale === true,
-      fee: raw.fee != null && raw.fee !== '' && Number.isFinite(Number(raw.fee)) &&
-        Number(raw.fee) >= 0 && Number(raw.fee) < 100 ? Number(raw.fee) : null,
-      returnPercent: Math.max(0, Math.min(1000, Number(raw.returnPercent) || 0)),
-      purchaseCost: Number.isSafeInteger(Number(raw.purchaseCost)) ? Math.max(0, Number(raw.purchaseCost)) : 0,
-      saleCost: Number.isSafeInteger(Number(raw.saleCost)) ? Math.max(0, Number(raw.saleCost)) : 0,
     };
   }
 
@@ -31,25 +23,16 @@
   const eligible = (row, now = Date.now()) => !row.closed && !isOutland(row) && (!row.expiresAt || row.expiresAt > now) && row.estimate?.status === 'estimated' && row.estimate.profileReason !== 'rare_profile' && row.estimate.median > 0 && row.price <= row.estimate.median;
   const key = row => JSON.stringify([row.currency, row.id, row.price]);
 
-  // O preço limite deriva do desconto e, quando ativo, do filtro de margem de revenda.
   function priceLimit(row, config) {
     if (row.estimate?.status !== 'estimated') return null;
-    const { lower, median } = row.estimate;
-    const caps = [median * (100 - config.discount) / 100];
-    if (config.resale) {
-      if (config.fee == null || config.currency !== row.currency) return null;
-      const proceeds = lower * (1 - config.fee / 100) - config.saleCost;
-      caps.push(proceeds / (1 + config.returnPercent / 100) - config.purchaseCost);
-    }
-    return Math.max(0, Math.floor(Math.min(...caps)));
+    return Math.max(0, Math.floor(row.estimate.median * (100 - config.discount) / 100));
   }
 
   function notificationEligible(row, config = {}) {
     if (row.currency === 'gold') {
       const { bepi, lower } = row.estimate ?? {};
-      if (bepi && (!config.coinBepi || !(row.price < lower) ||
+      if (bepi && (!(row.price < lower) ||
           row.price > Math.floor(row.estimate.median * Math.max(0, 95 - (config.discount ?? 0)) / 100))) return false;
-      if (config.coinStrongOnly && !(row.price <= lower)) return false;
     }
     return row.estimate?.alertSupported !== false &&
       (!row.estimate?.sourceAt || Date.now() - row.estimate.sourceAt <= 72 * 3600000) &&
@@ -59,8 +42,7 @@
 
   function matches(row, config) {
     const limit = priceLimit(row, config);
-    return (row.currency !== 'gold' || !row.estimate?.bepi || config.coinBepi) &&
-      (config.currency === 'all' || config.currency === row.currency) &&
+    return (config.currency === 'all' || config.currency === row.currency) &&
       limit != null && row.price <= limit;
   }
 

@@ -100,6 +100,17 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     })().then(result => reply({ ok: result?.ok === true }), () => reply({ ok: false }));
     return true;
   }
+  if (req?.type === 'PIS_INVENTORY_QUOTE') {
+    if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !sender.tab ||
+        !PIS_HOST.test(String(sender.url || sender.tab.url || ''))) return false;
+    const profile = req.profile;
+    const [target] = PISMarketCore.validate('listing', [{
+      ...profile, id: profile?.pokemonId, currency: 'gold', price: 1,
+    }]);
+    if (!target || !target.name || !(target.level > 0)) return false;
+    PISMarketStore.inventoryQuote(target).then(quotes => reply({ quotes }), () => reply({ quotes: null }));
+    return true;
+  }
   if (req?.type === 'PIS_MARKET_BADGES') {
     if (!sender.tab || !PIS_HOST.test(String(sender.url || sender.tab.url || '')) ||
         !Array.isArray(req.offers) || req.offers.length > 100) return false;

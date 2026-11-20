@@ -66,13 +66,13 @@
               if (asking > discountCap(quote.median)) continue;
               const falseSignal = asking > discountCap(row.price);
               if (quote.bepi) {
-                if (PISOpportunities.notificationEligible(scenario, { ...config, coinBepi: true, coinStrongOnly: false })) {
+                if (PISOpportunities.notificationEligible(scenario, config)) {
                   metrics.bepi++;
                   metrics.bepiFalse += Number(asking > row.price * Math.max(0, 95 - config.discount) / 100);
                 }
                 continue;
               }
-              if (!PISOpportunities.notificationEligible(scenario, { ...config, coinStrongOnly: false })) continue;
+              if (!PISOpportunities.notificationEligible(scenario, config)) continue;
               metrics.alerts++;
               metrics.falseAlerts += Number(falseSignal);
               if (asking <= quote.lower) {

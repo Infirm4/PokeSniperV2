@@ -19,7 +19,7 @@ test('descobre conexão preexistente pelo envio do jogo e libera uma substituta 
   const st = { gold: 9999, off: 10 };
   const waiters = [];
   const updates = [];
-  const window = { WebSocket: Socket };
+  const window = { WebSocket: Socket, addEventListener() {} };
   const result = runInNewContext(pieces.join('\n') + '\n({ source: () => gameSocketSource, ready: socketReadyForMarket, bind: bindGameSocket })', {
     st, waiters, window, OWS: Socket, osend: Socket.prototype.send, URL, clearTimeout,
     monitorAtivo: () => true, reportAutomatic: value => updates.push(value), onMsg() {},

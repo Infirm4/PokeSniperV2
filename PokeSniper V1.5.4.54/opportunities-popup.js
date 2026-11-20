@@ -113,8 +113,7 @@ function card(row, showLiquidity = false) {
 
     item.append(text('div', `Desconto ${percent(estimate.discount)} · mediana ${format.format(estimate.median)} · ${method}`, 'offer-meta'),
       text('div', `Faixa ${format.format(estimate.lower)}–${format.format(estimate.upper)} · ${sample}`, 'offer-meta'),
-      text('div', limit == null ? 'Informe a taxa e selecione uma moeda para calcular o teto de revenda.' :
-        `Teto de preço para alerta ${format.format(limit)} ${unit}`, 'offer-meta'));
+      text('div', `Teto de preço para alerta ${format.format(limit)} ${unit}`, 'offer-meta'));
     if (estimate.confidence) item.append(text('div', 'Confiança: ' + estimate.confidence, 'offer-meta'));
     if (estimate.alertSupported === false) item.append(text('div', 'Referência com poucos comparáveis próximos. Alerta suspenso.', 'offer-meta'));
     if (estimate.sourceAt) {
@@ -205,7 +204,7 @@ async function refresh() {
       PISMarketStore.recentOpportunities(config), PISMarketStore.diagnostics(config),
     ]);
     if (request !== generation) return;
-    const visible = rows.filter(row => PISOpportunities.approved(row, { ...config, coinStrongOnly: false })).slice(0, 100);
+    const visible = rows.filter(row => PISOpportunities.approved(row, config)).slice(0, 100);
     const signature = JSON.stringify([config, visible]);
     // Uma oferta que deixou de atender aos filtros sai mesmo se o cartão estiver aberto.
     if (signature !== rendered) {
@@ -427,7 +426,7 @@ runDiagnostics.addEventListener('click', async () => {
       alertas: {
         ...alerts,
         notificações_ativadas: settings.notify,
-        filtros_coins: { bepi: settings.coinBepi, só_ofertas_fortes: settings.coinStrongOnly },
+        filtros_coins: { bepi: true },
         permissão_do_Chrome: notificationPermission,
 
       },
@@ -516,9 +515,6 @@ form.addEventListener('submit', event => {
   const next = PISOpportunities.settings({
     ...Object.fromEntries(new FormData(form)),
     notify: config.notify,
-    resale: form.elements.resale.checked,
-    coinBepi: form.elements.coinBepi.checked,
-    coinStrongOnly: form.elements.coinStrongOnly.checked,
   });
   return saveOpportunitySettings(next, saveStatus, 'Filtros salvos.');
 });
@@ -532,11 +528,8 @@ document.querySelector('#open').addEventListener('click', () => {
   const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
   config = PISOpportunities.settings(opportunitySettings);
   void runSalesBackup(true);
-  for (const [name, value] of Object.entries(config)) {
-    if (name === 'notify') continue;
-    if (typeof value === 'boolean') form.elements[name].checked = value;
-    else form.elements[name].value = value ?? '';
-  }
+  form.elements.currency.value = config.currency;
+  form.elements.discount.value = config.discount;
   showNoticeStatus();
   toggleNotices.disabled = saveFilters.disabled = false;
   await refresh();

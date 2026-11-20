@@ -78,12 +78,12 @@ test('calcula liquidez separada por perfil e suspende probabilidades com muitos 
   assert.equal(liquidity.estimate({ ...profile(true), level: 1000 }, items, now, core.sameMarket).count, 0);
 });
 
-test('teto de revenda considera taxa e retorno sem mudar o desconto ou usar liquidez', () => {
+test('teto de alerta usa o desconto mesmo com configurações antigas de revenda', () => {
   const row = { ...profile(true), estimate: { status: 'estimated', lower: 90, median: 100, discount: 0.3 } };
   const config = opportunities.settings({ resale: true, fee: 15, returnPercent: 10, purchaseCost: 2, saleCost: 1 });
-  assert.equal(opportunities.priceLimit(row, config), 66);
-  assert.equal(opportunities.priceLimit({ ...row, liquidity: 0.99 }, config), 66);
-  assert.equal(opportunities.priceLimit(row, opportunities.settings({ resale: true })), null);
+  assert.equal(opportunities.priceLimit(row, config), 80);
+  assert.equal(opportunities.priceLimit({ ...row, liquidity: 0.99 }, config), 80);
+  assert.equal(opportunities.priceLimit(row, opportunities.settings({ resale: true })), 80);
 });
 
 test('referência de Coins relaxa especiais e qualidade e mantém a potência incompatível separada', () => {
@@ -111,11 +111,10 @@ test('BEPI usa a potência inferior, preserva a âncora e exige desconto reforç
   assert.deepEqual(quote.powerCounts, { 4: 4, 5: 2 });
   assert.ok(quote.median <= 100);
   const row = { ...target, estimate: quote };
-  const config = opportunities.settings({ discount: 20, coinBepi: true });
+  const config = opportunities.settings({ discount: 20, coinBepi: false });
   assert.equal(opportunities.approved(row, config, now), true);
   assert.equal(opportunities.approved({ ...row, price: 77 }, config, now), false);
   assert.equal(opportunities.approved({ ...row, price: quote.lower }, config, now), false);
-  assert.equal(opportunities.approved(row, { ...config, coinBepi: false }, now), false);
   assert.match(opportunities.presentation(row).message, /Registros: 2 P5 e 4 P4/);
 
   const p4 = { ...target, power: 4 };
@@ -139,10 +138,9 @@ test('Coins alarga a escala quando falta suporte e aproveita fichas sem o extra 
   assert.ok(!reverse.alertSupported);
 });
 
-test('o corte por quartil é opcional e exclusivo de Coins', () => {
+test('o filtro antigo de ofertas fortes não impede alertas normais', () => {
   const row = { ...profile(true), price: 85, estimate: { status: 'estimated', lower: 80, median: 100 } };
   const config = opportunities.settings({ currency: 'all', discount: 10, coinStrongOnly: true });
-  assert.equal(opportunities.approved(row, config, now), false);
-  assert.equal(opportunities.approved(row, { ...config, coinStrongOnly: false }, now), true);
+  assert.equal(opportunities.approved(row, config, now), true);
   assert.equal(opportunities.approved({ ...row, currency: 'orb' }, config, now), true);
 });

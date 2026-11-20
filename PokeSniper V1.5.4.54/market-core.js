@@ -265,6 +265,49 @@
   }
 
   // A base de preço recebe apenas fichas completas da época da venda.
+  function inventoryProfile(pokemon) {
+    if (!pokemon || typeof pokemon !== 'object' || !id(pokemon.id) ||
+        !id(pokemon.speciesId ?? pokemon.especieId)) return null;
+    const profile = normalizeRow('listing', {
+      id: pokemon.id, pokemonId: pokemon.id, moeda: 'gold', preco: 1, ficha: pokemon,
+    });
+    return profile?.name && profile.level > 0 ? profile : null;
+  }
+
+  // Percorre apenas os estados do jogador. Fichas de vendas nunca entram neste índice.
+  function inventoryProfiles(state) {
+    const stack = [state];
+    const profiles = [];
+    for (let visited = 0; stack.length && visited < 40000 && profiles.length < 6000; visited++) {
+      const node = stack.pop();
+      if (!node || typeof node !== 'object') continue;
+      const profile = inventoryProfile(node);
+      if (profile) profiles.push(profile);
+      else for (const child of Object.values(node)) if (child && typeof child === 'object') stack.push(child);
+    }
+    return profiles;
+  }
+
+  function findInventoryProfile(index, request) {
+    const ids = request.ids;
+    if (Array.isArray(ids)) {
+      const known = [...new Set(ids.slice(0, 8))].filter(id => typeof id === 'string' && index.has(id));
+      if (known.length === 1) return index.get(known[0]);
+      // Um ID de outro exemplar nunca é substituído por coincidência de nome.
+      if (ids.length) return null;
+    }
+    const name = typeof request.name === 'string' && request.name.length <= 100 ? request.name.toLowerCase() : '';
+    const level = request.level;
+    if (!name || !Number.isSafeInteger(level) || level < 1) return null;
+    let match = null;
+    for (const profile of index.values()) {
+      if (profile.name.toLowerCase() !== name || profile.level !== level) continue;
+      if (match) return null;
+      match = profile;
+    }
+    return match;
+  }
+
   function incompleteSaleFields(row) {
     const missing = [];
     for (const key of ['id', 'pokemonId', 'speciesId']) if (!id(row?.[key])) missing.push(key);
@@ -510,7 +553,7 @@
   }
 
   const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
-    WINDOW_MS, MAX_BATCH, estimateCoins, incompleteSaleFields, matchesDisplayPrice };
+    WINDOW_MS, MAX_BATCH, estimateCoins, incompleteSaleFields, matchesDisplayPrice, inventoryProfiles, findInventoryProfile };
   if (typeof window === 'undefined' && typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
 })();

@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.53)
+# PokeIdle Market Sniper (v1.5.4.54)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -6,8 +6,8 @@ O relatório inclui **versão_na_aba** e a disponibilidade dos dois módulos.
 
 Em **Coins**, a escala da Nota se adapta ao suporte do histórico. Especiais
 diferentes pesam menos e extras que faltam no alvo não sustentam alertas.
-IVs e Qualidade viraram avisos de ficha. **Avisos BEPI em Coins** e **Só avisar
-ofertas fortes em Coins** são opções independentes, desligadas por padrão.
+IVs e Qualidade viraram avisos de ficha. O BEPI em Coins é aplicado
+automaticamente às oportunidades elegíveis.
 No BEPI, a oferta deve ficar abaixo do quartil inferior e superar em cinco
 pontos percentuais o desconto configurado. A porcentagem é sempre relativa
 à mediana. O teste de precisão compara as escalas de Nota e a variante com
@@ -37,7 +37,6 @@ extremos no cálculo. Os avisos exigem suporte de vendas confirmadas pelo jogo.
 IVs individuais e Qualidade ajudam a interpretar a ficha. O alerta normal exige pelo menos três
 comparáveis próximos de exemplares diferentes, com amostra efetiva e
 dispersão de preços aceitáveis.
-A margem de revenda, quando ativada, considera a taxa configurada pelo usuário.
 
 **Gerar relatório do mercado** consulta o estado e os registros de avisos reais.
 Os testes locais continuam disponíveis no relatório sem enviar notificações.
@@ -159,6 +158,13 @@ usam o formato `−20% Gengar Nvl 100 P4` e mostram o preço justo com o ícone
 da moeda na linha seguinte. Nos avisos de Velocidade, Ataque e Ataque Especial,
 IVs de 0 a 14 são marcados como `(crítico)` e de 15 a 25, como `(baixo)`.
 HP, Defesa e Defesa Especial ficam disponíveis na ficha detalhada.
+
+## Preço justo na mochila
+
+Passe o mouse sobre um Pokémon próprio reconhecido na mochila. O selo mostra
+a mediana em Coins com base nas vendas locais e em Gemas com base no snapshot
+público do Briaoale. Fichas com poucos comparáveis podem ter preço indicativo
+ou ficar sem estimativa. Os dados da ficha vêm do estado já recebido do jogo.
 
 ## Monitoramento e precificação
 
@@ -315,7 +321,6 @@ ou ausentes após a confirmação do censo saem das oportunidades.
 
 O painel usa o desconto mínimo sobre a mediana. Anúncios dentro da faixa estimada podem
 aparecer se atingirem o percentual. A configuração antiga de preço máximo foi retirada.
-A margem de revenda opcional continua disponível em **Filtros e notificações**.
 
 ## Diagnóstico em um clique (v1.5.4.16)
 
@@ -361,8 +366,7 @@ explícita da oferta, exemplar, moeda, preço e tempo entra como desfecho confir
 vínculos são diagnósticos. Sem observações completas ou vendas vinculadas suficientes, o painel
 exibe a atividade observada, sem porcentagem. A coleta de exposições de anúncio começa nesta versão.
 
-Em **Filtros e notificações**, a margem de revenda opcional usa a taxa e os custos informados na
-moeda selecionada. O índice de liquidez continua separado. Apps Script não precisa ser reimplantado.
+O índice de liquidez continua separado da precificação.
 
 Teste local dos cálculos: `node --test tests/*.test.cjs`.
 

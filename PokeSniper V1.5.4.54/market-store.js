@@ -559,6 +559,23 @@ const PISMarketStore = (() => {
     });
   }
 
+  // A mochila usa a mesma referência da vitrine, sem consultar o jogo nem criar anúncios.
+  async function inventoryQuote(profile, now = Date.now()) {
+    if (PISMarketCore.isOutland(profile)) return null;
+    const db = await open();
+    const tx = db.transaction(['sales', 'publicPricing']);
+    const [sales, snapshot] = await Promise.all([
+      profile.shiny ? Promise.resolve([]) :
+        recentSales(tx.objectStore('sales').index('comparables'), profile, now),
+      result(tx.objectStore('publicPricing').get('gems')),
+    ]);
+    const gold = profile.shiny ? null : PISMarketCore.estimate(profile, sales, now);
+    const orb = evaluatePublic(snapshot, [{ ...profile, currency: 'orb' }], now).get(profile.id);
+    const quote = estimate => estimate?.status === 'estimated' && Number.isSafeInteger(estimate.median) ?
+      { median: estimate.median, indicative: estimate.alertSupported !== true || estimate.bepi === true } : null;
+    return { gold: quote(gold), orb: quote(orb) };
+  }
+
   async function analyzeListing(row, now = Date.now()) {
     const db = await open();
     const tx = db.transaction(['sales', 'publicPricing']);
@@ -676,7 +693,7 @@ const PISMarketStore = (() => {
     const byKey = new Map(opportunities.map(row => [row.key, row]));
     const coins = { observados: 0, novos_capturados: 0, retidos: 0, estimados: 0, confiáveis: 0,
       sem_comparáveis: 0, extras_sem_suporte: 0, preços_dispersos: 0,
-      bepi: 0, bepi_desligado: 0, abaixo_da_mediana: 0, fortes: 0,
+      bepi: 0, abaixo_da_mediana: 0, fortes: 0,
       estimados_sem_captura_nova: 0, sem_horário_publicação: 0, ofertas: 0, avisos_reais: 0 };
     totals.coins = coins;
     for (const row of listings) {
@@ -693,10 +710,7 @@ const PISMarketStore = (() => {
         if (row.pricingRevision === revisionFor(row) && row.estimate?.status === 'estimated') {
           coins.estimados++;
           if (!trackedLaunch(row, now)) coins.estimados_sem_captura_nova++;
-          if (row.estimate.bepi) {
-            coins.bepi++;
-            if (!config.coinBepi) coins.bepi_desligado++;
-          }
+          if (row.estimate.bepi) coins.bepi++;
           if (row.price < row.estimate.median) coins.abaixo_da_mediana++;
           if (row.price <= row.estimate.lower) coins.fortes++;
           if (PISOpportunities.notificationEligible(row, config)) coins.confiáveis++;
@@ -728,5 +742,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
 })();
