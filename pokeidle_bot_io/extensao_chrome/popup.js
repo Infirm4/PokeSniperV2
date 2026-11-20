@@ -14,6 +14,8 @@ const messages = {
   sem_lista: 'Lista de caídos indisponível nesta tela. A captura retoma quando ela voltar.',
   aguardando: 'Lista de caídos disponível, aguardando alvos.',
   bloqueado: 'Os botões de captura estão desabilitados nesta tela.',
+  expirado: 'O tempo dos Pokémon disponíveis acabou. Aguardando novos caídos.',
+  cena_desligada: 'Cena desligada. Aguardando caídos novos ou atualizados pelo jogo.',
   cooldown: 'Aguardando o intervalo para tentar de novo.',
   descartada: 'O Chrome descarregou a aba. Volte ao jogo para retomá-la.',
   congelada: 'O Chrome congelou a aba. As tentativas retomam quando ela responder.',

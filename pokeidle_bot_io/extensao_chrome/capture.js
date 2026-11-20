@@ -11,58 +11,84 @@
     return button.isConnected && !button.matches(':disabled, [aria-disabled="true"], [hidden]');
   }
 
+  function countdown(button) {
+    const width = button.querySelector('.caido-tempo i')?.style.width;
+    if (!width) return undefined;
+    if (width === '0px') return 0;
+    if (width.endsWith('%')) return Number.parseFloat(width);
+  }
+
+  function sceneIsOff(document) {
+    return Array.from(document.querySelectorAll('button, [role="button"]')).some(button =>
+      button.textContent.trim().replace(/\s+/g, ' ').toLowerCase() === 'ligar a cena' &&
+      button.getClientRects().length > 0);
+  }
+
+  function identify(button) {
+    const specimen = button.dataset.caidoId ?? button.dataset.pokemonId;
+    const slot = button.dataset.slot;
+    if (specimen) return JSON.stringify(['pokemon', specimen, slot]);
+    if (slot != null) return JSON.stringify(['slot', slot, button.textContent.trim()]);
+    return button;
+  }
+
   function createCapture(document, time = () => Date.now()) {
-    const recent = new WeakMap();
-    const slots = new Map();
+    const attempts = new Map();
 
     return function capture() {
       const lists = [...document.querySelectorAll(LIST)];
       const area = document.querySelector(AREA);
-      if (!lists.length && !area) return { status: 'sem_lista', clicks: 0, found: 0 };
-
-      let found = 0, ready = [], source;
-      // Uma lista vazia ou bloqueada pode continuar montada atrás de outro painel.
-      for (const list of lists) {
-        const buttons = [...list.querySelectorAll(TARGET)];
-        found = Math.max(found, buttons.length);
-        ready = buttons.filter(canClick);
-        if (!ready.length) continue;
-        found = buttons.length;
-        source = list;
-        break;
-      }
-      if (!source && area) {
-        // Sem a lista, aceite somente os botões de caídos dentro da área da hunt.
+      const sceneOff = sceneIsOff(document);
+      const groups = lists.map(source => ({ source, buttons: [...source.querySelectorAll(TARGET)] }));
+      if (area) {
         const buttons = [...area.querySelectorAll('button.caido')];
-        found = Math.max(found, buttons.length);
-        ready = buttons.filter(canClick);
-        if (ready.length) found = buttons.length;
-        source = area;
+        groups.push({ source: area, buttons: buttons.filter(button => !lists.some(list => list.contains(button))) });
       }
-      if (!ready.length) {
-        return { status: found ? 'bloqueado' : lists.length ? 'aguardando' : 'sem_lista', clicks: 0, found };
-      }
-
       const now = time();
-      for (const [slot, submittedAt] of slots) if (now - submittedAt >= RETRY_MS) slots.delete(slot);
-
-      let clicks = 0;
-      for (const button of ready) {
-        if (!source.contains(button) || !canClick(button)) continue;
-        const specimen = button.dataset.caidoId ?? button.dataset.pokemonId;
-        const slot = button.dataset.slot;
-        const key = specimen ? JSON.stringify(['pokemon', specimen, slot]) :
-          slot != null ? JSON.stringify(['slot', slot, button.textContent.trim()]) : null;
-        const previous = recent.get(button);
-        if ((previous?.key === key && now - previous.at < RETRY_MS) || (key && slots.has(key))) continue;
-
-        // A lista pode continuar montada e clicável mesmo atrás de um painel.
-        recent.set(button, { key, at: now });
-        if (key) slots.set(key, now);
-        button.click();
-        if (++clicks >= PER_CYCLE) break;
+      const observed = new Set();
+      const targets = groups.map(({ source, buttons }) => ({ source, targets: buttons.map(button => {
+        const identity = identify(button);
+        observed.add(identity);
+        return { button, identity };
+      }) }));
+      for (const [identity, attempt] of attempts) {
+        if (observed.has(identity)) continue;
+        if (now - attempt.at >= RETRY_MS) attempts.delete(identity);
+        else attempt.present = false;
       }
-      return { status: clicks ? 'clicou' : 'cooldown', clicks, found };
+
+      let found = 0, expired = 0, ready = 0, held = 0;
+      for (const { source, targets: group } of targets) {
+        let clicks = 0;
+        found = Math.max(found, group.length);
+        for (const { button, identity } of group) {
+          if (!source.contains(button) || !canClick(button)) continue;
+          const remaining = countdown(button);
+          if (remaining === 0) {
+            expired++;
+            continue;
+          }
+          ready++;
+          const previous = attempts.get(identity);
+          if (sceneOff && previous?.present && previous.remaining === remaining) {
+            held++;
+            continue;
+          }
+          if (previous && now - previous.at < RETRY_MS) continue;
+
+          attempts.set(identity, { at: now, present: true, remaining });
+          button.click();
+          if (++clicks >= PER_CYCLE) break;
+        }
+        if (clicks) return { status: 'clicou', clicks, found: group.length };
+      }
+
+      let status = lists.length ? 'aguardando' : 'sem_lista';
+      if (found) status = 'bloqueado';
+      if (expired) status = 'expirado';
+      if (ready) status = 'cooldown';
+      if (sceneOff && (!ready || held === ready)) status = 'cena_desligada';
+      return { status, clicks: 0, found };
     };
   }
 

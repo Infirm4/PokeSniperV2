@@ -21,9 +21,10 @@ o resultado da captura pelo próprio jogo.
 
 Os botões podem ser acionados enquanto continuam montados e habilitados,
 mesmo quando a interface está escondida por um painel ou pela janela
-minimizada. Se houver mais de uma lista na página, o bot procura a primeira
-com alvos habilitados. Se o jogo remover os botões, a extensão aguarda e
-retoma quando eles voltarem. A extensão mantém a aba
+minimizada. O bot pula alvos cujo contador zerou e procura a primeira lista
+com alvos disponíveis para tentativa. Com a cena do jogo desligada, ele
+aguarda uma atualização no botão antes de repetir um alvo. Se o jogo remover
+os botões, a extensão aguarda e retoma quando eles voltarem. A extensão mantém a aba
 selecionada protegida do descarte automático enquanto a captura está ligada
 e restaura a configuração anterior ao desligar.
 
