@@ -18,9 +18,11 @@ li { padding: 10px; background: #302234; border-radius: 6px; }
 .offer-meta { margin-top: 4px; }
 :focus-visible { outline: 2px solid #f3a5d8; outline-offset: 2px; }
 
-#lookup-matches { gap: 4px; max-height: 208px; overflow: auto; }
-#lookup-matches li { padding: 0; }
-#lookup-matches button { width: 100%; text-align: left; }
+.opportunity-history { margin-top: 16px; }
+.opportunity-history h2 { margin: 0; font-size: 16px; }
+#status { margin: 6px 0 10px; }
+#offers { margin: 0; }
+#offers li > details { margin: 0; }
 #diagnostic-report {
   box-sizing: border-box;
   width: 100%;

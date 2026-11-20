@@ -2,7 +2,7 @@
 const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
-  const DB_VERSION = 15;
+  const DB_VERSION = 16;
   const ESTIMATE_REVISION = 6;
   const revisionFor = row => row?.currency === 'gold' ? 7 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
@@ -44,6 +44,24 @@ const PISMarketStore = (() => {
         if (event.oldVersion < 3) {
           const opportunities = db.createObjectStore('opportunities', { keyPath: 'key' });
           opportunities.createIndex('observedAt', 'observedAt');
+        }
+        if (event.oldVersion < 16) {
+          const store = tx.objectStore('opportunities');
+          store.createIndex('deliveredAt', 'deliveredAt');
+          const cutoff = Date.now() - PISOpportunities.TTL;
+          // A fila antiga tentava enviar por até 10 min após a observação.
+          const recent = store.index('observedAt').openCursor(IDBKeyRange.lowerBound(cutoff - PISOpportunities.TTL));
+          recent.onsuccess = () => {
+            const cursor = recent.result;
+            if (!cursor) return;
+            const row = cursor.value;
+            // Antes, o mesmo instante era persistido mais um minuto por tentativa.
+            const deliveredAt = row.nextAttemptAt - row.attempts * 60000;
+            if (row.delivery === 'sent' && Number.isFinite(deliveredAt) && deliveredAt > cutoff) {
+              cursor.update({ ...row, deliveredAt });
+            }
+            cursor.continue();
+          };
         }
         if (event.oldVersion < 4) {
           const exposures = db.createObjectStore('exposures', { keyPath: 'key' });
@@ -163,6 +181,7 @@ const PISMarketStore = (() => {
     const store = tx.objectStore('opportunities');
     const key = PISOpportunities.key(priced);
     const previous = await result(store.get(key));
+    if (previous?.delivery === 'sent') return;
     store.put({ ...priced, key, delivery: previous?.delivery ?? 'pending',
       attempts: previous?.attempts ?? 0, nextAttemptAt: previous?.nextAttemptAt ?? 0, deliveryChannels: previous?.deliveryChannels });
   }
@@ -453,6 +472,14 @@ const PISMarketStore = (() => {
     return current.filter(Boolean).reverse();
   }
 
+  async function deliveredOpportunities(now = Date.now()) {
+    const db = await open();
+    const store = db.transaction('opportunities').objectStore('opportunities');
+    const range = IDBKeyRange.bound(now - PISOpportunities.TTL, now, true);
+    const rows = await result(store.index('deliveredAt').getAll(range));
+    return rows.reverse();
+  }
+
   async function currentOpportunity(key, id, config, now = Date.now(), forReview = false) {
     const db = await open();
     const tx = db.transaction(['opportunities', 'listings']);
@@ -498,7 +525,7 @@ const PISMarketStore = (() => {
     await done;
   }
 
-  async function markDelivery(key, delivered, now = Date.now(), channels) {
+  async function markDelivery(key, delivered, now = Date.now(), channels, snapshot) {
     const db = await open();
     const tx = db.transaction('opportunities', 'readwrite');
     const done = new Promise((resolve, reject) => {
@@ -513,7 +540,13 @@ const PISMarketStore = (() => {
       if (channels) row.deliveryChannels = channels;
       row.delivery = delivered ? 'sent' : row.attempts >= 3 ? 'failed' : 'pending';
       row.nextAttemptAt = now + 60000 * row.attempts;
-      store.put(row);
+      if (delivered) {
+        const offer = snapshot ?? row;
+        store.put({ ...offer, key, attempts: row.attempts, nextAttemptAt: row.nextAttemptAt,
+          delivery: row.delivery, deliveryChannels: row.deliveryChannels, deliveredAt: now });
+      } else {
+        store.put(row);
+      }
     }
     await done;
   }
@@ -768,5 +801,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, deliveredOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
 })();

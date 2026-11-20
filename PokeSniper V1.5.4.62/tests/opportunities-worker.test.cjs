@@ -27,7 +27,11 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
   };
   const PISMarketStore = {
     recentOpportunities: async () => rows, currentOpportunity: async key => rows.find(row => row.key === key),
-    markDelivery: async (key, delivered, _time, channels) => { results.push([key, delivered, channels.desktop, channels.game]); },
+    markDelivery: async (key, delivered, time, channels, offer) => {
+      assert.equal(offer, rows.find(row => row.key === key));
+      assert.ok(Number.isFinite(time));
+      results.push([key, delivered, channels.desktop, channels.game]);
+    },
   };
   const PISGameTab = { show: async (_title, message) => {
     gameAttempts.push(message);

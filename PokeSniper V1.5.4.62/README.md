@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.61)
+# PokeIdle Market Sniper (v1.5.4.62)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -343,10 +343,11 @@ páginas e rode **Diagnóstico da versão**. O campo `histórico_na_sessão` mos
 observadas, quantas linhas tinham ficha e quantas vendas foram novas, repetidas ou enriqueceram
 a ficha. Ele contém apenas metadados e contagens e mantém os últimos 40 eventos da sessão.
 
-## Análise pelo nome e diagnóstico (v1.5.4.13)
+## Oportunidades e diagnóstico
 
-No ícone do PokeSniper, abra **Analisar Pokémon**. Busque pelo nome ou escolha um anúncio
-recente. Se a busca estiver vazia, abra primeiro a vitrine do jogo e filtre a espécie desejada.
+O painel **Oportunidades** reúne os avisos enviados ao jogo ou aceitos pelo
+Chrome nos últimos 10 minutos, em ordem de envio. Cada cartão mantém o preço
+e o desconto do momento do aviso, mesmo que a oferta depois saia do mercado.
 
 Para validar a instalação, abra **Tabela de preços → Pokémon** e a vitrine. Em seguida, no
 ícone da extensão, use **Diagnóstico da versão → Rodar diagnóstico → Copiar resultado**. O
@@ -356,10 +357,9 @@ inclui nomes de jogadores nem informações de anúncios individuais.
 
 ## Precificação por atributos e liquidez (v1.5.4.12)
 
-Abra o ícone do PokeSniper no Chrome para ver **Oportunidades**. Em **Analisar Pokémon**,
-é possível consultar um anúncio já visto, inclusive fora dos filtros de alerta. Em **Comparáveis e
-simulação de revenda**, altere o nível e o preço de saída separadamente. O desconto continua
-referente ao anúncio original. Liquidez não integra o preço nem o disparo.
+Expanda um cartão em **Oportunidades** para abrir **Comparáveis e simulação
+de revenda**. Altere o nível e o preço de saída separadamente. O desconto
+continua referente ao anúncio original. Liquidez não integra o preço nem o disparo.
 
 O histórico é alimentado pelas páginas da vitrine e da **Tabela de preços → Pokémon** que chegam
 ao cliente. A atualização não faz novas consultas. A ficha de venda preserva atributos recebidos

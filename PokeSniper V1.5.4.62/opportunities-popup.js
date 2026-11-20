@@ -9,13 +9,9 @@ const format = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 let config;
 let generation = 0;
 let rendered = '';
-const lookup = document.querySelector('#lookup');
-const analysis = document.querySelector('#analysis-result');
 const diagnostics = document.querySelector('#diagnostics');
-const lookupStatus = document.querySelector('#lookup-status');
-const lookupMatches = document.querySelector('#lookup-matches');
-const lookupPanel = document.querySelector('#lookup-panel');
-let lookupRequest = 0;
+const noticeTime = new Intl.DateTimeFormat('pt-BR', { timeStyle: 'medium', timeZone: 'America/Sao_Paulo' });
+let expiryTimer;
 
 function text(tag, value, className) {
   const element = document.createElement(tag);
@@ -155,16 +151,18 @@ function opportunityCard(row) {
   details.dataset.offerKey = row.key;
   const summary = document.createElement('summary');
   summary.className = 'offer-title';
-  const offer = PISOpportunities.presentation(row);
+  const offer = PISOpportunities.presentation(row, row.deliveredAt, { noticeIvsOnly: true });
   const block = document.createElement('span');
   block.className = 'opportunity-copy';
   block.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')),
     text('span', `${offer.discount} · ${offer.asking}`, 'opportunity-price'));
   if (offer.tier) block.append(text('span', offer.tier, 'offer-meta'));
   if (offer.composition) block.append(text('span', offer.composition, 'offer-meta'));
-  if (row.currency !== 'gold' && offer.range) block.append(text('span', offer.range, 'offer-meta'));
-  if (offer.hold) block.append(text('span', offer.hold, 'offer-meta'));
+  if (offer.range) block.append(text('span', offer.range, 'offer-meta'));
   if (offer.warning) block.append(text('span', offer.warning, 'offer-meta'));
+  const time = text('time', noticeTime.format(row.deliveredAt), 'offer-meta');
+  time.dateTime = new Date(row.deliveredAt).toISOString();
+  block.append(time);
   const sprite = document.createElement('img');
   sprite.alt = '';
   sprite.className = 'opportunity-sprite';
@@ -200,13 +198,11 @@ function opportunityCard(row) {
 async function refresh() {
   const request = ++generation;
   try {
-    const [rows, stats] = await Promise.all([
-      PISMarketStore.recentOpportunities(config), PISMarketStore.diagnostics(config),
-    ]);
+    const rows = await PISMarketStore.deliveredOpportunities();
     if (request !== generation) return;
-    const visible = rows.filter(row => PISOpportunities.approved(row, config)).slice(0, 100);
+    const cutoff = Date.now() - PISOpportunities.TTL;
+    const visible = rows.filter(row => row.deliveredAt > cutoff);
     const signature = JSON.stringify([config, visible]);
-    // Uma oferta que deixou de atender aos filtros sai mesmo se o cartão estiver aberto.
     if (signature !== rendered) {
       const expanded = new Set([...offers.querySelectorAll('details[data-offer-key][open]')].map(card => card.dataset.offerKey));
       offers.replaceChildren(...visible.map(row => {
@@ -216,76 +212,25 @@ async function refresh() {
       }));
       rendered = signature;
     }
-    const { pisMarketMonitor } = await chrome.storage.session.get('pisMarketMonitor');
-    if (request !== generation) return;
-    panelStatus.textContent = visible.length
-      ? `${visible.length} oportunidades dos últimos 10 min. Confira a oferta no jogo.`
-      : !stats.listings ? (pisMarketMonitor?.state === 'varrendo'
-        ? 'Aguardando as primeiras páginas do mercado.'
-        : pisMarketMonitor?.state === 'aguardando_socket' ? 'Aguardando a conexão do PokéIdle.'
-          : pisMarketMonitor?.state === 'aguardando_tráfego' ? 'Conexão aberta. Aguardando dados do jogo.'
-          : 'Sem páginas recentes. Deixe os avisos ligados e o PokéIdle aberto e conectado.')
-        : 'Nenhuma oportunidade recente atende aos filtros.';
-    diagnostics.textContent = `${stats.listings} anúncios recentes · ${stats.sales} vendas no banco · ${stats.detailed} avaliados pelo perfil · ${stats.noEstimate} sem avaliação · ${stats.price} acima do preço de referência · ${stats.filters} barrados pelos filtros · ${stats.matched} oportunidades. Notificações ${config.notify ? 'ligadas' : 'desligadas'} · ${stats.pending} pendentes · ${stats.held} retidas · ${stats.sent} enviadas (${stats.sentInGame} no jogo · ${stats.sentDesktop} aceitas pelo Chrome) · ${stats.failed} com falha.`;
-  } catch (error) {
-    if (request === generation) panelStatus.textContent = 'Não foi possível ler as oportunidades. ' + error.message;
-  }
-}
-
-async function searchListings(query) {
-  const request = ++lookupRequest;
-  lookupStatus.textContent = 'Consultando anúncios observados…';
-  lookupMatches.replaceChildren();
-  analysis.replaceChildren();
-  try {
-    const rows = await PISMarketStore.findListings(query);
-    if (request !== lookupRequest) return;
-    if (!rows.length) {
-      lookupStatus.textContent = 'Nenhum anúncio encontrado. Abra a vitrine no jogo e busque o Pokémon lá para o Sniper observar o anúncio.';
-      return;
+    panelStatus.textContent = visible.length === 1 ? '1 aviso nos últimos 10 min.' : visible.length
+      ? `${visible.length} avisos nos últimos 10 min.`
+      : 'Nenhum aviso nos últimos 10 min.';
+    clearTimeout(expiryTimer);
+    if (visible.length) {
+      const expiresAt = visible.at(-1).deliveredAt + PISOpportunities.TTL;
+      expiryTimer = setTimeout(refresh, Math.max(0, expiresAt - Date.now()));
     }
-    const items = rows.map(row => {
-      const item = document.createElement('li');
-      const name = row.name || 'Pokémon #' + row.speciesId;
-      const unit = row.currency === 'gold' ? 'Coins' : 'Gemas';
-      const button = text('button', `${name}${row.shiny ? ' · Shiny' : ''} · Nv. ${row.level ?? '?'} · ${format.format(row.price)} ${unit}`);
-      button.type = 'button';
-      button.addEventListener('click', async () => {
-        const selection = ++lookupRequest;
-        analysis.replaceChildren(text('li', 'Atualizando a estimativa…'));
-        try {
-          const updated = await PISMarketStore.analyzeListing(row);
-          if (selection === lookupRequest) {
-            analysis.replaceChildren(card(updated, true));
-            const name = updated.currency === 'gold' && !PISMarketCore.isOutland(updated) &&
-              PISCoinsHistory.cleanSpecies(updated.name);
-            if (name) chrome.runtime.sendMessage({ type: 'PIS_LOOKUP_COINS', name }).catch(() => {});
-          }
-        } catch {
-          if (selection === lookupRequest) analysis.replaceChildren(text('li', 'Não foi possível atualizar a estimativa.'));
-        }
-      });
-      item.append(button);
-      return item;
-    });
-    lookupMatches.replaceChildren(...items);
-    lookupStatus.textContent = `${rows.length} resultado${rows.length === 1 ? '' : 's'} · selecione um anúncio para analisar.`;
-  } catch (error) {
-    if (request === lookupRequest) lookupStatus.textContent = 'Falha na consulta. ' + error.message;
+  } catch {
+    if (request === generation) panelStatus.textContent = 'Não foi possível ler os avisos recentes.';
+  }
+  try {
+    const stats = await PISMarketStore.diagnostics(config);
+    if (request !== generation) return;
+    diagnostics.textContent = `${stats.listings} anúncios recentes · ${stats.sales} vendas no banco · ${stats.detailed} avaliados pelo perfil · ${stats.noEstimate} sem avaliação · ${stats.price} acima do preço de referência · ${stats.filters} barrados pelos filtros · ${stats.matched} oportunidades. Notificações ${config.notify ? 'ligadas' : 'desligadas'} · ${stats.pending} pendentes · ${stats.held} retidas · ${stats.sent} enviadas (${stats.sentInGame} no jogo · ${stats.sentDesktop} aceitas pelo Chrome) · ${stats.failed} com falha.`;
+  } catch {
+    if (request === generation) diagnostics.textContent = 'Não foi possível ler o diagnóstico do mercado.';
   }
 }
-
-lookup.addEventListener('submit', event => {
-  event.preventDefault();
-  searchListings(lookup.elements.pokemon.value.trim());
-});
-document.querySelector('#recent-listings').addEventListener('click', () => {
-  lookup.elements.pokemon.value = '';
-  searchListings('');
-});
-lookupPanel.addEventListener('toggle', () => {
-  if (lookupPanel.open && lookupRequest === 0) searchListings('');
-});
 
 const copySmartCoins = document.querySelector('#copy-smart-coins');
 copySmartCoins.addEventListener('click', async () => {

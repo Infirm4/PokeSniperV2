@@ -73,7 +73,7 @@ const PISOpportunityAlerts = (() => {
         console.warn('[PIS] Aviso visual do Chrome indisponível.');
       }
       const game = await inGame;
-      await PISMarketStore.markDelivery(row.key, desktop || game, Date.now(), { desktop, game });
+      await PISMarketStore.markDelivery(row.key, desktop || game, Date.now(), { desktop, game }, row);
       globalThis.PISMarketEventLog?.record(chrome.storage.local, row.currency, desktop || game ? 'aviso_enviado' : 'aviso_falhou');
     }
   }
