@@ -62,8 +62,7 @@ const PISOpportunityAlerts = (() => {
       const row = await PISMarketStore.currentOpportunity(candidate.key, candidate.id, current);
       if (!row) continue;
       // ID determinístico mantém apenas uma notificação para a mesma revisão após uma retomada.
-      const title = row.name || 'Pokémon #' + row.speciesId;
-      const { message } = PISOpportunities.presentation(row);
+      const { title, message } = PISOpportunities.noticePresentation(row);
       const sprites = PISOpportunities.spriteCandidates(row);
       const inGame = PISGameTab.show(title, message, false, sprites[0], PISMarketCore.purchaseOffer(row), sprites[1]).catch(() => false);
       let desktop = false;

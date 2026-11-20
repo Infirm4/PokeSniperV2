@@ -190,9 +190,13 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     if (req.kind !== 'listing' || req.automatic !== true) return Promise.resolve();
     const currency = ['gold', 'orb'].includes(req.currency) ? req.currency : null;
     const page = { status, accepted, page: Number.isSafeInteger(req.page) ? req.page : null, currency,
+      preparação_de_selos: req.preparation === true,
       totalRows: Number.isSafeInteger(req.totalRows) ? req.totalRows : null, at: Date.now() };
     const receipts = { pisMarketAutomaticPage: page };
-    if (currency) receipts['pisMarketPage:' + currency] = page;
+    if (currency) {
+      receipts['pisMarketPage:' + currency] = page;
+      if (req.preparation === true) receipts['pisMarketPrepared:' + currency] = page;
+    }
     return chrome.storage.session.set(receipts).catch(() => {});
   }
   const traceEvent = history ? req.event : req.kind === 'sale' ? 'legacy_batch' : null;

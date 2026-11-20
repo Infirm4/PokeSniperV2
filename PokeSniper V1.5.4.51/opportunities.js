@@ -158,7 +158,23 @@
       message: [`${discount} · ${asking}`, coins ? tier : range, composition, hold, warning].filter(Boolean).join('\n') };
   }
 
-  const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation };
+  function noticePresentation(row, now = Date.now()) {
+    const { hold, composition, warning } = presentation(row, now);
+    const amount = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+    const discount = row.estimate.discount > 0 ? '−' + amount.format(row.estimate.discount * 100) + '%' : '0%';
+    const title = [discount, row.name || 'Pokémon #' + row.speciesId,
+      row.level > 0 ? 'Nvl ' + row.level : '', row.power > 0 ? 'P' + row.power : ''].filter(Boolean).join(' ');
+    const coins = row.currency === 'gold';
+    const median = row.estimate.median;
+    const precision = coins && median < 10000 ? 6 : coins ? 2 : 0;
+    const price = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: precision })
+      .format(coins ? median / 1e6 : median);
+    const fair = Number.isFinite(median) && median > 0 ?
+      `Preço justo ${coins ? '🪙' : '💎'} ${price}${coins ? ' MI' : ''}` : 'Preço justo indisponível';
+    return { title, message: [fair, hold, composition, warning].filter(Boolean).join('\n') };
+  }
+
+  const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, noticePresentation };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISOpportunities = core;
 })();

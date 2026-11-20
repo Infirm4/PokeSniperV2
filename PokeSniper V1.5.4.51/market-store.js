@@ -465,13 +465,15 @@ const PISMarketStore = (() => {
     return { ...entry, ...listing };
   }
 
+  // Uma leitura recente da ficha basta para exibir a cotação da vitrine.
+  // A janela menor dos alertas continua aplicada na fila de oportunidades.
   async function marketBadges(offers, now = Date.now()) {
     const db = await open();
     const listings = db.transaction('listings').objectStore('listings');
     const rows = await Promise.all(offers.map(async offer => {
       const row = await result(listings.get(listingKey(offer)));
       if (!row || row.pricingRevision !== revisionFor(row) || !PISMarketCore.matchesDisplayPrice(row.price, offer) ||
-          row.observedAt < now - PISOpportunities.TTL || row.closed || row.expiresAt && row.expiresAt <= now) return null;
+          row.observedAt < now - 60 * 60000 || row.closed || row.expiresAt && row.expiresAt <= now) return null;
       return PISMarketCore.isOutland(row) ? null : { offer, row };
     }));
     return rows.filter(Boolean);

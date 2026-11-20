@@ -53,3 +53,14 @@ test('formata desconto, anúncio e intervalo em milhões de Coins, sem misturar 
   const gems = presentation({ price: 100, currency: 'orb', estimate: { discount: 0.20, lower: 110, upper: 140 } });
   assert.equal(gems.message, '20% de desconto · 100 Gemas\nFaixa justa estimada · 110–140 Gemas');
 });
+
+test('o aviso de Gemas resume a ficha e identifica a moeda do preço justo', () => {
+  const { noticePresentation } = require('../opportunities.js');
+  const now = Date.UTC(2026, 10, 20, 3, 0, 0);
+  const result = noticePresentation({
+    currency: 'orb', name: 'Meganium', level: 306, power: 1, price: 30, availableAt: now + 60_000,
+    estimate: { discount: 1 - 30 / 71, median: 71 },
+  }, now);
+  assert.equal(result.title, '−57,7% Meganium Nvl 306 P1');
+  assert.equal(result.message, 'Preço justo 💎 71\nRetido até 00:01:00 (Brasília)');
+});

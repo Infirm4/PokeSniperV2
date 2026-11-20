@@ -406,7 +406,7 @@ runDiagnostics.addEventListener('click', async () => {
     const trace = Promise.resolve().then(() => chrome.storage.session.get(PISHistoryTrace.KEY))
       .then(value => value[PISHistoryTrace.KEY] ?? []).catch(() => 'indisponível');
     const sourceCheck = chrome.storage.local.get(['pisPublicGemsCheck', 'pisMarketEvents', 'pisSalesBackupStatus']).catch(() => ({}));
-    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisMarketPage:gold', 'pisMarketPage:orb', 'pisMarketQuery:gold', 'pisMarketQuery:orb', 'pisMarketQuery:history', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie', 'pisCoinsHistory:backfill']).catch(() => ({}));
+    const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisMarketPage:gold', 'pisMarketPage:orb', 'pisMarketPrepared:gold', 'pisMarketPrepared:orb', 'pisMarketQuery:gold', 'pisMarketQuery:orb', 'pisMarketQuery:history', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie', 'pisCoinsHistory:backfill']).catch(() => ({}));
     const [notificationPermission, database, alerts, history, automatic, publicSource] =
       await Promise.all([permission, snapshot, pipeline, trace, monitor, sourceCheck]);
     const tests = PISMarketSmoke.run();
