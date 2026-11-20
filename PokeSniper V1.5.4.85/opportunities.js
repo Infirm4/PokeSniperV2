@@ -12,10 +12,15 @@
   const MIN_ACTIVE_GRADE = 3.5;
 
   function minimumGrade(value) {
-    const text = String(value ?? '').trim();
-    if (!/^(?:[0-9](?:[.,][0-9]{1,2})?|10(?:[.,]0{1,2})?)$/.test(text)) return DEFAULTS.minGrade;
-    const grade = Number(text.replace(',', '.'));
-    return grade > 0 ? Math.max(MIN_ACTIVE_GRADE, grade) : DEFAULTS.minGrade;
+    const parts = /^([0-9]+)(?:[.,]([0-9]*))?$/.exec(String(value ?? '').trim());
+    if (!parts) return DEFAULTS.minGrade;
+    let [, whole, fraction] = parts;
+    if (fraction === undefined && whole.length > 1 && whole !== '10') {
+      fraction = whole.slice(1, 3);
+      whole = whole[0];
+    }
+    const grade = Number(`${whole}.${(fraction ?? '').slice(0, 2)}`);
+    return grade > 0 ? Math.min(10, Math.max(MIN_ACTIVE_GRADE, grade)) : DEFAULTS.minGrade;
   }
 
   function settings(raw = {}) {

@@ -49,6 +49,15 @@ test('aplica a nota mínima a Coins e Gemas e mantém o filtro desligado quando 
   }
 });
 
+test('formata notas digitadas em sequência e descarta casas decimais excedentes', () => {
+  assert.equal(settings({ minGrade: '3755555' }).minGrade, 3.75);
+  assert.equal(settings({ minGrade: ' 3,759  ' }).minGrade, 3.75);
+  assert.equal(settings({ minGrade: '3.759' }).minGrade, 3.75);
+  assert.equal(settings({ minGrade: '48' }).minGrade, 4.8);
+  assert.equal(settings({ minGrade: '349' }).minGrade, 3.5);
+  assert.equal(settings({ minGrade: '10' }).minGrade, 10);
+});
+
 test('exibe pelo desconto mínimo mesmo acima da faixa inferior e ignora o teto salvo na versão antiga', () => {
   const withinBand = { ...row, price: 95_000_000,
     estimate: { status: 'estimated', lower: 90_000_000, median: 100_000_000, discount: 0.05 } };

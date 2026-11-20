@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.84)
+# PokeIdle Market Sniper (v1.5.4.85)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -21,7 +21,8 @@ O topo do painel mostra **Ligar avisos** ou **Desligar avisos**, com o estado
 atual ao lado. A mudança vale imediatamente. **Salvar filtros** grava a
 moeda, o desconto mínimo e a Nota mínima do Pokémon anunciado. O corte de
 Nota pode ir de `3,50` a `10,00` e vale para Coins e Gemas. Deixe vazio ou
-informe `0` para desativar o corte.
+informe `0` para desativar o corte. Na digitação sem separador, `375` vira
+`3,75`. O campo mantém até duas casas decimais ao sair ou salvar.
 
 
 O parser do mercado é carregado no navegador mesmo quando a página expõe
