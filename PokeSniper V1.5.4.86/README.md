@@ -1,4 +1,7 @@
-# PokeIdle Market Sniper (v1.5.4.85)
+# PokeIdle Market Sniper (v1.5.4.86)
+
+O [launcher para Windows](../launcher-windows/README.md) cria um atalho na
+área de trabalho, atualiza a extensão e abre o PokéIdle no Chrome.
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
