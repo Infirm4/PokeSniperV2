@@ -128,11 +128,11 @@
 
   const IV_LABELS = { hp: 'HP', attack: 'Ataque', defense: 'Defesa', specialAttack: 'Atq. Esp.',
     specialDefense: 'Def. Esp.', speed: 'Velocidade' };
-  const CRITICAL_IVS = ['speed', 'attack', 'specialAttack'];
+  const NOTICE_IVS = ['speed', 'attack', 'specialAttack'];
   const isLowIv = value => Number.isInteger(value) && value >= 0 && value < 10;
 
   // Formata o mesmo desconto e os mesmos valores para painel e avisos.
-  function presentation(row, now = Date.now(), { criticalIvsOnly = false } = {}) {
+  function presentation(row, now = Date.now(), { noticeIvsOnly = false } = {}) {
     const coins = row.currency === 'gold';
     const unit = coins ? 'Mi Coins' : 'Gemas';
     const money = value => new Intl.NumberFormat('pt-BR', {
@@ -144,9 +144,9 @@
     const { lower, upper } = row.estimate;
     const range = Number.isFinite(lower) && Number.isFinite(upper)
       ? `Faixa justa estimada · ${money(lower)}–${money(upper)} ${unit}` : '';
-    const ivs = criticalIvsOnly
-      ? CRITICAL_IVS.filter(key => isLowIv(row.ivs?.[key]))
-        .map(key => `${IV_LABELS[key]} ${row.ivs[key]} (crítico)`)
+    const ivs = noticeIvsOnly
+      ? NOTICE_IVS.filter(key => Number.isInteger(row.ivs?.[key]) && row.ivs[key] >= 0 && row.ivs[key] <= 25)
+        .map(key => `${IV_LABELS[key]} ${row.ivs[key]} (${row.ivs[key] < 15 ? 'crítico' : 'baixo'})`)
       : coins ? coinIvs(row, IV_LABELS) : Object.keys(IV_LABELS)
         .filter(key => isLowIv(row.ivs?.[key])).map(key => IV_LABELS[key]);
     const warning = [ivs.length ? 'IV baixo: ' + ivs.join(', ') : '',
@@ -165,7 +165,7 @@
   }
 
   function noticePresentation(row, now = Date.now()) {
-    const { hold, composition, warning } = presentation(row, now, { criticalIvsOnly: true });
+    const { hold, composition, warning } = presentation(row, now, { noticeIvsOnly: true });
     const amount = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
     const discount = row.estimate.discount > 0 ? '−' + amount.format(row.estimate.discount * 100) + '%' : '0%';
     const title = [discount, row.name || 'Pokémon #' + row.speciesId,
