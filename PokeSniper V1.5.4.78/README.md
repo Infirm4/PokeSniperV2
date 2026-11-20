@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.77)
+# PokeIdle Market Sniper (v1.5.4.78)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -206,7 +206,7 @@ Com a vitrine fechada, o monitor intercala páginas de Coins e Gemas para
 preparar selos em segundo plano. A primeira página de lançamentos continua
 prioritária. Ao abrir a vitrine, as consultas auxiliares pausam. Os avisos
 mostram o nome e o desconto no título. Nível, Potência e Nota ficam na
-primeira linha do corpo. O preço anunciado e o preço justo aparecem abaixo. Nos avisos de Velocidade, Ataque e Ataque Especial,
+primeira linha do corpo. O preço anunciado e o preço justo aparecem abaixo. Nos avisos de Speed, Atk e Sp Atk,
 IVs de 0 a 14 são marcados como `(crítico)`, de 15 a 24 como `(baixo)` e a partir de 25 como `(Pica)`.
 HP, Defesa e Defesa Especial ficam disponíveis na ficha detalhada.
 
@@ -411,10 +411,9 @@ informar o nome de um Pokémon da vitrine e comparar o preço justo, a faixa e
 o desconto com e sem esse ajuste. O relatório inclui a referência do motor
 do BriaoAle, na mesma ficha e data da base. Nenhum aviso é gerado pelo teste.
 
-Nos avisos de Coins e Gemas, a Velocidade é sempre mostrada: crítico abaixo
-de 15, média de 15 a 24 e Pica a partir de 25. O aviso também mostra o IV
-do ataque dominante. Em espécies equilibradas, mostra Ataque e
-Ataque Especial separadamente. A Velocidade não recebe um ajuste direto no preço.
+Nos avisos de Coins e Gemas, Speed e o ataque dominante são rotulados como
+crítico abaixo de 15, média de 15 a 24 e Pica a partir de 25. Em espécies
+equilibradas, o aviso mostra Atk e Sp Atk separadamente. A Velocidade não recebe um ajuste direto no preço.
 
 No relatório do mercado, `banco.vendas_sem_sprite` separa Outlaws identificados
 de fichas sem indício de Outlaw, distinguindo se o nome estava disponível.

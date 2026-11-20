@@ -48,11 +48,11 @@ function detailsFor(row, unit) {
   const details = document.createElement('details');
   details.append(text('summary', 'Comparáveis e simulação de revenda'));
   const ivs = row.ivs || {};
-  details.append(text('p', `P${row.power ?? '?'} · Qualidade ${row.quality ?? '?'} · IV total ${row.ivTotal ?? '?'} · Velocidade ${ivs.speed ?? '?'}`, 'pis-v2-meta'));
-  details.append(text('p', `IVs HP ${ivs.hp ?? '?'} · Atq ${ivs.attack ?? '?'} · Def ${ivs.defense ?? '?'} · Atq Esp ${ivs.specialAttack ?? '?'} · Def Esp ${ivs.specialDefense ?? '?'}`, 'pis-v2-meta'));
+  details.append(text('p', `P${row.power ?? '?'} · Qualidade ${row.quality ?? '?'} · IV total ${row.ivTotal ?? '?'} · Speed ${ivs.speed ?? '?'}`, 'pis-v2-meta'));
+  details.append(text('p', `IVs HP ${ivs.hp ?? '?'} · Atk ${ivs.attack ?? '?'} · Def ${ivs.defense ?? '?'} · Sp Atk ${ivs.specialAttack ?? '?'} · Def Esp ${ivs.specialDefense ?? '?'}`, 'pis-v2-meta'));
   const estimate = row.estimate;
   for (const sale of estimate?.comparables || []) {
-    details.append(text('div', `${format.format(sale.price)} ${unit} · Nv. ${sale.level} · Nota ${format.format(sale.grade)} · P${sale.power ?? '?'} · Vel. ${sale.speed ?? '?'} · ${new Date(sale.soldAt).toLocaleDateString('pt-BR')}`, 'pis-v2-meta'));
+    details.append(text('div', `${format.format(sale.price)} ${unit} · Nv. ${sale.level} · Nota ${format.format(sale.grade)} · P${sale.power ?? '?'} · Speed ${sale.speed ?? '?'} · ${new Date(sale.soldAt).toLocaleDateString('pt-BR')}`, 'pis-v2-meta'));
   }
 
   const simulator = document.createElement('form');
@@ -171,12 +171,7 @@ function opportunityCard(row) {
   block.append(heading, text('span', `${offer.discount} · ${offer.asking}`, 'pis-v2-opportunity-price'));
   if (offer.tier) block.append(text('span', offer.tier, 'pis-v2-meta'));
   if (offer.composition) block.append(text('span', offer.composition, 'pis-v2-meta'));
-  if (row.currency === 'orb') {
-    const median = row.estimate.median;
-    if (Number.isFinite(median) && median > 0) {
-      block.append(text('span', `Preço justo ≈${format.format(median)} Gemas`, 'pis-v2-meta'));
-    }
-  } else if (offer.range) block.append(text('span', offer.range, 'pis-v2-meta'));
+  if (offer.fair) block.append(text('span', offer.fair, 'pis-v2-meta'));
   if (offer.warning) block.append(text('span', offer.warning, 'pis-v2-meta'));
   const liquidity = PISOpportunities.liquidityLabel(row);
   if (liquidity) {

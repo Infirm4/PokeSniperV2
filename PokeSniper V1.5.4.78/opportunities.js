@@ -112,18 +112,18 @@
       });
   }
 
-  const IV_LABELS = { hp: 'HP', attack: 'Ataque', defense: 'Defesa', specialAttack: 'Atq. Esp.',
-    specialDefense: 'Def. Esp.', speed: 'Velocidade' };
+  const IV_LABELS = { hp: 'HP', attack: 'Atk', defense: 'Defesa', specialAttack: 'Sp Atk',
+    specialDefense: 'Def. Esp.', speed: 'Speed' };
 
   function noticeIvs(row) {
     const rating = value => value < 15 ? 'crítico' : value < 25 ? 'média' : 'Pica';
     const speed = row.ivs?.speed;
-    const entries = [validIv(speed) ? `Velocidade ${speed} (${rating(speed)})` : 'Velocidade indisponível'];
+    const entries = [validIv(speed) ? `Speed ${speed} (${rating(speed)})` : 'Speed indisponível'];
     const style = attackProfile(row)?.style;
     const attacks = style === 'mixed' ? ['attack', 'specialAttack'] : style ? [style] : [];
     for (const stat of attacks) {
       const value = row.ivs?.[stat];
-      if (validIv(value)) entries.push(`${IV_LABELS[stat]} ${value}`);
+      if (validIv(value)) entries.push(`${IV_LABELS[stat]} ${value} (${rating(value)})`);
     }
     return entries;
   }
@@ -139,7 +139,8 @@
     const discount = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 })
       .format(row.estimate.discount * 100) + '% de desconto';
     const asking = `${money(row.price)} ${unit}`;
-    const { lower, upper } = row.estimate;
+    const { lower, median, upper } = row.estimate;
+    const fair = Number.isFinite(median) && median > 0 ? `Preço justo ≈${money(median)} ${unit}` : '';
     const range = Number.isFinite(lower) && Number.isFinite(upper)
       ? `Faixa justa estimada · ${money(lower)}–${money(upper)} ${unit}` : '';
     const ivs = noticeIvsOnly
@@ -149,7 +150,7 @@
     const warning = [ivs.length ? (noticeIvsOnly ? 'IVs: ' : 'IV baixo: ') + ivs.join(', ') : '',
       coins && row.estimate.qualityBelow ? 'Qualidade abaixo dos comparáveis' : ''].filter(Boolean).join(' · ');
     const { confidence, bepi, powerCounts } = row.estimate;
-    const label = coins ? bepi ? 'BEPI' : ({ alta: 'Alta', média: 'Média' })[confidence] : '';
+    const label = coins ? bepi ? 'BEPI' : ({ alta: 'Confiança alta', média: 'Confiança média', baixa: 'Confiança baixa' })[confidence] : '';
     const composition = coins && bepi && powerCounts ? 'Registros: ' + Object.entries(powerCounts)
       .reverse().map(([power, count]) => `${count} P${power}`).join(' e ') : '';
     const strength = coins && Number.isFinite(lower) ? row.price <= lower ? 'Oferta forte' : 'Oferta fraca' : '';
@@ -157,7 +158,7 @@
     const hold = row.availableAt > now ? 'Retido até ' + new Intl.DateTimeFormat('pt-BR', {
       timeStyle: 'medium', timeZone: 'America/Sao_Paulo',
     }).format(row.availableAt) : '';
-    return { discount, asking, range, warning, hold, tier, composition,
+    return { discount, asking, fair, range, warning, hold, tier, composition,
       message: [`${discount} · ${asking}`, coins ? tier : range, composition, hold, warning].filter(Boolean).join('\n') };
   }
 

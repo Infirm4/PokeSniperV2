@@ -23,7 +23,7 @@
         const offer = { ...record, observedAt: now, estimate: { status: 'estimated', discount: .3, median: 100 } };
         return PISOpportunities.eligible(offer, now) && PISMarketCore.purchaseOffer(offer) === null &&
           PISOpportunities.presentation(offer, now).hold.startsWith('Retido até') &&
-          PISOpportunities.presentation(offer).warning.includes('Velocidade') &&
+          PISOpportunities.presentation(offer).warning.includes('Speed') &&
           PISMarketCore.isOutland({ name: 'War Heracross' });
       }),
       check('anúncio novo exige horário recente da publicação', () =>

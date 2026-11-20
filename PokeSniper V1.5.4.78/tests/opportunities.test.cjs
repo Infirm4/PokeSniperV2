@@ -52,6 +52,8 @@ test('formata desconto, anúncio e intervalo em milhões de Coins, sem misturar 
   assert.equal(presentation({ ...row, price: 123, currency: 'gold' }).asking, '0,000123 Mi Coins');
   const gems = presentation({ price: 100, currency: 'orb', estimate: { discount: 0.20, lower: 110, upper: 140 } });
   assert.equal(gems.message, '20% de desconto · 100 Gemas\nFaixa justa estimada · 110–140 Gemas');
+  assert.equal(presentation({ ...row, estimate: { ...row.estimate, median: 48_400_000 } }).fair,
+    'Preço justo ≈48,4 Mi Coins');
 });
 
 test('o aviso de Gemas mantém a velocidade quando a espécie não está no catálogo', () => {
@@ -63,6 +65,6 @@ test('o aviso de Gemas mantém a velocidade quando a espécie não está no cat�
     estimate: { discount: 1 - 30 / 71, median: 71 },
   }, now);
   assert.equal(result.title, 'Espécie fora do catálogo · −57,7%');
-  assert.equal(result.message, 'Nvl 306 · P1 · Nota 3,620\nMercado 💎 30 · Preço justo 💎 71\nIVs: Velocidade 14 (crítico)');
+  assert.equal(result.message, 'Nvl 306 · P1 · Nota 3,620\nMercado 💎 30 · Preço justo 💎 71\nIVs: Speed 14 (crítico)');
   assert.equal(result.desktopMessage, result.message.replace('Nota 3,620', 'N 3,62'));
 });
