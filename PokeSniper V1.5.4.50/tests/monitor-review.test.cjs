@@ -50,3 +50,23 @@ test('receber a solicitação de revisão não confirma exibição no jogo', asy
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(reply?.ok, true);
 });
+
+test('a ponte solicita o backup ao abrir a aba principal e ao voltar do cache do navegador', () => {
+  const messages = [], events = new Map();
+  const window = {
+    addEventListener(name, handler) { events.set(name, handler); },
+    postMessage() {},
+  };
+  window.top = window;
+  runInNewContext(source('bridge.js'), {
+    window, location: { origin: 'https://pokeidle.io' },
+    chrome: {
+      storage: { local: { async get() { return {}; } }, onChanged: { addListener() {} } },
+      runtime: { onMessage: { addListener() {} }, async sendMessage(req) { messages.push(req.type); } },
+    },
+  });
+  events.get('pageshow')({ persisted: false });
+  assert.deepEqual(messages, ['PIS_GAME_OPEN_SALES_BACKUP']);
+  events.get('pageshow')({ persisted: true });
+  assert.deepEqual(messages, ['PIS_GAME_OPEN_SALES_BACKUP', 'PIS_GAME_OPEN_SALES_BACKUP']);
+});

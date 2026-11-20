@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.49)
+# PokeIdle Market Sniper (v1.5.4.50)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -78,8 +78,9 @@ se os anúncios carregam normalmente, feche-a e repita o diagnóstico.
 ## Backup de vendas no Google Sheets
 
 Na primeira abertura do painel, o Chrome inicia o envio das vendas já
-armazenadas no IndexedDB. Em seguida, há uma sincronização por hora com
-o Chrome aberto, inclusive com o PokéIdle fechado. Lotes continuam pendentes
+armazenadas no IndexedDB. Ao abrir ou reabrir o PokéIdle, a extensão também
+envia as vendas completas que ainda estão pendentes. Há uma sincronização
+por hora com o Chrome aberto, inclusive com o PokéIdle fechado. Lotes continuam pendentes
 até o Sheets confirmar. Uma migração reenfileira as vendas locais da versão
 anterior para preencher o novo modelo.
 

@@ -112,14 +112,14 @@ test('Apps Script reconcilia reenvio sem duplicar, mantém vendas homônimas em 
   assert.equal(limparLinhasForaDoBanco().aplicou, false);
 });
 
-test('o alarme é horário e só dá baixa com confirmação do lote enviado', async () => {
+test('reabrir o jogo sincroniza a fila e só dá baixa após confirmação', async () => {
   let listener, alarmSchedule, acknowledged = 0, confirm = false;
   const fullSale = { ...sale, level: 810, grade: 3.576, power: 1, quality: 1.554, ivTotal: 146,
     ivs: { hp: 29, attack: 32, defense: 30, specialAttack: 31, specialDefense: 24, speed: 0 } };
   const queue = [{ row: fullSale }];
   const storage = {};
   const worker = runInNewContext(read('sales-backup-worker.js'), {
-    PISSalesBackup: backup, PISMarketCore: core, SHEETS_URL: 'https://example.invalid/exec',
+    PISSalesBackup: backup, PISMarketCore: core, SHEETS_URL: 'https://example.invalid/exec', PIS_HOST: /^https:\/\/pokeidle\.io\//,
     crypto: webcrypto, AbortSignal, console,
     PISMarketStore: {
       pendingSalesBackup: async () => queue,
@@ -134,7 +134,7 @@ test('o alarme é horário e só dá baixa com confirmação do lote enviado', a
     chrome: {
       alarms: { get: async () => null, create: async (_, options) => { alarmSchedule = options; }, onAlarm: { addListener() {} } },
       storage: { local: { get: async () => ({ ...storage }), set: async value => Object.assign(storage, value) } },
-      runtime: { getURL: page => page, onInstalled: { addListener() {} }, onStartup: { addListener() {} },
+      runtime: { id: 'own', getURL: page => page, onInstalled: { addListener() {} }, onStartup: { addListener() {} },
         onMessage: { addListener(fn) { listener = fn; } } },
     },
     fetch: async (_, request) => {
@@ -153,16 +153,23 @@ test('o alarme é horário e só dá baixa com confirmação do lote enviado', a
   assert.match(failed.error, /não confirmou/);
   assert.equal(acknowledged, 0);
   confirm = true;
-  assert.equal((await sync()).pending, 0);
-  assert.equal(acknowledged, 1);
-  queue.push({ row: fullSale });
   const openPanel = () => new Promise(resolve =>
     listener({ type: 'PIS_START_SALES_BACKUP' }, { url: 'opportunities.html' }, resolve));
   assert.equal((await openPanel()).pending, 0);
-  assert.equal(acknowledged, 2);
+  assert.equal(acknowledged, 1);
   queue.push({ row: fullSale });
   await openPanel();
+  assert.equal(acknowledged, 1);
+  const request = { type: 'PIS_GAME_OPEN_SALES_BACKUP' };
+  const game = { id: 'own', url: 'https://pokeidle.io/', frameId: 0, tab: { id: 1 } };
+  assert.equal(listener(request, { ...game, url: 'https://other.invalid/' }, () => {}), false);
+  assert.equal(listener(request, { ...game, frameId: 1 }, () => {}), false);
+  const reopened = await new Promise(resolve => listener(request, game, resolve));
+  assert.equal(reopened.reason, 'abertura_do_pokeidle');
+  assert.equal(reopened.saved, 1);
+  assert.equal(reopened.pending, 0);
   assert.equal(acknowledged, 2);
+  queue.push({ row: fullSale });
   queue.unshift({ row: { ...fullSale, id: 'partial', quality: null } });
   const afterStale = await sync();
   assert.equal(afterStale.saved, 1);

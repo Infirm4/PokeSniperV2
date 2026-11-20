@@ -1,7 +1,7 @@
 (() => {
   const ALARM = 'pis-sales-backup-hourly';
   const INITIAL = 'pisSalesBackupInitialCompleteSales';
-  const INITIAL_ALARM = 'pis-sales-backup-catchup';
+  const CATCHUP_ALARM = 'pis-sales-backup-catchup';
   const STATUS = 'pisSalesBackupStatus';
   let active;
 
@@ -25,7 +25,7 @@
     await PISMarketStore.acknowledgeSalesBackup(batch);
   }
 
-  function sync() {
+  function sync(reason) {
     active ??= (async () => {
       const started = Date.now();
       let saved = 0, skipped = 0, error = null;
@@ -50,22 +50,26 @@
         error = String(failure.message).slice(0, 240);
       }
       const pending = await PISMarketStore.pendingSalesBackupCount().catch(() => null);
-      const status = { at: Date.now(), saved, pending, skipped, error };
+      const status = { at: Date.now(), reason, saved, pending, skipped, error };
       await chrome.storage.local.set({ [STATUS]: status });
       return status;
     })().finally(() => { active = null; });
     return active;
   }
 
+  async function syncAndCatchUp(reason) {
+    const status = await sync(reason);
+    if (!status.error && status.pending != null) {
+      if (status.pending === 0) await chrome.storage.local.set({ [INITIAL]: PISSalesBackup.FORMAT });
+      else await chrome.alarms.create(CATCHUP_ALARM, { delayInMinutes: 1 });
+    }
+    return status;
+  }
+
   async function syncInitialLayout() {
     const saved = await chrome.storage.local.get([INITIAL, STATUS]);
     if (saved[INITIAL] === PISSalesBackup.FORMAT) return saved[STATUS] ?? { saved: 0, pending: 0 };
-    const status = await sync();
-    if (!status.error && status.pending != null) {
-      if (status.pending === 0) await chrome.storage.local.set({ [INITIAL]: PISSalesBackup.FORMAT });
-      else await chrome.alarms.create(INITIAL_ALARM, { delayInMinutes: 1 });
-    }
-    return status;
+    return syncAndCatchUp('abertura_do_painel');
   }
 
   function ensureAlarm() {
@@ -78,18 +82,22 @@
   chrome.runtime.onInstalled.addListener(ensureAlarm);
   chrome.runtime.onStartup.addListener(ensureAlarm);
   chrome.alarms.onAlarm.addListener(alarm => {
-    if (alarm.name === ALARM || alarm.name === INITIAL_ALARM) syncInitialLayoutOrHourly(alarm.name).catch(console.warn);
+    if (alarm.name === ALARM) syncAndCatchUp('horário').catch(console.warn);
+    if (alarm.name === CATCHUP_ALARM) syncAndCatchUp('continuação').catch(console.warn);
   });
 
-  async function syncInitialLayoutOrHourly(name) {
-    const state = await chrome.storage.local.get(INITIAL);
-    if (state[INITIAL] !== PISSalesBackup.FORMAT) return syncInitialLayout();
-    if (name === ALARM) return sync();
-  }
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
-    if (!['PIS_SYNC_SALES_BACKUP', 'PIS_START_SALES_BACKUP'].includes(message?.type) ||
-        sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
-    const run = message.type === 'PIS_START_SALES_BACKUP' ? syncInitialLayout : sync;
+    let run;
+    if (message?.type === 'PIS_GAME_OPEN_SALES_BACKUP') {
+      if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !sender.tab ||
+          !PIS_HOST.test(String(sender.url || ''))) return false;
+      run = () => syncAndCatchUp('abertura_do_pokeidle');
+    } else {
+      if (sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
+      if (message?.type === 'PIS_START_SALES_BACKUP') run = syncInitialLayout;
+      else if (message?.type === 'PIS_SYNC_SALES_BACKUP') run = () => syncAndCatchUp('manual');
+      else return false;
+    }
     run().then(reply, () => reply({ error: 'Falha ao ler o banco local.' }));
     return true;
   });

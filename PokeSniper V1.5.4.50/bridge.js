@@ -3,6 +3,11 @@
 (() => {
   if (window.__pisSheetsBridge) return;
   window.__pisSheetsBridge = true;
+  if (window === window.top) {
+    const syncPendingSales = () => chrome.runtime.sendMessage({ type: 'PIS_GAME_OPEN_SALES_BACKUP' }).catch(() => {});
+    void syncPendingSales();
+    window.addEventListener('pageshow', event => { if (event.persisted) void syncPendingSales(); });
+  }
   const configureMonitor = settings => window.postMessage({ source: 'PIS_BRIDGE',
     type: 'WATCH_OPPORTUNITIES', enabled: settings?.notify === true, currency: settings?.currency }, location.origin);
   chrome.storage.local.get('opportunitySettings').then(
