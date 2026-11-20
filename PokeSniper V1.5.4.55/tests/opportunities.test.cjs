@@ -63,5 +63,5 @@ test('o aviso de Gemas resume a ficha e identifica a moeda do preço justo', () 
     estimate: { discount: 1 - 30 / 71, median: 71 },
   }, now);
   assert.equal(result.title, '−57,7% Meganium Nvl 306 P1');
-  assert.equal(result.message, 'Preço justo 💎 71\nRetido até 00:01:00 (Brasília)\nIV baixo: Velocidade 14 (crítico), Ataque 15 (baixo), Atq. Esp. 25 (baixo)');
+  assert.equal(result.message, 'Mercado 💎 30 · Preço justo 💎 71\nRetido até 00:01:00\nIV baixo: Velocidade 14 (crítico), Ataque 15 (baixo), Atq. Esp. 25 (baixo)');
 });

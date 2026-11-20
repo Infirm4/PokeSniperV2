@@ -141,7 +141,7 @@
     const tier = [label, strength].filter(Boolean).join(' · ');
     const hold = row.availableAt > now ? 'Retido até ' + new Intl.DateTimeFormat('pt-BR', {
       timeStyle: 'medium', timeZone: 'America/Sao_Paulo',
-    }).format(row.availableAt) + ' (Brasília)' : '';
+    }).format(row.availableAt) : '';
     return { discount, asking, range, warning, hold, tier, composition,
       message: [`${discount} · ${asking}`, coins ? tier : range, composition, hold, warning].filter(Boolean).join('\n') };
   }
@@ -154,12 +154,15 @@
       row.level > 0 ? 'Nvl ' + row.level : '', row.power > 0 ? 'P' + row.power : ''].filter(Boolean).join(' ');
     const coins = row.currency === 'gold';
     const median = row.estimate.median;
-    const precision = coins && median < 10000 ? 6 : coins ? 2 : 0;
-    const price = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: precision })
-      .format(coins ? median / 1e6 : median);
-    const fair = Number.isFinite(median) && median > 0 ?
-      `Preço justo ${coins ? '🪙' : '💎'} ${price}${coins ? ' MI' : ''}` : 'Preço justo indisponível';
-    return { title, message: [fair, hold, composition, warning].filter(Boolean).join('\n') };
+    const money = value => {
+      const precision = coins && value < 10000 ? 6 : coins ? 2 : 0;
+      const price = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: precision })
+        .format(coins ? value / 1e6 : value);
+      return `${coins ? '🪙' : '💎'} ${price}${coins ? ' MI' : ''}`;
+    };
+    const quoted = Number.isFinite(median) && median > 0 ? 'Preço justo ' + money(median) : 'Preço justo indisponível';
+    const prices = `Mercado ${money(row.price)} · ${quoted}`;
+    return { title, message: [prices, hold, composition, warning].filter(Boolean).join('\n') };
   }
 
   const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, noticePresentation };

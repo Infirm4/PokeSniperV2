@@ -77,7 +77,7 @@ test('tenta a sprite verificada nos dois canais e recupera o ícone fixo se o Ch
   assert.equal(notices[1].iconUrl, 'opportunity-placeholder.png');
   assert.equal(game[3], sprite);
   assert.equal(notices[0].title, '−21,5% Gengar Nvl 100 P4');
-  assert.equal(notices[0].message, 'Preço justo 🪙 100 MI\nIV baixo: Velocidade 0 (crítico), Ataque 4 (crítico)');
+  assert.equal(notices[0].message, 'Mercado 🪙 78,5 MI · Preço justo 🪙 100 MI\nIV baixo: Velocidade 0 (crítico), Ataque 4 (crítico)');
   assert.equal(game[0], notices[0].title);
   assert.equal(game[1], notices[0].message);
 });
