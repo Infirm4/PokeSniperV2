@@ -48,7 +48,7 @@
     const title = document.createElement('strong');
     title.textContent = 'Preço justo';
     panel.append(title);
-    for (const [currency, icon, unit] of [['gold', '🪙', 'Coins'], ['orb', '💎', 'Gemas']]) {
+    for (const [currency, icon, unit] of [['gold', '💰', 'Coins'], ['orb', '💎', 'Gemas']]) {
       const line = document.createElement('div');
       const quote = quotes?.[currency];
       let price = 'Sem estimativa';

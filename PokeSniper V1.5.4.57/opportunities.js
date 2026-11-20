@@ -163,7 +163,7 @@
       const precision = coins && value < 10000 ? 6 : coins ? 2 : 0;
       const price = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: precision })
         .format(coins ? value / 1e6 : value);
-      return `${coins ? '🪙' : '💎'} ${price}${coins ? ' MI' : ''}`;
+      return `${coins ? '💰' : '💎'} ${price}${coins ? ' MI' : ''}`;
     };
     const quoted = Number.isFinite(median) && median > 0 ? 'Preço justo ' + money(median) : 'Preço justo indisponível';
     const prices = `Mercado ${money(row.price)} · ${quoted}`;
