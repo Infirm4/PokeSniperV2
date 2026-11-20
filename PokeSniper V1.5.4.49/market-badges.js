@@ -47,7 +47,10 @@
   if (typeof module === 'object' && module.exports) { module.exports = { readPrice, displayPrice, quoteBadge }; return; }
   const key = offer => JSON.stringify([offer.currency, offer.id, offer.price]);
   let market;
-  let current = new Map();
+  const quotes = new Map();
+  const REUSE_MS = 10 * 60000;
+  const REFRESH_MS = 5000;
+  const MAX_QUOTES = 1200;
   let lastQuery = 0;
   let lastKeys = '';
   let pending = false;
@@ -118,15 +121,27 @@
     badges.set(card, { host, signature });
   }
 
+  function cachedQuote(offer, identity, now) {
+    const entry = identity && quotes.get(identity);
+    if (!entry) return null;
+    if (now >= entry.until || !PISMarketCore.matchesDisplayPrice(entry.row.actualPrice, offer)) {
+      quotes.delete(identity);
+      return null;
+    }
+    return entry;
+  }
+
   function visible() {
     const offers = new Map();
     if (!market?.isConnected || !market.getClientRects().length) return offers;
+    const now = Date.now();
     for (const card of market.querySelectorAll('.cm-card')) {
       const offer = identify(card);
       const identity = offer?.id && offer.price ? key(offer) : null;
       if (identity && offers.size < 100) offers.set(identity, offer);
       const fallback = offer?.pokemon ? { currency: offer.currency, unread: true } : null;
-      render(card, (identity && current.get(identity)) || fallback);
+      const cached = cachedQuote(offer, identity, now);
+      render(card, cached?.row ?? fallback);
     }
     return offers;
   }
@@ -134,15 +149,28 @@
   async function refresh() {
     const offers = visible();
     const keys = [...offers.keys()].sort().join('\n');
-    if (!offers.size || pending || (keys === lastKeys && Date.now() - lastQuery < 5000)) return;
+    if (!offers.size || pending || (keys === lastKeys && Date.now() - lastQuery < REFRESH_MS)) return;
     const token = revision;
     pending = true;
     lastQuery = Date.now();
     lastKeys = keys;
     try {
       const response = await chrome.runtime.sendMessage({ type: 'PIS_MARKET_BADGES', offers: [...offers.values()] });
-      if (token === revision) current = new Map((response?.offers ?? []).filter(row => offers.has(key(row))).map(row => [key(row), row]));
-    } catch { if (token === revision) current.clear(); }
+      if (token === revision && Array.isArray(response?.offers)) {
+        const rows = new Map(response.offers.map(row => [key(row), row]));
+        const now = Date.now();
+        for (const [identity, offer] of offers) {
+          const row = rows.get(identity);
+          const latest = visibleCurrencies.get(offer.id);
+          if (!row || !PISMarketCore.matchesDisplayPrice(row.actualPrice, offer) ||
+              (latest?.currency === offer.currency &&
+                (latest.closed || Number.isSafeInteger(latest.price) && latest.price !== row.actualPrice))) continue;
+          quotes.delete(identity);
+          quotes.set(identity, { row, until: Math.min(now + REUSE_MS, row.validUntil ?? Infinity) });
+        }
+        while (quotes.size > MAX_QUOTES) quotes.delete(quotes.keys().next().value);
+      }
+    } catch { /* Mantém a última referência válida enquanto o banco é consultado. */ }
     finally {
       pending = false;
       if (lastKeys !== keys || [...visible().keys()].sort().join('\n') !== keys) schedule();
@@ -167,10 +195,19 @@
         data.type !== 'MARKET_CORE_BATCH' || data.kind !== 'listing' || !Array.isArray(data.rows) ||
         data.rows.length > 100) return;
     const now = Date.now();
+    const observed = new Map();
     for (const row of data.rows) {
       if (!['gold', 'orb'].includes(row?.currency) || !/^[A-Za-z0-9_-]{1,64}$/.test(row.id ?? '')) continue;
+      const observation = { currency: row.currency, price: row.price, closed: row.closed, at: now };
       visibleCurrencies.delete(row.id);
-      visibleCurrencies.set(row.id, { currency: row.currency, at: now });
+      visibleCurrencies.set(row.id, observation);
+      observed.set(row.id, observation);
+    }
+    for (const [identity, entry] of quotes) {
+      const update = observed.get(entry.row.id);
+      if (update?.currency === entry.row.currency &&
+          (update.closed || Number.isSafeInteger(update.price) && update.price !== entry.row.actualPrice))
+        quotes.delete(identity);
     }
     while (visibleCurrencies.size > 500) visibleCurrencies.delete(visibleCurrencies.keys().next().value);
     if (market?.isConnected) schedule();
@@ -188,12 +225,14 @@
   }
   new MutationObserver(discover).observe(document, { childList: true, subtree: true });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes.opportunitySettings) return;
+    if (area !== 'local') return;
+    const source = changes.pisPublicGemsCheck;
+    if (!source?.newValue?.ok || source.newValue.sourceAt === source.oldValue?.sourceAt) return;
     revision++;
     lastKeys = '';
-    current.clear();
+    for (const [identity, entry] of quotes) if (entry.row.currency === 'orb') quotes.delete(identity);
     schedule();
   });
-  setInterval(() => { if (market?.isConnected) schedule(); }, 5000);
+  setInterval(() => { if (market?.isConnected) schedule(); }, REFRESH_MS);
   discover();
 })();

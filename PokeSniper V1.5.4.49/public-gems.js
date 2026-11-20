@@ -122,7 +122,7 @@
     return Number.isFinite(converted) && converted > 0 && converted <= Number.MAX_SAFE_INTEGER ? converted : null;
   }
 
-  const api = { prepare, valid, validateContent, convert, freshTimestamp };
+  const api = { prepare, valid, validateContent, convert, freshTimestamp, MAX_AGE };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.PISPublicGems = api;
 })();

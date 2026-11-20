@@ -167,6 +167,18 @@ const PISMarketStore = (() => {
       attempts: previous?.attempts ?? 0, nextAttemptAt: previous?.nextAttemptAt ?? 0, deliveryChannels: previous?.deliveryChannels });
   }
 
+  const PRICING_FIELDS = ['pokemonId', 'speciesId', 'name', 'shiny', 'price', 'level', 'grade', 'power', 'form',
+    'shadow', 'rarity', 'legendary', 'nature', 'natureId', 'refinement', 'quality', 'ivTotal', 'aoe', 'zMove', 'mega'];
+  const IV_FIELDS = ['hp', 'attack', 'defense', 'specialAttack', 'specialDefense', 'speed'];
+
+  function reusableQuote(saved, incoming, now) {
+    return saved?.estimate && !saved.closed && saved.pricingRevision === revisionFor(saved) &&
+      now - saved.estimatedAt < PISOpportunities.TTL && (!saved.expiresAt || saved.expiresAt > now) &&
+      (saved.estimate.method !== 'briaoale_public' || PISPublicGems.freshTimestamp(saved.estimate.sourceAt, now)) &&
+      PRICING_FIELDS.every(field => saved[field] === incoming[field]) &&
+      IV_FIELDS.every(field => saved.ivs?.[field] === incoming.ivs?.[field]);
+  }
+
   async function reprice(tx, rows, now, recordOpportunities = false, publicEstimates = null) {
     const groups = new Map();
     for (const row of rows) {
@@ -180,25 +192,29 @@ const PISMarketStore = (() => {
 
     for (const group of groups.values()) {
       const target = group[0];
-      const comparable = await recentSales(sales.index('comparables'), target, now);
       const key = JSON.stringify([target.currency, target.shiny]);
-      if (target.currency === 'orb' && !markets.has(key)) {
-        const available = await marketSales(sales.index('priceMarket'),
-          { currency: target.currency, shiny: target.shiny }, now);
-        markets.set(key, PISPricingModel.makeMarket(available, now, PISMarketCore.isOutland));
-      }
-      const estimate = PISPricingModel.prepare(comparable, PISMarketCore.estimate, now, markets.get(key));
+      let local;
       for (const listing of group) {
         const previous = listing.estimate;
-        const external = listing.currency !== 'orb' ? null : publicEstimates ? publicEstimates.get(listing.id) :
+        let estimate = listing.currency !== 'orb' ? null : publicEstimates ? publicEstimates.get(listing.id) :
           listing.pricingRevision === ESTIMATE_REVISION && previous?.method === 'briaoale_public' &&
-          now - previous.sourceAt <= 72 * 3600000 ? previous : null;
-        const priced = { ...listing, pricingRevision: revisionFor(listing), estimate: external || estimate(listing) };
-        listings.put(priced);
-        if (recordOpportunities && trackedLaunch(priced, now) &&
-            PISOpportunities.eligible(priced)) {
-          await saveOpportunity(tx, priced);
+          PISPublicGems.freshTimestamp(previous.sourceAt, now) ? previous : null;
+        if (!estimate) {
+          // As cotações do snapshot já são completas; só o fallback consulta vendas locais.
+          if (!local) {
+            const comparable = await recentSales(sales.index('comparables'), target, now);
+            if (target.currency === 'orb' && !markets.has(key)) {
+              const available = await marketSales(sales.index('priceMarket'), target, now);
+              markets.set(key, PISPricingModel.makeMarket(available, now, PISMarketCore.isOutland));
+            }
+            local = PISPricingModel.prepare(comparable, PISMarketCore.estimate, now, markets.get(key));
+          }
+          estimate = local(listing);
         }
+        const priced = { ...listing, pricingRevision: revisionFor(listing), estimatedAt: now, estimate };
+        listings.put(priced);
+        if (recordOpportunities && trackedLaunch(priced, now) && PISOpportunities.eligible(priced))
+          await saveOpportunity(tx, priced);
       }
     }
   }
@@ -234,9 +250,15 @@ const PISMarketStore = (() => {
   async function ingest(kind, rows, now = Date.now(), { live = false } = {}) {
     const db = await open();
     let external = null;
-    if (kind === 'listing' && rows.some(row => row.currency === 'orb')) {
-      const snapshot = await result(db.transaction('publicPricing').objectStore('publicPricing').get('gems'));
-      external = evaluatePublic(snapshot, rows, now);
+    if (kind === 'listing' && rows.some(row => row.currency === 'orb' && !row.closed)) {
+      const store = db.transaction('listings').objectStore('listings');
+      const gems = rows.filter(row => row.currency === 'orb' && !row.closed);
+      const required = (await Promise.all(gems.map(row => result(store.get(listingKey(row)))
+        .then(saved => reusableQuote(saved, row, now) ? null : row)))).filter(Boolean);
+      if (required.length) {
+        const snapshot = await result(db.transaction('publicPricing').objectStore('publicPricing').get('gems'));
+        external = evaluatePublic(snapshot, required, now);
+      }
     }
     const tables = ['sales', 'listings', 'opportunities', 'exposures'];
     if (kind === 'sale') tables.push('salesBackup', 'incompleteSales');
@@ -337,7 +359,12 @@ const PISMarketStore = (() => {
             saved.pokemonId === listing.pokemonId && (listing.postedAt == null || listing.postedAt === saved.postedAt);
           const alertObservedAt = live && PISOpportunities.freshLaunch(listing, now) ? now :
             sameLaunch ? saved.alertObservedAt : null;
-          observed.push({ ...listing, ...sprite, exposureKey: exposure.key, observedAt: now, alertObservedAt });
+          const row = { ...listing, ...sprite, exposureKey: exposure.key, observedAt: now, alertObservedAt };
+          if (reusableQuote(saved, row, now)) {
+            const priced = { ...row, pricingRevision: saved.pricingRevision, estimatedAt: saved.estimatedAt, estimate: saved.estimate };
+            listings.put(priced);
+            if (trackedLaunch(priced, now) && PISOpportunities.eligible(priced)) await saveOpportunity(tx, priced);
+          } else observed.push(row);
         }
         await reprice(tx, observed, now, true, external);
       }
@@ -590,7 +617,7 @@ const PISMarketStore = (() => {
         const estimate = estimates.get(row.id);
         if (!estimate || !current || current.closed || current.observedAt !== row.observedAt ||
             current.price !== row.price || current.estimate?.sourceAt > estimate.sourceAt) continue;
-        const priced = { ...current, pricingRevision: ESTIMATE_REVISION, estimate };
+        const priced = { ...current, pricingRevision: ESTIMATE_REVISION, estimatedAt: now, estimate };
         target.put(priced);
         if (trackedLaunch(priced, now) && PISOpportunities.eligible(priced, now)) await saveOpportunity(update, priced);
       }

@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.48)
+# PokeIdle Market Sniper (v1.5.4.49)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -146,6 +146,10 @@ público do Briaoale (`precos.json`), já sincronizado pela extensão. O selo
 mostra `≈2,9K 20%` ou `≈2,9K 120%` e a faixa em Gemas ao passar o cursor.
 Sem uma referência desse snapshot, aparece `Sem estimativa`. Os alertas
 seguem suas próprias regras e preservam os fallbacks existentes.
+
+Selos recentes são reaproveitados ao reabrir a vitrine ou voltar de página.
+O anúncio é conferido em segundo plano, e mudanças de preço ou da fonte
+pública de Gemas invalidam as referências em cache.
 
 ## Monitoramento e precificação
 

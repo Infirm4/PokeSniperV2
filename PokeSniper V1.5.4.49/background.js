@@ -121,7 +121,8 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
             lower: estimate.lower, median: estimate.median, upper: estimate.upper,
             indicative: estimate.alertSupported !== true || estimate.bepi === true,
           } : null;
-        return { ...offer, actualPrice: row.price, quote };
+        return { ...offer, actualPrice: row.price, quote,
+          ...(publicSource ? { validUntil: estimate.sourceAt + PISPublicGems.MAX_AGE } : {}) };
       });
     })().then(offers => reply({ offers }), () => reply({ offers: [] }));
     return true;
