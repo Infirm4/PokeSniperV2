@@ -47,11 +47,11 @@ const PISOpportunityAlerts = (() => {
   }
 
   async function noticeLiquidity(row) {
-    if (row.currency !== 'gold' || !PISMarketStore.coinNoticeLiquidity) return null;
+    if (!PISMarketStore.noticeLiquidity) return null;
     let timer;
     try {
       return await Promise.race([
-        PISMarketStore.coinNoticeLiquidity(row),
+        PISMarketStore.noticeLiquidity(row),
         new Promise(resolve => { timer = setTimeout(resolve, globalThis.PISCoinMarket?.OPTIONS.liquidityBudgetMs ?? 750, null); }),
       ]);
     } catch { return null; }

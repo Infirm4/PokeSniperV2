@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.80'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.81'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';

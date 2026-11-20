@@ -97,7 +97,7 @@ test('calcula liquidez por hora, separa mercados e não usa a liquidez para apro
   assert.equal(opportunity.fallbackWarning(row), '');
   const fallback = { ...row, estimate: { ...quote, bepi: true } };
   assert.match(opportunity.noticePresentation(fallback, now).title, /^⚠️ Preço estimado \(BEPI\)/u);
-  assert.match(opportunity.noticePresentation(fallback, now).desktopMessage, /Baixa liquidez/);
+  assert.match(opportunity.noticePresentation(fallback, now).desktopMessage, /Liquidez baixa/);
   assert.equal(opportunity.fallbackWarning({ ...fallback, currency: 'orb' }), '');
   assert.equal(market.prepare(rows.slice(0, 4), now).liquidity(target, quote, [], []), null);
 });
@@ -121,4 +121,20 @@ test('o controle de fallback reavalia a referência já gravada sem mudar BEPI o
   assert.equal(opportunity.approved({ ...row, currency: 'orb' }, { ...on, currency: 'all' }, now), false);
   const bepi = { ...row, estimate: { ...quote, fallbackLevel: null, bepi: true, alertSupported: true } };
   assert.equal(opportunity.approved(bepi, off, now), true);
+});
+
+test('a liquidez de Gemas usa cinco exemplares locais distintos na própria moeda', () => {
+  const gem = { ...target, currency: 'orb', price: 12 };
+  const quote = { median: 25, discount: 0.52 };
+  const sales = Array.from({ length: 5 }, (_, index) =>
+    sale({ currency: 'orb', price: 24, soldAt: now - (index + 1) * hour }));
+  const queue = [sale({ currency: 'orb', price: 23, observedAt: now }), sale({ price: 20, observedAt: now })];
+  const liquidity = market.gemLiquidity(gem, quote, [...sales, ...sales, sale()], queue, [0, 1], now);
+  assert.equal(liquidity.count, 5);
+  assert.equal(liquidity.m, 1);
+  assert.equal(liquidity.label, 'baixa');
+  assert.equal(market.gemLiquidity(gem, quote, [...sales.slice(1), sales[1], sale()], queue, [0, 1], now), null);
+  const formatted = opportunity.noticePresentation({ ...gem, estimate: quote, liquidityHours: liquidity });
+  assert.match(formatted.desktopMessage, /IVs: Speed 20 \(média\)\nLiquidez baixa$/);
+  assert.doesNotMatch(formatted.desktopMessage, /~\d/);
 });

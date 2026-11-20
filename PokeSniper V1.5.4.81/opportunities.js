@@ -188,12 +188,8 @@
   }
 
   function liquidityLabel(row) {
-    const quote = row.currency === 'gold' ? row.liquidityHours : null;
-    const label = { alta: 'Alta', média: 'Média', baixa: 'Baixa' }[quote?.label];
-    if (!label) return '';
-    const duration = quote.hours == null ? '' : quote.hours > 48 ? ` · ~${Math.round(quote.hours / 24)} d` :
-      ` · ~${Math.max(1, Math.round(quote.hours))} h`;
-    return label + ' liquidez' + duration;
+    const label = row.liquidityHours?.label;
+    return ['alta', 'média', 'baixa'].includes(label) ? 'Liquidez ' + label : '';
   }
 
   function noticePresentation(row, now = Date.now()) {
@@ -204,18 +200,21 @@
       .filter(Boolean).join(' · ');
     const coins = row.currency === 'gold';
     const median = row.estimate.median;
+    const icon = coins ? '💰' : '💎';
     const money = value => {
       const precision = coins && value < 10000 ? 6 : coins ? 2 : 0;
       const price = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: precision })
         .format(coins ? value / 1e6 : value);
-      return `${coins ? '💰' : '💎'} ${price}${coins ? ' MI' : ''}`;
+      return price + (coins ? ' MI' : '');
     };
-    const quoted = Number.isFinite(median) && median > 0 ? 'Preço justo ' + money(median) : 'Preço justo indisponível';
-    const prices = `Mercado ${money(row.price)} · ${quoted}`;
-    const details = [prices, liquidityLabel(row), composition, warning];
+    const hasFair = Number.isFinite(median) && median > 0;
+    const quoted = hasFair ? 'Preço justo ' + icon + ' ' + money(median) : 'Preço justo indisponível';
+    const prices = `Mercado ${icon} ${money(row.price)} · ${quoted}`;
+    const desktopPrices = `${icon} ${money(row.price)} · Preço justo ${hasFair ? money(median) : 'indisponível'}`;
+    const liquidity = liquidityLabel(row);
     return { title,
-      message: [profileSummary(row, false), ...details].filter(Boolean).join('\n'),
-      desktopMessage: [profileSummary(row), ...details].filter(Boolean).join('\n'),
+      message: [profileSummary(row, false), prices, warning, liquidity, composition].filter(Boolean).join('\n'),
+      desktopMessage: [profileSummary(row), desktopPrices, warning, liquidity, composition].filter(Boolean).join('\n'),
     };
   }
 

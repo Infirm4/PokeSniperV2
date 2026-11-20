@@ -72,22 +72,25 @@ test('tenta a sprite verificada nos dois canais e recupera o ícone fixo se o Ch
   };
   let game;
   const alerts = runInNewContext(worker + '\nPISOpportunityAlerts;', {
-    chrome, PISMarketCore, PISOpportunities: rules, console: { warn() {} }, AbortSignal, btoa,
+    chrome, PISMarketCore, PISOpportunities: rules, console: { warn() {} }, AbortSignal, btoa, setTimeout, clearTimeout,
     fetch: async url => {
       assert.equal(url, sprite);
       return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': 'image/png' } });
     },
     PISGameTab: { async show(...args) { game = args; return true; } },
-    PISMarketStore: { recentOpportunities: async () => [row], currentOpportunity: async () => row, markDelivery: async () => {} },
+    PISMarketStore: { recentOpportunities: async () => [row], currentOpportunity: async () => row,
+      noticeLiquidity: async () => ({ label: 'média', hours: 50 }),
+      markDelivery: async () => {} },
   });
   await alerts.wake();
   assert.match(notices[0].iconUrl, /^data:image\/png;base64,/);
   assert.equal(notices[1].iconUrl, 'opportunity-placeholder.png');
   assert.equal(game[3], sprite);
   assert.equal(notices[0].title, 'Gengar · −21,5%');
-  assert.equal(notices[0].message, 'Nvl 100 · P4 · N 4,12\nMercado 💰 78,5 MI · Preço justo 💰 100 MI\nIVs: Speed 0 (crítico), Sp Atk 32 (Pica)');
+  assert.equal(notices[0].message, 'Nvl 100 · P4 · N 4,12\n💰 78,5 MI · Preço justo 100 MI\nIVs: Speed 0 (crítico), Sp Atk 32 (Pica)\nLiquidez média');
   assert.equal(game[0], notices[0].title);
-  assert.equal(game[1], notices[0].message.replace('N 4,12', 'Nota 4,123'));
+  assert.equal(game[1], notices[0].message.replace('N 4,12', 'Nota 4,123')
+    .replace('💰 78,5 MI · Preço justo 100 MI', 'Mercado 💰 78,5 MI · Preço justo 💰 100 MI'));
 });
 
 test('revalida a oferta seguinte e processa novas chegadas durante o envio', async () => {

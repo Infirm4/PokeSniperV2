@@ -625,15 +625,30 @@ const PISMarketStore = (() => {
       result(tx.objectStore('listings').index('observedAt').getAll(range)),
       chrome.storage.session.get(null).catch(() => ({})),
     ]);
-    const pages = Object.entries(session).filter(([key, value]) => key.startsWith('pisCoinSeenPage:') &&
-      Number.isFinite(value) && now - value <= PISCoinMarket.OPTIONS.listingFreshHours * 3600000)
-      .map(([key]) => Number(key.slice('pisCoinSeenPage:'.length))).sort((a, b) => a - b);
-    return { model: PISCoinMarket.prepare(sales, now), listings, pages };
+    return { model: PISCoinMarket.prepare(sales, now), listings, pages: observedPages(session, 'gold', now) };
   }
 
-  async function coinNoticeLiquidity(row, now = Date.now()) {
-    const { model, listings, pages } = await coinContext(now);
-    return model.liquidity(row, row.estimate, listings, pages);
+  function observedPages(session, currency, now) {
+    const prefix = currency === 'gold' ? 'pisCoinSeenPage:' : 'pisGemSeenPage:';
+    return Object.entries(session).filter(([key, value]) => key.startsWith(prefix) &&
+      Number.isFinite(value) && now - value <= PISCoinMarket.OPTIONS.listingFreshHours * 3600000)
+      .map(([key]) => Number(key.slice(prefix.length))).sort((a, b) => a - b);
+  }
+
+  async function noticeLiquidity(row, now = Date.now()) {
+    if (row.currency === 'gold') {
+      const { model, listings, pages } = await coinContext(now);
+      return model.liquidity(row, row.estimate, listings, pages);
+    }
+    if (row.currency !== 'orb' || row.shiny == null) return null;
+    const db = await open();
+    const tx = db.transaction(['listings', 'sales']);
+    const [sales, listings, session] = await Promise.all([
+      recentSales(tx.objectStore('sales').index('comparables'), row, now),
+      result(tx.objectStore('listings').index('pricingGroup').getAll(groupOf(row))),
+      chrome.storage.session.get(null).catch(() => ({})),
+    ]);
+    return PISCoinMarket.gemLiquidity(row, row.estimate, sales, listings, observedPages(session, 'orb', now), now);
   }
 
   async function coinReport(name, now = Date.now()) {
@@ -967,5 +982,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, deliveredOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, coinNoticeLiquidity, coinReport, compareGemAttackIv, backtest, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, deliveredOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, noticeLiquidity, coinReport, compareGemAttackIv, backtest, diagnosticSnapshot, liquidity, diagnostics };
 })();

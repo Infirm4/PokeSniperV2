@@ -1,4 +1,4 @@
-// Referências e liquidez em Coins. A cotação normal e o BEPI continuam no estimador original.
+// Referências em Coins e projeção de liquidez por moeda. A cotação normal e o BEPI continuam no estimador original.
 (() => {
   const HOUR = 3600000;
   const OPTIONS = Object.freeze({
@@ -122,6 +122,46 @@
     const before = errors(0), after = errors(coefficient);
     return { ...result, erro_sem_ajuste_log: before, erro_com_ajuste_log: after,
       valor: after < before && Math.abs(coefficient) <= ceiling ? coefficient : null };
+  }
+
+  function observedQueue(target, quote, listings, now) {
+    return listings.filter(row => row.currency === target.currency && row.id !== target.id && !row.closed &&
+      row.observedAt <= now && now - row.observedAt <= OPTIONS.listingFreshHours * HOUR &&
+      (!row.expiresAt || row.expiresAt > now) && row.price <= quote.median)
+      .sort((a, b) => b.observedAt - a.observedAt);
+  }
+
+  function hourlyLiquidity(sample, m, now, pages, stage) {
+    const decay = soldAt => 2 ** (-(now - soldAt) / (OPTIONS.halfLife * HOUR));
+    const lambda = sample.reduce((sum, row) => sum + decay(row.sale.soldAt), 0) / OPTIONS.liquidityHours;
+    const hours = lambda > 0 ? (m + 1) / lambda : null;
+    const lastSale = Math.max(...sample.map(row => row.sale.soldAt));
+    const label = hours == null || now - lastSale > OPTIONS.inactiveHours * HOUR || hours > OPTIONS.mediumHours
+      ? 'baixa' : hours <= OPTIONS.highHours ? 'alta' : 'média';
+    return { stage, lambda, m, hours, label, count: sample.length, windowHours: OPTIONS.liquidityHours,
+      pages, partial: true, lastSale };
+  }
+
+  function gemLiquidity(target, quote, sales, listings, pages, now) {
+    const core = globalThis.PISMarketCore;
+    if (target.currency !== 'orb' || ![0, 1].includes(target.shiny) || !target.name ||
+        !(quote?.median > 0) || !Number.isInteger(target.power) || core.isOutland(target)) return null;
+    function comparable(row) {
+      const profile = core.coinProfile(target, row, false);
+      return row.price > 0 && row.pokemonId && row.pokemonId !== target.pokemonId &&
+        core.sameMarket(target, row) && specials(target) === specials(row) && profile?.samePower && profile.close;
+    }
+
+    // O snapshot público precifica, mas não identifica exemplares únicos para liquidez.
+    const from = now - OPTIONS.liquidityHours * HOUR;
+    const rows = sales.filter(row => correctTime(row.soldAt) && row.soldAt >= from && row.soldAt < now &&
+      comparable(row) && !core.incompleteSaleFields(row, { requireSprite: false }).length)
+      .sort((a, b) => b.soldAt - a.soldAt);
+    const sample = trim(unique(rows).map(sale => ({ sale, price: sale.price,
+      weight: 2 ** (-(now - sale.soldAt) / (OPTIONS.halfLife * HOUR)) })));
+    if (sample.length < OPTIONS.liquidityMinimum) return null;
+    const queue = unique(observedQueue(target, quote, listings, now).filter(comparable));
+    return hourlyLiquidity(sample, queue.length, now, pages, 'gemas');
   }
 
   function prepare(allSales, now, options = OPTIONS) {
@@ -336,20 +376,10 @@
         const sample = trim(segment(target, stage, pool(target, stage), OPTIONS.liquidityHours));
         const band = coverage(target, sample);
         if (sample.length < OPTIONS.liquidityMinimum || !band.covered) continue;
-        // A taxa usa só o decaimento temporal. A seleção já aplica o perfil e remove outliers.
-        const lambda = sample.reduce((sum, row) => sum + 2 ** (-(now - row.sale.soldAt) / (OPTIONS.halfLife * HOUR)), 0) /
-          OPTIONS.liquidityHours;
-        const active = listings.filter(row => row.id !== target.id && !row.closed && row.observedAt <= now &&
-          now - row.observedAt <= OPTIONS.listingFreshHours * HOUR && (!row.expiresAt || row.expiresAt > now) &&
-          row.price <= quote.median);
-        const queue = segment(target, stage, active.sort((a, b) => b.observedAt - a.observedAt), Infinity, true);
-        const m = queue.length;
-        const hours = lambda > 0 ? (m + 1) / lambda : null;
-        const lastSale = Math.max(...sample.map(row => row.sale.soldAt));
-        const label = hours == null || now - lastSale > OPTIONS.inactiveHours * HOUR || hours > OPTIONS.mediumHours
-          ? 'baixa' : hours <= OPTIONS.highHours ? 'alta' : 'média';
-        return { stage, lambda, m, hours, label, count: sample.length, windowHours: OPTIONS.liquidityHours,
-          pages, partial: true, lastSale, ...(debug && { vendas: summarize(sample), níveis: band }) };
+        const active = observedQueue(target, quote, listings, now);
+        const queue = segment(target, stage, active, Infinity, true);
+        return { ...hourlyLiquidity(sample, queue.length, now, pages, stage),
+          ...(debug && { vendas: summarize(sample), níveis: band }) };
       }
       return null;
     }
@@ -369,7 +399,7 @@
     return { estimate, liquidity, calibrationReport };
   }
 
-  const api = { OPTIONS, prepare };
+  const api = { OPTIONS, prepare, gemLiquidity };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.PISCoinMarket = api;
 })();

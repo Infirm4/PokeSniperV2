@@ -210,8 +210,10 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     if (currency) {
       receipts['pisMarketPage:' + currency] = page;
       if (req.preparation === true) receipts['pisMarketPrepared:' + currency] = page;
-      if (currency === 'gold' && page.status === 'gravado' && page.page >= 0 && page.page <= 999 && page.page != null)
-        receipts['pisCoinSeenPage:' + page.page] = page.at;
+      if (page.status === 'gravado' && page.page != null && page.page >= 0 && page.page <= 999) {
+        const prefix = currency === 'gold' ? 'pisCoinSeenPage:' : 'pisGemSeenPage:';
+        receipts[prefix + page.page] = page.at;
+      }
     }
     return chrome.storage.session.set(receipts).catch(() => {});
   }

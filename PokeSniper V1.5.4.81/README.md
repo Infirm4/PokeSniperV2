@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.80)
+# PokeIdle Market Sniper (v1.5.4.81)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -175,7 +175,9 @@ existe uma referência anterior com suporte, ela recebe suavização com
 A liquidez é uma projeção em horas baseada no ritmo das vendas dos últimos
 14 dias e na fila ativa observada. A leitura da vitrine é parcial, por
 isso a estimativa pode ser otimista. O selo e o aviso usam o resultado
-somente para informação. Sem vendas suficientes, o selo é omitido.
+somente para informação. O texto mostra apenas a classificação. Em Gemas,
+usa vendas locais da mesma espécie, variante, Shiny e Potência. Sem pelo
+menos cinco exemplares distintos no segmento, o selo é omitido.
 
 Em **Filtros → Diagnóstico da versão → Analisar cobertura, preço e liquidez
 de Coins**, use um nome ou ID de anúncio para selecionar o exemplo. O
