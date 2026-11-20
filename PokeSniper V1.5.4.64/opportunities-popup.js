@@ -312,6 +312,7 @@ salesBackupRestore.addEventListener('change', async () => {
 });
 
 const runDiagnostics = document.querySelector('#run-diagnostics');
+const compareGemAttackIv = document.querySelector('#compare-gem-attack-iv');
 const copyDiagnostics = document.querySelector('#copy-diagnostics');
 const downloadDiagnostics = document.querySelector('#download-diagnostics');
 const reportBox = document.querySelector('#diagnostic-report');
@@ -338,7 +339,7 @@ document.querySelector('#sample-sale').addEventListener('click', async () => {
 });
 
 runDiagnostics.addEventListener('click', async () => {
-  runDiagnostics.disabled = runBacktest.disabled = true;
+  compareGemAttackIv.disabled = runDiagnostics.disabled = runBacktest.disabled = true;
   copyDiagnostics.disabled = downloadDiagnostics.disabled = true;
   testStatus.textContent = 'Lendo o banco local e os registros de alertas…';
   try {
@@ -383,7 +384,7 @@ runDiagnostics.addEventListener('click', async () => {
     testStatus.textContent = `${passed}/${tests.length} testes locais passaram. Copie o resultado para compartilhar.`;
   } catch {
     testStatus.textContent = 'O diagnóstico não pôde ser concluído. Reabra o painel e tente novamente.';
-  } finally { runDiagnostics.disabled = runBacktest.disabled = false; }
+  } finally { compareGemAttackIv.disabled = runDiagnostics.disabled = runBacktest.disabled = false; }
 });
 
 document.querySelector('#test-purchase-review').addEventListener('click', async () => {
@@ -395,7 +396,7 @@ document.querySelector('#test-purchase-review').addEventListener('click', async 
 
 const runBacktest = document.querySelector('#run-backtest');
 runBacktest.addEventListener('click', async () => {
-  runBacktest.disabled = runDiagnostics.disabled = true;
+  compareGemAttackIv.disabled = runBacktest.disabled = runDiagnostics.disabled = true;
   copyDiagnostics.disabled = downloadDiagnostics.disabled = true;
   testStatus.textContent = 'Separando treino e teste por data no banco local…';
   try {
@@ -405,7 +406,24 @@ runBacktest.addEventListener('click', async () => {
     copyDiagnostics.disabled = downloadDiagnostics.disabled = false;
     testStatus.textContent = 'Teste de precisão concluído.';
   } catch { testStatus.textContent = 'Falha ao avaliar o histórico local.'; }
-  finally { runBacktest.disabled = runDiagnostics.disabled = false; }
+  finally { compareGemAttackIv.disabled = runBacktest.disabled = runDiagnostics.disabled = false; }
+});
+
+compareGemAttackIv.addEventListener('click', async () => {
+  const name = document.querySelector('#gem-comparison-name').value;
+  compareGemAttackIv.disabled = runBacktest.disabled = runDiagnostics.disabled = true;
+  copyDiagnostics.disabled = downloadDiagnostics.disabled = true;
+  testStatus.textContent = 'Comparando as três cotações em Gemas…';
+  try {
+    const result = await PISMarketStore.compareGemAttackIv(name);
+    reportBox.value = JSON.stringify(result, null, 2);
+    reportBox.hidden = false;
+    copyDiagnostics.disabled = downloadDiagnostics.disabled = false;
+    testStatus.textContent = result.anúncios.length ? `${result.anúncios.length} fichas comparadas em Gemas.` :
+      result.estado === 'base pública indisponível' ? 'Base pública de Gemas indisponível.' :
+        'Sem fichas comparáveis. Abra a vitrine de Gemas no PokéIdle e tente novamente.';
+  } catch { testStatus.textContent = 'Falha ao comparar as cotações em Gemas.'; }
+  finally { compareGemAttackIv.disabled = runBacktest.disabled = runDiagnostics.disabled = false; }
 });
 
 downloadDiagnostics.addEventListener('click', () => {

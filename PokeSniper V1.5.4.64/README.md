@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.63)
+# PokeIdle Market Sniper (v1.5.4.64)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -342,6 +342,18 @@ Se a quantidade de vendas não mudar, abra **Tabela de preços → Pokémon**, a
 páginas e rode **Diagnóstico da versão**. O campo `histórico_na_sessão` mostra as páginas
 observadas, quantas linhas tinham ficha e quantas vendas foram novas, repetidas ou enriqueceram
 a ficha. Ele contém apenas metadados e contagens e mantém os últimos 40 eventos da sessão.
+
+## Ajuste de IV de ataque em Gemas
+
+A cotação baseada no histórico público usa o IV do ataque dominante (físico
+ou especial), conforme o motor do BriaoAle. Para espécies de ataque equilibrado,
+o motor combina os dois com maior peso no menor IV. Os filtros do histórico
+continuam aplicados à cotação do PokeSniper.
+
+Em **Diagnóstico da versão → Comparar ajuste de IV em Gemas**, é possível
+informar o nome de um Pokémon da vitrine e comparar o preço justo, a faixa e
+o desconto com e sem esse ajuste. O relatório inclui a referência do motor
+do BriaoAle, na mesma ficha e data da base. Nenhum aviso é gerado pelo teste.
 
 ## Oportunidades e diagnóstico
 

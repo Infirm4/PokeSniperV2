@@ -69,6 +69,10 @@
       <button type="button" id="copy-diagnostics" disabled>Copiar resultado</button>
       <button type="button" id="download-diagnostics" disabled>Baixar diagnóstico (.json)</button>
     </div>
+    <label>Pokémon para comparar em Gemas (opcional)
+      <input id="gem-comparison-name" type="search" maxlength="100" placeholder="Ex.: Dragonite">
+    </label>
+    <div class="actions"><button type="button" id="compare-gem-attack-iv">Comparar ajuste de IV em Gemas</button></div>
     <p id="test-status" class="offer-meta" role="status"></p>
     <textarea id="diagnostic-report" aria-label="Resultado do diagnóstico" rows="10" readonly hidden></textarea>
   </details>

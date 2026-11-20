@@ -3,9 +3,10 @@ const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
   const DB_VERSION = 16;
-  const ESTIMATE_REVISION = 6;
+  const ESTIMATE_REVISION = 8;
   const revisionFor = row => row?.currency === 'gold' ? 7 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
+  const fold = value => (value || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
   let opening;
 
   function saleWithSprite(row) {
@@ -572,7 +573,6 @@ const PISMarketStore = (() => {
   async function findListings(query = '') {
     const db = await open();
     const store = db.transaction('listings').objectStore('listings');
-    const fold = value => (value || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
     const needle = fold(query.trim());
     // Suporta o ID para quem já o conhece. O fluxo principal pesquisa pelo nome.
     if (needle && /^[A-Za-z0-9_-]{1,64}$/.test(query.trim())) {
@@ -704,6 +704,20 @@ const PISMarketStore = (() => {
     return active.geradoEm;
   }
 
+  async function compareGemAttackIv(name, now = Date.now()) {
+    const db = await open();
+    const tx = db.transaction(['listings', 'publicPricing']);
+    const range = IDBKeyRange.bound(now - 60 * 60000, now);
+    const [snapshot, rows] = await Promise.all([
+      result(tx.objectStore('publicPricing').get('gems')),
+      result(tx.objectStore('listings').index('observedAt').getAll(range)),
+    ]);
+    const search = fold(name.trim());
+    const targets = rows.reverse().filter(row => row.currency === 'orb' && !row.closed &&
+      (!row.expiresAt || row.expiresAt > now) && (!search || fold(row.name ?? '').includes(search)));
+    return PISPublicGems.compareAttackIv(snapshot, targets, now);
+  }
+
   async function backtest(config, now = Date.now()) {
     const db = await open();
     const index = db.transaction('sales').objectStore('sales').index('priceMarket');
@@ -801,5 +815,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, deliveredOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, deliveredOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, compareGemAttackIv, backtest, diagnosticSnapshot, liquidity, diagnostics };
 })();

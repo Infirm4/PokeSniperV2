@@ -35,6 +35,14 @@ test('usa o histórico público e a curva do site somente em Gemas', () => {
   assert.equal(source.prepare(snapshot, now)({ ...target, currency: 'gold' }), null);
   assert.equal(source.prepare(snapshot, now + 4 * 86400000)(target), null);
   assert.equal(source.valid({ ...snapshot, vendas: { ...snapshot.vendas, n: 3 } }, now), false);
+  const report = source.compareAttackIv(snapshot, [{ ...target, currency: 'gold' }, target], now);
+  assert.equal(report.anúncios.length, 1);
+  const [comparison] = report.anúncios;
+  const withoutAttack = source.prepare(snapshot, now, { attackIv: false })(target);
+  assert.equal(comparison.sem_ajuste_de_ataque.justo, withoutAttack.median);
+  assert.equal(comparison.com_ajuste_de_ataque.justo, estimate.median);
+  assert.equal(comparison.briaoale.justo, original.median);
+  assert.equal(source.compareAttackIv(snapshot, [target], now + 4 * 86400000).estado, 'base pública indisponível');
 });
 
 test('importa um backup do formato Smart Market com IDs deduplicados e sem copiar Gemas', () => {
