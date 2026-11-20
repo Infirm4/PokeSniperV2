@@ -2,26 +2,53 @@
 
 (() => {
   const LIST = '#caidos-lista, .caidos-lista';
+  const AREA = '#caidos';
   const TARGET = 'button.caido, button[data-slot]';
   const PER_CYCLE = 3;
   const RETRY_MS = 5000;
+
+  function canClick(button) {
+    return button.isConnected && !button.matches(':disabled, [aria-disabled="true"], [hidden]');
+  }
 
   function createCapture(document, time = () => Date.now()) {
     const recent = new WeakMap();
     const slots = new Map();
 
     return function capture() {
-      const list = document.querySelector(LIST);
-      if (!list) return { status: 'sem_lista', clicks: 0, found: 0 };
+      const lists = [...document.querySelectorAll(LIST)];
+      const area = document.querySelector(AREA);
+      if (!lists.length && !area) return { status: 'sem_lista', clicks: 0, found: 0 };
+
+      let found = 0, ready = [], source;
+      // Uma lista vazia ou bloqueada pode continuar montada atrás de outro painel.
+      for (const list of lists) {
+        const buttons = [...list.querySelectorAll(TARGET)];
+        found = Math.max(found, buttons.length);
+        ready = buttons.filter(canClick);
+        if (!ready.length) continue;
+        found = buttons.length;
+        source = list;
+        break;
+      }
+      if (!source && area) {
+        // Sem a lista, aceite somente os botões de caídos dentro da área da hunt.
+        const buttons = [...area.querySelectorAll('button.caido')];
+        found = Math.max(found, buttons.length);
+        ready = buttons.filter(canClick);
+        if (ready.length) found = buttons.length;
+        source = area;
+      }
+      if (!ready.length) {
+        return { status: found ? 'bloqueado' : lists.length ? 'aguardando' : 'sem_lista', clicks: 0, found };
+      }
 
       const now = time();
       for (const [slot, submittedAt] of slots) if (now - submittedAt >= RETRY_MS) slots.delete(slot);
 
-      const buttons = [...list.querySelectorAll(TARGET)];
-      let clicks = 0, ready = 0;
-      for (const button of buttons) {
-        if (!button.isConnected || !list.contains(button) || button.matches(':disabled, [aria-disabled="true"], [hidden]')) continue;
-        ready++;
+      let clicks = 0;
+      for (const button of ready) {
+        if (!source.contains(button) || !canClick(button)) continue;
         const specimen = button.dataset.caidoId ?? button.dataset.pokemonId;
         const slot = button.dataset.slot;
         const key = specimen ? JSON.stringify(['pokemon', specimen, slot]) :
@@ -35,8 +62,7 @@
         button.click();
         if (++clicks >= PER_CYCLE) break;
       }
-      const status = clicks ? 'clicou' : ready ? 'cooldown' : buttons.length ? 'bloqueado' : 'aguardando';
-      return { status, clicks, found: buttons.length };
+      return { status: clicks ? 'clicou' : 'cooldown', clicks, found };
     };
   }
 
@@ -52,7 +78,6 @@
   let enabled = false;
   let gap = 3000;
   let lastRun = -Infinity;
-  let list;
   let lastResult;
 
   function stop() {
@@ -60,6 +85,8 @@
     observer.disconnect();
     clearTimeout(timer);
     timer = undefined;
+    lastRun = -Infinity;
+    lastResult = undefined;
   }
 
   function schedule() {
@@ -79,21 +106,20 @@
     clearTimeout(timer);
     timer = undefined;
     lastRun = Date.now();
-    list = document.querySelector(LIST);
     const result = capture();
     const at = Date.now();
+    const report = { ...result, at, lastClickAt: result.clicks ? at : lastResult?.lastClickAt };
     if (result.clicks || result.status !== lastResult?.status || result.found !== lastResult?.found) {
-      chrome.runtime.sendMessage({ type: 'capture:result', result: { ...result, at } }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'capture:result', result: report }).catch(() => {});
     }
-    lastResult = { ...result, at };
-    if (result.found) schedule();
+    lastResult = report;
+    schedule();
   }
 
+  const captureArea = `${AREA}, ${LIST}`;
   const observer = new MutationObserver(changes => {
     if (!enabled) return;
-    // Mudanças dentro da lista ou a sua substituição podem criar um novo alvo.
-    if (list && (!list.isConnected || changes.some(change => list.contains(change.target)))) schedule();
-    else if (!list && document.querySelector(LIST)) schedule();
+    if (changes.some(({ target }) => target.closest?.(captureArea))) run();
   });
 
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
@@ -111,7 +137,7 @@
         gap = message.interval * 1000;
         if (!enabled) {
           enabled = true;
-          observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true,
+          observer.observe(document.documentElement, { subtree: true, childList: true,
             attributes: true, attributeFilter: ['class', 'disabled', 'aria-disabled', 'hidden', 'data-slot'] });
         }
         run();

@@ -2,6 +2,7 @@
 
 const status = document.querySelector('#status');
 const game = document.querySelector('#game');
+const lastAttempt = document.querySelector('#last-attempt');
 const toggle = document.querySelector('#toggle');
 const interval = document.querySelector('#interval');
 const save = document.querySelector('#save');
@@ -10,10 +11,10 @@ let config, busy = false;
 
 const messages = {
   sem_aba: 'Abra o PokéIdle e entre em uma hunt.',
-  sem_lista: 'Aguardando a lista de caídos voltar ao jogo.',
-  aguardando: 'Aguardando Pokémon caídos.',
-  bloqueado: 'A lista está presente. Os botões estão bloqueados pelo jogo.',
-  cooldown: 'Aguardando o prazo entre tentativas.',
+  sem_lista: 'Lista de caídos indisponível nesta tela. A captura retoma quando ela voltar.',
+  aguardando: 'Lista de caídos disponível, aguardando alvos.',
+  bloqueado: 'Os botões de captura estão desabilitados nesta tela.',
+  cooldown: 'Aguardando o intervalo para tentar de novo.',
   descartada: 'O Chrome descarregou a aba. Volte ao jogo para retomá-la.',
   congelada: 'O Chrome congelou a aba. As tentativas retomam quando ela responder.',
   sem_resposta: 'A aba não respondeu. O bot tentará novamente.',
@@ -32,6 +33,10 @@ function render(state) {
     result?.status === 'clicou'
       ? `${result.clicks} tentativa(s) enviada(s) de ${result.found} alvo(s). Confira o resultado no jogo.`
       : messages[result?.status] ?? 'Aguardando a primeira leitura da aba.';
+  lastAttempt.hidden = !config.enabled || !result?.lastClickAt;
+  if (!lastAttempt.hidden) {
+    lastAttempt.textContent = `Última tentativa às ${new Date(result.lastClickAt).toLocaleTimeString('pt-BR')}`;
+  }
 }
 
 async function refresh() {

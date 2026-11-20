@@ -19,7 +19,8 @@
     #interval { width: 68px; }
     #status { font-weight: 700; }
     #status[data-active=true] { color: #9ae6b9; }
-    #game, #interval-status { color: #d7c9e1; overflow-wrap: anywhere; }
+    #game, #last-attempt, #interval-status { color: #d7c9e1; overflow-wrap: anywhere; }
+    #last-attempt { margin-top: 4px; font-size: 12px; }
     :focus-visible { outline: 2px solid #d4b3ff; outline-offset: 2px; }
   </style>
 </head>
@@ -30,7 +31,10 @@
       <span id="status" role="status">Verificando…</span>
       <button id="toggle" type="button" disabled>Ligar</button>
     </div>
-    <p id="game" class="capture-card" role="status">Aguardando dados da aba.</p>
+    <div class="capture-card">
+      <p id="game" role="status">Aguardando dados da aba.</p>
+      <p id="last-attempt" hidden></p>
+    </div>
     <form id="settings">
       <label class="capture-row" for="interval">Intervalo (segundos)
         <input id="interval" type="number" min="2" max="3600" step="0.1" required disabled>
