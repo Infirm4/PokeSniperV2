@@ -1,6 +1,6 @@
 // Regras puras para o painel e as notificações. Nenhum comando é enviado ao jogo.
 (() => {
-  const { isOutland } = typeof module === 'object' && module.exports
+  const { isOutland, attackProfile, validIv } = typeof module === 'object' && module.exports
     ? require('./market-core.js') : globalThis.PISMarketCore;
   const TTL = 10 * 60 * 1000;
   // Conserva apenas lançamentos recentes como candidatos à fila de avisos.
@@ -110,7 +110,19 @@
 
   const IV_LABELS = { hp: 'HP', attack: 'Ataque', defense: 'Defesa', specialAttack: 'Atq. Esp.',
     specialDefense: 'Def. Esp.', speed: 'Velocidade' };
-  const NOTICE_IVS = ['speed', 'attack', 'specialAttack'];
+  const ATTACK_LABELS = { attack: 'Ataque', specialAttack: 'Atq. Esp.', mixed: 'Ataque misto' };
+  const ivNumber = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
+
+  function noticeIvs(row) {
+    const rating = value => value < 15 ? 'crítico' : value < 25 ? 'média' : 'Pica';
+    const speed = row.ivs?.speed;
+    const entries = [validIv(speed) ? `Velocidade ${speed} (${rating(speed)})` : 'Velocidade indisponível'];
+    const attack = attackProfile(row);
+    if (Number.isFinite(attack?.value)) {
+      entries.push(`${ATTACK_LABELS[attack.style]} ${ivNumber.format(attack.value)}`);
+    }
+    return entries;
+  }
   const isLowIv = value => Number.isInteger(value) && value >= 0 && value < 10;
 
   // Formata o mesmo desconto e os mesmos valores para painel e avisos.
@@ -127,12 +139,7 @@
     const range = Number.isFinite(lower) && Number.isFinite(upper)
       ? `Faixa justa estimada · ${money(lower)}–${money(upper)} ${unit}` : '';
     const ivs = noticeIvsOnly
-      ? NOTICE_IVS.filter(key => Number.isInteger(row.ivs?.[key]) && row.ivs[key] >= 0)
-        .map(key => {
-          const value = row.ivs[key];
-          const rating = value < 15 ? 'crítico' : value < 25 ? 'baixo' : 'Pica';
-          return `${IV_LABELS[key]} ${value} (${rating})`;
-        })
+      ? noticeIvs(row)
       : coins ? coinIvs(row, IV_LABELS) : Object.keys(IV_LABELS)
         .filter(key => isLowIv(row.ivs?.[key])).map(key => IV_LABELS[key]);
     const warning = [ivs.length ? (noticeIvsOnly ? 'IVs: ' : 'IV baixo: ') + ivs.join(', ') : '',

@@ -16,9 +16,13 @@ function itemQuotes(itemPrices){
 }
 function speciesLookup(central){const byName=new Map();for(const e of central.species.values())if(!byName.has(norm(e.n)))byName.set(norm(e.n),e.id);return (id,name)=>central.species.has(Number(id))?Number(id):byName.get(norm(name))??null;}
 const megaBase=(central,e)=>e?.megaBase??(e&&e.id>=3000&&e.id<4000&&/^Mega /i.test(e.n)?e.id-3000:null);
-function attackIv(e,ivs){
+function attackStyle(e){
  const atk=e?.b?.[1]||0,spAtk=e?.b?.[3]||0,share=atk+spAtk>0?atk/(atk+spAtk):.5;
- if(Math.abs(share-.5)>.03+1e-9)return share>.5?ivs.atk:ivs.spAtk;
+ return Math.abs(share-.5)>.03+1e-9?(share>.5?'attack':'specialAttack'):'mixed';
+}
+function attackIv(style,ivs){
+ if(style==='attack')return ivs.atk;
+ if(style==='specialAttack')return ivs.spAtk;
  const lo=Math.min(ivs.atk,ivs.spAtk),hi=Math.max(ivs.atk,ivs.spAtk);return Math.round((2*lo+hi)/3*100)/100;
 }
 function biasFor(correcao,shiny){
@@ -37,8 +41,9 @@ function describe(central,p){
  if(p.tmElemental)addons.push({id:B.Z_FRAGMENT,label:'Z-Move '+String(p.tmElemental).toUpperCase(),quantity:PER_ADDON});
  if(yes(p.tmAoe))addons.push({id:B.AOE_FRAGMENT,label:'AoE',quantity:PER_ADDON});
  if(mega)addons.push({id:p.shiny===true?MEGA_SHINY:MEGA,label:p.shiny===true?'Mega Shiny':'Mega',quantity:PER_ADDON});
+ const style=attackStyle(central.species.get(final.id));
  return {pve:final.pve,family:final.id,familyName:final.name,shiny:p.shiny===true,level:p.level,addons,mega,
-  ivAtaque:attackIv(central.species.get(final.id),p.ivs),notaBase:mega&&Number.isFinite(final.grade)?final.grade:null};
+  ivAtaque:attackIv(style,p.ivs),attackStyle:style,notaBase:mega&&Number.isFinite(final.grade)?final.grade:null};
 }
 function prepare(central,sales,itemPrices){
  const quote=itemQuotes(itemPrices),find=speciesLookup(central),rows=[],skipped={};
@@ -182,5 +187,5 @@ function priceSheet(central,sheet,{rows,itemPrices=[],currentItems={},now=Date.n
  const byLevel=levels.map(level=>{const k=Math.exp(fit.level(Math.log(level))-here),p=x=>Math.max(MIN_PRICE,Math.round(x*k+known));return {level,low:p(e.low-known),median:p(e.base),high:p(e.high-known),current:level===target.level,drop:level===drop};});
  return {...result,available:true,low:e.low,median:e.median,high:e.high,byLevel,dropLevel:drop,base:Math.round(e.base),weight:e.weight,familyCount:e.familyCount,marketCount:e.marketCount,uncertain:e.uncertain,confidence:e.confidence,correcao:Number.isFinite(b)?b:null,comps};
 }
-root.PokeIdlePvePricing={describe,biasFor,prepare,estimate,neighbors,marketFit,confidence,priceSheet,pav,at,itemQuotes,day,MEGA,MEGA_SHINY,MODEL,NEIGHBORS,CONFIDENCE};
+root.PokeIdlePvePricing={describe,attackStyle,attackIv,biasFor,prepare,estimate,neighbors,marketFit,confidence,priceSheet,pav,at,itemQuotes,day,MEGA,MEGA_SHINY,MODEL,NEIGHBORS,CONFIDENCE};
 })(globalThis);

@@ -4,7 +4,7 @@ const PISMarketStore = (() => {
   const MAX_COMPARABLES = 1000;
   const DB_VERSION = 16;
   const ESTIMATE_REVISION = 8;
-  const revisionFor = row => row?.currency === 'gold' ? 7 : ESTIMATE_REVISION;
+  const revisionFor = row => row?.currency === 'gold' ? 9 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
   const fold = value => (value || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
   let opening;
@@ -767,7 +767,7 @@ const PISMarketStore = (() => {
     const coins = { observados: 0, novos_capturados: 0, retidos: 0, estimados: 0, confiáveis: 0,
       sem_comparáveis: 0, extras_sem_suporte: 0, preços_dispersos: 0,
       bepi: 0, abaixo_da_mediana: 0, fortes: 0,
-      estimados_sem_captura_nova: 0, sem_horário_publicação: 0, ofertas: 0, avisos_reais: 0 };
+      estimados_sem_captura_nova: 0, ajustados_por_iv_de_ataque: 0, sem_horário_publicação: 0, ofertas: 0, avisos_reais: 0 };
     totals.coins = coins;
     for (const row of listings) {
       if (row.currency === 'gold') {
@@ -782,6 +782,7 @@ const PISMarketStore = (() => {
         if (row.estimate?.alertReason === 'preços_dispersos') coins.preços_dispersos++;
         if (row.pricingRevision === revisionFor(row) && row.estimate?.status === 'estimated') {
           coins.estimados++;
+          if (Number.isFinite(row.estimate.attackFactor) && row.estimate.attackFactor !== 1) coins.ajustados_por_iv_de_ataque++;
           if (!trackedLaunch(row, now)) coins.estimados_sem_captura_nova++;
           if (row.estimate.bepi) coins.bepi++;
           if (row.price < row.estimate.median) coins.abaixo_da_mediana++;

@@ -54,14 +54,14 @@ test('formata desconto, anúncio e intervalo em milhões de Coins, sem misturar 
   assert.equal(gems.message, '20% de desconto · 100 Gemas\nFaixa justa estimada · 110–140 Gemas');
 });
 
-test('o aviso de Gemas resume a ficha e identifica a moeda do preço justo', () => {
+test('o aviso de Gemas mantém a velocidade quando a espécie não está no catálogo', () => {
   const { noticePresentation } = require('../opportunities.js');
   const now = Date.UTC(2026, 10, 20, 3, 0, 0);
   const result = noticePresentation({
-    currency: 'orb', name: 'Meganium', level: 306, power: 1, grade: 3.62, price: 30, availableAt: now + 60_000,
+    currency: 'orb', name: 'Espécie fora do catálogo', level: 306, power: 1, grade: 3.62, price: 30, availableAt: now + 60_000,
     ivs: { speed: 14, attack: 15, specialAttack: 25, hp: 1, defense: 2, specialDefense: 3 },
     estimate: { discount: 1 - 30 / 71, median: 71 },
   }, now);
-  assert.equal(result.title, 'Meganium · −57,7%');
-  assert.equal(result.message, 'Nvl 306 · P1 · Nota 3,620\nMercado 💎 30 · Preço justo 💎 71\nIVs: Velocidade 14 (crítico), Ataque 15 (baixo), Atq. Esp. 25 (Pica)');
+  assert.equal(result.title, 'Espécie fora do catálogo · −57,7%');
+  assert.equal(result.message, 'Nvl 306 · P1 · Nota 3,620\nMercado 💎 30 · Preço justo 💎 71\nIVs: Velocidade 14 (crítico)');
 });

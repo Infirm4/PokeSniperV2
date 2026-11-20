@@ -338,6 +338,42 @@
   const sameMarket = (a, b) => !isOutland(a) && !isOutland(b) && a.currency === b.currency && a.speciesId === b.speciesId &&
     a.shiny === b.shiny && (a.form ?? null) === (b.form ?? null);
 
+  const validIv = value => Number.isInteger(value) && value >= 0 && value <= 32;
+  let attackCatalog;
+
+  function attackProfile(row) {
+    const catalog = globalThis.PI_ESPECIES;
+    const engine = globalThis.PokeIdlePvePricing;
+    if (!Array.isArray(catalog) || !engine?.attackStyle) return null;
+    if (attackCatalog?.catalog !== catalog) {
+      const key = name => name?.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+        .replace(/^✨\s*/u, '').replace(/^shiny\s+/i, '').toLowerCase();
+      attackCatalog = {
+        catalog, key, byName: new Map(catalog.map(species => [key(species.n), species])),
+        byId: new Map(catalog.map(species => [species.id, species])),
+        central: globalThis.PokeIdleCentral?.create(globalThis),
+      };
+    }
+    const { key, byName, byId, central } = attackCatalog;
+    const species = row.name ? byName.get(key(row.name)) : byId.get(Number(row.speciesId));
+    if (!species) return null;
+    const iv = row.ivs ?? {};
+    const ivs = { hp: iv.hp, atk: iv.attack, def: iv.defense, spAtk: iv.specialAttack,
+      spDef: iv.specialDefense, speed: iv.speed };
+    // O motor escolhe a forma final usada no cálculo, inclusive nas evoluções ramificadas.
+    const hasOtherForm = species.evo?.length || species.megaBase != null ||
+      (species.id >= 3000 && species.id < 4000 && /^Mega /i.test(species.n));
+    const profile = hasOtherForm && central && engine.describe(central, {
+      speciesId: species.id, level: row.level, potencia: row.power, quality: row.quality,
+      shiny: row.shiny === 1, ivs, refino: {},
+    });
+    if (profile) return { style: profile.attackStyle, value: profile.ivAtaque };
+    const style = engine.attackStyle(species);
+    const hasIv = style === 'attack' ? validIv(ivs.atk) : style === 'specialAttack'
+      ? validIv(ivs.spAtk) : validIv(ivs.atk) && validIv(ivs.spAtk);
+    return { style, value: hasIv ? engine.attackIv(style, ivs) : null };
+  }
+
   // A ficha ausente não prova incompatibilidade, mas também não comprova um especial.
   function compatibleProfile(target, sale) {
     if (target.power != null && sale.power != null && target.power !== sale.power) return false;
@@ -374,7 +410,7 @@
     if (!samePower && !neighbor && Number.isInteger(target.power) && Number.isInteger(sale.power)) return null;
     const refine = Number.isFinite(target.refinement) && Number.isFinite(sale.refinement) ?
       Math.min(2, Math.abs(target.refinement - sale.refinement) / Math.max(1, target.refinement * 0.2)) / 3 : 0;
-    // A Qualidade direta só é usada na variante do backtest. IVs ficam no aviso.
+    // A Qualidade direta só é usada na variante do backtest.
     const quality = qualityWeight && Number.isFinite(target.quality) && Number.isFinite(sale.quality)
       ? Math.min(2, Math.abs(target.quality - sale.quality) / Math.max(0.01, target.quality * 0.12)) / 3 : 0;
     return { grade, close: grade <= 0.35 && level <= 0.3, samePower, neighbor, extraPremium,
@@ -411,6 +447,36 @@
     }).sort((a, b) => a.price - b.price);
   }
 
+  function coinAttackFactor(target, rows) {
+    const attack = attackProfile(target);
+    if (!Number.isFinite(attack?.value)) return 1;
+    const anchors = rows.filter(row => row.verified && row.samePower && !row.extraPremium)
+      .sort((a, b) => b.weight - a.weight).slice(0, 24)
+      .map(row => ({ ...row, attack: attackProfile(row.sale) }))
+      .filter(row => row.attack?.style === attack.style && Number.isFinite(row.attack.value));
+    if (anchors.length < 3) return 1;
+
+    const slopes = [], matched = new Set();
+    for (const [index, a] of anchors.entries()) {
+      for (const b of anchors.slice(index + 1)) {
+        const difference = b.attack.value - a.attack.value;
+        if (Math.abs(difference) < 4 || Math.abs(Math.log(b.sale.level / a.sale.level)) > 0.12 ||
+            Math.abs(b.sale.grade - a.sale.grade) > 0.08 ||
+            SPECIALS.some(flag => (a.sale[flag] === 1) !== (b.sale[flag] === 1))) continue;
+        slopes.push({ price: Math.log(b.price / a.price) / difference, weight: Math.min(a.weight, b.weight) });
+        matched.add(a);
+        matched.add(b);
+      }
+    }
+    if (matched.size < 3) return 1;
+    slopes.sort((a, b) => a.price - b.price);
+    // Usa só o prêmio positivo observado em vendas semelhantes e reduz o peso de amostras pequenas.
+    const slope = Math.max(0, quantile(slopes, totalWeight(slopes), 0.5)) * matched.size / (matched.size + 8);
+    const ivs = anchors.map(row => ({ price: row.attack.value, weight: row.weight })).sort((a, b) => a.price - b.price);
+    const medianIv = quantile(ivs, totalWeight(ivs), 0.5);
+    return Math.max(0.85, Math.min(1.15, Math.exp(slope * (attack.value - medianIv))));
+  }
+
   function coinQuote(target, rows, scale, { direct = false, bepi = false, outlierCount = 0, reason } = {}) {
     const count = rows.length, effectiveCount = effective(rows);
     const stats = { count, independentCount: count, effectiveCount, outlierCount, gradeScale: scale,
@@ -430,9 +496,13 @@
       ? quantile(qualities, totalWeight(qualities), 0.25) : null;
     const powerCounts = bepi ? Object.fromEntries([target.power, target.power - 1].map(power =>
       [power, rows.filter(row => row.sale.power === power).length])) : null;
-    return { status: 'estimated', method: 'coins_comparables', ...stats, lower, median, upper, confidence, bepi,
+    const attackFactor = coinAttackFactor(target, rows);
+    const adjust = value => Math.max(1, Math.min(Number.MAX_SAFE_INTEGER, Math.round(value * attackFactor)));
+    const fair = adjust(median);
+    return { status: 'estimated', method: 'coins_comparables', ...stats,
+      lower: adjust(lower), median: fair, upper: adjust(upper), attackFactor, confidence, bepi,
       powerCounts, qualityBelow: Number.isFinite(target.quality) && qualityLower != null && target.quality < qualityLower,
-      discount: 1 - target.price / median, alertSupported: (direct || bepi) && confidence !== 'baixa',
+      discount: 1 - target.price / fair, alertSupported: (direct || bepi) && confidence !== 'baixa',
       alertReason: reason || (!(direct || bepi) ? 'comparáveis_insuficientes' : confidence === 'baixa' ? 'preços_dispersos' : null),
       comparables: [...rows].sort((a, b) => b.weight - a.weight).slice(0, 5).map(({ sale }) => ({
         id: sale.id, price: sale.price, soldAt: sale.soldAt, grade: sale.grade, level: sale.level,
@@ -553,7 +623,7 @@
   }
 
   const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
-    WINDOW_MS, MAX_BATCH, estimateCoins, incompleteSaleFields, matchesDisplayPrice, inventoryProfiles, findInventoryProfile };
+    WINDOW_MS, MAX_BATCH, estimateCoins, attackProfile, validIv, incompleteSaleFields, matchesDisplayPrice, inventoryProfiles, findInventoryProfile };
   if (typeof window === 'undefined' && typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
 })();

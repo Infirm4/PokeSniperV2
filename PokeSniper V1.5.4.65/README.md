@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.64)
+# PokeIdle Market Sniper (v1.5.4.65)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -6,7 +6,7 @@ O relatório inclui **versão_na_aba** e a disponibilidade dos dois módulos.
 
 Em **Coins**, a escala da Nota se adapta ao suporte do histórico. Especiais
 diferentes pesam menos e extras que faltam no alvo não sustentam alertas.
-IVs e Qualidade viraram avisos de ficha. O BEPI em Coins é aplicado
+A Qualidade aparece no aviso. O BEPI em Coins é aplicado
 automaticamente às oportunidades elegíveis.
 No BEPI, a oferta deve ficar abaixo do quartil inferior e superar em cinco
 pontos percentuais o desconto configurado. A porcentagem é sempre relativa
@@ -34,8 +34,12 @@ O identificador do exemplar impede que revendas dominem a referência.
 A precificação de Coins pondera a semelhança de Nota, nível e Potência,
 os atributos comparáveis e a recência. Usa quartis ponderados e filtra
 extremos no cálculo. Os avisos exigem suporte de vendas confirmadas pelo jogo.
-IVs individuais e Qualidade ajudam a interpretar a ficha. O alerta normal exige pelo menos três
-comparáveis próximos de exemplares diferentes, com amostra efetiva e
+O ajuste de IV usa o mesmo critério de ataque dominante de Gemas. Em Coins,
+o prêmio é estimado a partir de vendas parecidas da espécie, com peso
+reduzido para amostras pequenas e limite de ±15% no preço de referência.
+Quando não há evidência comparável, o preço segue a referência original e
+o alerta continua elegível pelos critérios habituais. O alerta normal exige
+pelo menos três comparáveis próximos de exemplares diferentes, com amostra efetiva e
 dispersão de preços aceitáveis.
 
 **Gerar relatório do mercado** consulta o estado e os registros de avisos reais.
@@ -354,6 +358,11 @@ Em **Diagnóstico da versão → Comparar ajuste de IV em Gemas**, é possível
 informar o nome de um Pokémon da vitrine e comparar o preço justo, a faixa e
 o desconto com e sem esse ajuste. O relatório inclui a referência do motor
 do BriaoAle, na mesma ficha e data da base. Nenhum aviso é gerado pelo teste.
+
+Nos avisos de Coins e Gemas, a Velocidade é sempre mostrada: crítico abaixo
+de 15, média de 15 a 24 e Pica a partir de 25. O aviso também mostra o IV
+do ataque dominante, ou o valor de ataque misto calculado pelo motor quando
+a espécie é equilibrada. A Velocidade não recebe um ajuste direto no preço.
 
 ## Oportunidades e diagnóstico
 

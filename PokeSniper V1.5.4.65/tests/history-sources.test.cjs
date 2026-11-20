@@ -8,7 +8,7 @@ const coins = require('../coins-history.js');
 
 const ctx = vm.createContext({});
 for (const path of ['especies', 'pve-power', 'market-bonuses', 'central', 'nota', 'pve-pricing'].map(name =>
-  'vendor/briaoale/' + name + '.js').concat(['market-core.js', 'public-gems.js'])) {
+  'vendor/briaoale/' + name + '.js').concat(['market-core.js', 'public-gems.js', 'opportunities.js'])) {
   vm.runInContext(readFileSync(join(__dirname, '..', path), 'utf8'), ctx);
 }
 const now = Date.UTC(2026, 10, 19);
@@ -87,4 +87,40 @@ test('backup preserva atributos de registros repetidos e exclui Outlaws explíci
   assert.equal(imported[0].ivs.speed, 0);
   assert.equal(imported[0].grade, 5);
   assert.equal(coins.cleanSpecies('Type: Null'), 'Type: Null');
+});
+
+test('o IV dominante ajusta a referência de Coins sem virar requisito de aviso', () => {
+  const quote = { ...target, currency: 'gold', price: 80_000_000 };
+  const sales = [10, 14, 18, 22, 26].map((specialAttack, i) => ({
+    ...quote, id: String(i + 1), pokemonId: String(i + 100), soldAt: now - (i + 1) * 60000,
+    source: 'game', price: (90 + i * 5) * 1_000_000, ivs: { ...quote.ivs, specialAttack },
+  }));
+  const estimate = ivs => ctx.PISMarketCore.estimate({ ...quote, ivs: { ...quote.ivs, ...ivs } }, sales, now);
+  const low = estimate({ specialAttack: 10 });
+  const high = estimate({ specialAttack: 32 });
+  const otherIvs = estimate({ specialAttack: 32, speed: 0, attack: 1 });
+  const missing = estimate({ specialAttack: null });
+  assert.ok(low.median < missing.median && missing.median < high.median);
+  assert.equal(high.median, otherIvs.median);
+  assert.equal(high.effectiveCount, low.effectiveCount);
+  assert.equal(low.alertSupported, true);
+  assert.equal(missing.alertSupported, true);
+  assert.equal(missing.attackFactor, 1);
+  assert.ok(high.attackFactor <= 1.15 && low.attackFactor >= 0.85);
+  const legacy = ctx.PISMarketCore.estimate(quote, sales.map(sale => ({ ...sale, ivs: null })), now);
+  assert.equal(legacy.median, missing.median);
+  assert.equal(legacy.alertSupported, true);
+});
+
+test('o aviso classifica a velocidade e exibe o ataque da mesma forma usada no motor', () => {
+  const { noticePresentation } = ctx.PISOpportunities;
+  const quote = { ...target, estimate: { median: 100, discount: 0.25 },
+    ivs: { hp: 20, attack: 26, defense: 20, specialAttack: 17, specialDefense: 20, speed: 15 } };
+  assert.match(noticePresentation(quote).message, /IVs: Velocidade 15 \(média\), Atq\. Esp\. 17$/);
+  const dragonite = { ...quote, name: 'Dragonite', ivs: { ...quote.ivs, speed: 25 } };
+  assert.match(noticePresentation(dragonite).message, /IVs: Velocidade 25 \(Pica\), Ataque 26$/);
+  assert.match(noticePresentation({ ...quote, name: 'Meganium' }).message, /Ataque misto 20$/);
+  const haunter = { ...quote, name: 'Haunter', ivs: { ...quote.ivs, speed: 14 } };
+  assert.match(noticePresentation(haunter).message, /IVs: Velocidade 14 \(crítico\), Atq\. Esp\. 17$/);
+  assert.match(noticePresentation({ ...quote, ivs: { ...quote.ivs, speed: null } }).message, /Velocidade indisponível/);
 });

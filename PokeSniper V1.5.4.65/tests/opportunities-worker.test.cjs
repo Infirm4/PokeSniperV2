@@ -2,9 +2,13 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const test = require('node:test');
-const { runInNewContext } = require('node:vm');
-const rules = require('../opportunities.js');
-const PISMarketCore = require('../market-core.js');
+const { createContext, runInContext, runInNewContext } = require('node:vm');
+const pricingContext = createContext({ URL });
+for (const file of ['vendor/briaoale/especies.js', 'vendor/briaoale/market-bonuses.js', 'vendor/briaoale/pve-pricing.js',
+  'market-core.js', 'opportunities.js']) {
+  runInContext(readFileSync(join(__dirname, '..', file), 'utf8'), pricingContext);
+}
+const { PISOpportunities: rules, PISMarketCore } = pricingContext;
 
 const worker = readFileSync(join(__dirname, '../opportunities-worker.js'), 'utf8');
 
@@ -81,7 +85,7 @@ test('tenta a sprite verificada nos dois canais e recupera o ícone fixo se o Ch
   assert.equal(notices[1].iconUrl, 'opportunity-placeholder.png');
   assert.equal(game[3], sprite);
   assert.equal(notices[0].title, 'Gengar · −21,5%');
-  assert.equal(notices[0].message, 'Nvl 100 · P4 · Nota 4,123\nMercado 💰 78,5 MI · Preço justo 💰 100 MI\nIVs: Velocidade 0 (crítico), Ataque 24 (baixo), Atq. Esp. 32 (Pica)');
+  assert.equal(notices[0].message, 'Nvl 100 · P4 · Nota 4,123\nMercado 💰 78,5 MI · Preço justo 💰 100 MI\nIVs: Velocidade 0 (crítico), Atq. Esp. 32');
   assert.equal(game[0], notices[0].title);
   assert.equal(game[1], notices[0].message);
 });
