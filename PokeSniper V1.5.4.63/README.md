@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.62)
+# PokeIdle Market Sniper (v1.5.4.63)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -347,7 +347,9 @@ a ficha. Ele contém apenas metadados e contagens e mantém os últimos 40 event
 
 O painel **Oportunidades** reúne os avisos enviados ao jogo ou aceitos pelo
 Chrome nos últimos 10 minutos, em ordem de envio. Cada cartão mantém o preço
-e o desconto do momento do aviso, mesmo que a oferta depois saia do mercado.
+e o desconto do momento do aviso, mesmo que a oferta depois saia do mercado. No PokéIdle, os
+avisos aparecem em ordem de chegada, um por vez por 3 segundos. Fechar um aviso
+antecipa o próximo da fila.
 
 Para validar a instalação, abra **Tabela de preços → Pokémon** e a vitrine. Em seguida, no
 ícone da extensão, use **Diagnóstico da versão → Rodar diagnóstico → Copiar resultado**. O

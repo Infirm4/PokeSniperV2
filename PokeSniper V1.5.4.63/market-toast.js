@@ -1,16 +1,18 @@
 // Exibe avisos enviados pelo service worker na aba do jogo.
 (() => {
-  const MAX_VISIBLE = 3;
-  const DURATION_MS = 9000;
-  const visible = new Map();
+  const DURATION_MS = 3000;
+  const waiting = new Map();
+  let active;
   let host;
   let container;
 
   function mount() {
     if (host?.isConnected) return true;
     if (!document.documentElement) return false;
-    for (const entry of visible.values()) clearTimeout(entry.timer);
-    visible.clear();
+    if (host) {
+      document.documentElement.append(host);
+      return true;
+    }
 
     host = document.createElement('div');
     const shadow = host.attachShadow({ mode: 'closed' });
@@ -25,7 +27,6 @@
         z-index: 2147483647 !important;
         pointer-events: none !important;
       }
-      .stack { display: grid; gap: 8px; }
       .notice {
         box-sizing: border-box;
         display: grid;
@@ -66,7 +67,6 @@
       button:hover, button:focus-visible { background: #52376a; }
     `);
     container = document.createElement('div');
-    container.className = 'stack';
     container.setAttribute('aria-live', 'polite');
     container.setAttribute('aria-relevant', 'additions text');
     shadow.adoptedStyleSheets = [style];
@@ -75,12 +75,22 @@
     return true;
   }
 
-  function remove(key) {
-    const entry = visible.get(key);
-    if (!entry) return;
-    clearTimeout(entry.timer);
-    entry.element.remove();
-    visible.delete(key);
+  function advance() {
+    if (active || !waiting.size || !mount()) return;
+    const notice = waiting.values().next().value;
+    waiting.delete(notice.key);
+    notice.element = render(notice);
+    active = notice;
+    container.append(notice.element);
+    notice.timer = setTimeout(() => dismiss(notice), DURATION_MS);
+  }
+
+  function dismiss(notice) {
+    if (active !== notice) return;
+    clearTimeout(notice.timer);
+    notice.element.remove();
+    active = undefined;
+    advance();
   }
 
   async function review(value, demo = false) {
@@ -106,14 +116,14 @@
   function show(title, message, test, sprite, offer, spriteFallback) {
     if (!mount()) return false;
     const key = JSON.stringify([title, message, test, sprite, offer?.id]);
-    if (visible.has(key)) {
-      const entry = visible.get(key);
-      clearTimeout(entry.timer);
-      entry.timer = setTimeout(() => remove(key), DURATION_MS);
-      return true;
-    }
-    if (visible.size >= MAX_VISIBLE) remove(visible.keys().next().value);
+    if (active?.key === key || waiting.has(key)) return true;
+    waiting.set(key, { key, title, message, test, sprite, offer, spriteFallback });
+    advance();
+    return true;
+  }
 
+  function render(notice) {
+    const { title, message, test, sprite, offer, spriteFallback } = notice;
     const element = document.createElement('div');
     element.className = test ? 'notice test' : 'notice';
     const heading = document.createElement('strong');
@@ -124,7 +134,7 @@
     close.type = 'button';
     close.textContent = '×';
     close.setAttribute('aria-label', 'Fechar aviso');
-    close.addEventListener('click', () => remove(key));
+    close.addEventListener('click', () => dismiss(notice));
     if (sprite) {
       const img = document.createElement('img');
       img.className = 'sprite';
@@ -145,14 +155,12 @@
       checkout.addEventListener('click', async event => {
         if (!event.isTrusted) return;
         checkout.disabled = true;
-        if (await review(offer)) remove(key);
+        if (await review(offer)) dismiss(notice);
         else { checkout.textContent = 'Recarregue o PokéIdle para revisar'; checkout.disabled = false; }
       });
       element.append(checkout);
     }
-    container.append(element);
-    visible.set(key, { element, timer: setTimeout(() => remove(key), DURATION_MS) });
-    return true;
+    return element;
   }
 
   chrome.runtime.onMessage.addListener((request, sender, reply) => {
