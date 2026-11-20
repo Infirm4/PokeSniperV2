@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.67)
+# PokeIdle Market Sniper (v1.5.4.68)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -173,7 +173,10 @@ ou ficar sem estimativa. Os dados da ficha vêm do estado já recebido do jogo.
 Ao abrir a ficha de um Pokémon próprio no Depósito ou na Coleção, o selo
 aparece logo abaixo da barra da Nota para exemplares com Nota 3,500 ou maior.
 O selo reaproveita a consulta da mochila e mostra «Consultando…» se a cotação
-ainda estiver em andamento após o reconhecimento do exemplar.
+ainda estiver em andamento após o reconhecimento do exemplar. A ficha mostra
+**Venda: (vender rápido, esperar)** nas moedas com faixa disponível. Os limites
+são os quartis de 25% e 75% das vendas comparáveis ponderadas, com os ajustes
+da cotação da ficha. São referências de preço, sem estimativa de prazo.
 
 ## Monitoramento e precificação
 

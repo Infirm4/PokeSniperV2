@@ -4,6 +4,7 @@
   const cards = '.poke-linha, .poke-card, .pk-card, .pokemon-card, [data-pokemon-id], [data-poke-id], [data-pk-id], [data-pokemon], [data-pk]';
   const excluded = '#cm-lista, #ficha, .cm-folha';
   const number = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 });
+  const currencies = [['gold', '💰', 'Coins'], ['orb', '💎', 'Gemas']];
   const cache = new Map();
   const MIN_SHEET_GRADE = 3.5;
   let hovered, tooltip, timer, hoverRequest = 0, requestSequence = 0;
@@ -41,13 +42,16 @@
     hovered = null;
   }
 
+  function formatPrice(amount, currency) {
+    return currency === 'gold' && amount >= 1_000_000 ? number.format(amount / 1_000_000) + ' MI' : number.format(amount);
+  }
+
   function priceLabels(profile, quotes) {
-    return [['gold', '💰', 'Coins'], ['orb', '💎', 'Gemas']].map(([currency, icon, unit]) => {
+    return currencies.map(([currency, icon, unit]) => {
       const quote = quotes?.[currency];
       let value = 'Sem estimativa';
       if (currency === 'gold' && profile.shiny === 1) value = 'Disponível em Gemas';
-      else if (quote) value = currency === 'gold' && quote.median >= 1_000_000
-        ? number.format(quote.median / 1_000_000) + ' MI' : number.format(quote.median);
+      else if (quote) value = formatPrice(quote.median, currency);
       return icon + ' ' + unit + ' · ' + value + (quote?.indicative ? ' (indicativo)' : '');
     });
   }
@@ -147,6 +151,25 @@
     }
   }
 
+  function saleRanges(profile, quotes) {
+    const ranges = document.createElement('div');
+    Object.assign(ranges.style, { display: 'grid', justifyItems: 'center', flexBasis: '100%', gap: '3px' });
+    for (const [currency, icon, unit] of currencies) {
+      const quote = quotes?.[currency];
+      if (!quote || (currency === 'gold' && profile.shiny === 1)) continue;
+      const { lower, median, upper } = quote;
+      if (!Number.isSafeInteger(lower) || !Number.isSafeInteger(upper) || lower <= 0 || lower > median || upper < median)
+        continue;
+      const quick = formatPrice(lower, currency);
+      const wait = formatPrice(upper, currency);
+      const line = document.createElement('span');
+      line.textContent = `${icon} Venda: (${quick}, ${wait}) ${unit}`;
+      line.title = `Vender rápido: ${quick} ${unit}. Esperar: ${wait} ${unit}. Cerca de 1 em cada 4 vendas comparáveis fica acima do valor de espera na estimativa.`;
+      ranges.append(line);
+    }
+    return ranges;
+  }
+
   function showSheetPrice(profile, quotes, pending = false) {
     sheetBadge?.remove();
     sheetBadge = document.createElement('div');
@@ -172,6 +195,8 @@
         padding: '2px 6px', borderRadius: '3px' });
       panel.append(pill);
     }
+    const ranges = saleRanges(profile, quotes);
+    if (ranges.childElementCount) panel.append(ranges);
     sheetBadge.attachShadow({ mode: 'open' }).append(panel);
     placeSheetBadge();
   }

@@ -623,8 +623,11 @@ const PISMarketStore = (() => {
     const sales = profile.shiny ? [] :
       await recentSales(db.transaction('sales').objectStore('sales').index('comparables'), profile, now);
     const gold = profile.shiny ? null : PISMarketCore.estimate(profile, sales, now);
-    const quote = estimate => estimate?.status === 'estimated' && Number.isSafeInteger(estimate.median) ?
-      { median: estimate.median, indicative: estimate.alertSupported !== true || estimate.bepi === true } : null;
+    const quote = estimate => {
+      if (estimate?.status !== 'estimated' || !Number.isSafeInteger(estimate.median)) return null;
+      const { lower, median, upper } = estimate;
+      return { median, lower, upper, indicative: estimate.alertSupported !== true || estimate.bepi === true };
+    };
     return { gold: quote(gold), orb: quote(await gems) };
   }
 
