@@ -25,7 +25,7 @@
     const { lower, median, upper, indicative } = quote;
     const delta = (actualPrice - median) / median;
     const formatted = percent.format(delta < 0 ? -delta : actualPrice / median);
-    const variation = delta < 0 ? (formatted === '0%' ? '<0,1%' : formatted) + ' de desconto' :
+    const variation = delta < 0 ? (formatted === '0%' ? '<0,1%' : formatted) :
       delta > 0 && formatted === '100%' ? '>100%' : formatted;
     const amount = value => compact.format(value)
       .replace(/\b(?:mi|bi)$/, unit => unit[0].toUpperCase() + unit.slice(1));
