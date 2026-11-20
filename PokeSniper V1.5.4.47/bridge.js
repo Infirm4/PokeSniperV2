@@ -65,6 +65,9 @@
           automatic: msg.automatic === true, live: msg.live === true, page: msg.page, currency: msg.currency, totalRows: msg.totalRows }, reply => {
           const error = chrome.runtime.lastError;
           if (error || !reply?.ok) console.warn('[PIS] Observação de mercado não gravada:', error?.message || reply?.error);
+          else if (msg.kind === 'listing' && msg.rows.length) window.postMessage({
+            source: 'PIS_BRIDGE', type: 'MARKET_LISTINGS_SAVED',
+          }, location.origin);
         });
       } catch (error) { console.warn('[PIS] Ponte de mercado indisponível:', error.message); }
       return;

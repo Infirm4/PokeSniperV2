@@ -19,7 +19,10 @@ test('a vitrine mostra referência, faixa e desconto e preço relativo ao valor 
   assert.match(equal.label, / 100%$/);
   assert.match(coinBadge({ quote, actualPrice: 499_999_999 }).label, / <0,1%$/);
   assert.match(coinBadge({ quote, actualPrice: 500_000_001 }).label, / >100%$/);
-  assert.match(coinBadge({ quote: { ...quote, indicative: true }, actualPrice: 400_000_000 }).range, /Indicativa/);
+  const indicative = coinBadge({ quote: { ...quote, indicative: true }, actualPrice: 600_000_000 });
+  assert.match(indicative.range, /Indicativa/);
+  assert.equal(indicative.tone, 'above');
+  assert.equal(coinBadge({ unread: true }).label, 'Sem dados');
   assert.equal(coinBadge({ quote: null }).label, 'Sem estimativa');
 });
 

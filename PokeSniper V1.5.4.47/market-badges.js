@@ -20,7 +20,8 @@
 
   function readPrice(value, currency) { return displayPrice(value, currency)?.price ?? null; }
 
-  function coinBadge({ quote, actualPrice }) {
+  function coinBadge({ quote, actualPrice, unread }) {
+    if (unread) return { label: 'Sem dados', range: 'O Sniper ainda não conseguiu conferir este anúncio.', tone: 'neutral' };
     if (!quote) return { label: 'Sem estimativa', range: '', tone: 'neutral' };
     const { lower, median, upper, indicative } = quote;
     const delta = (actualPrice - median) / median;
@@ -35,7 +36,7 @@
     return {
       label: '≈' + amount(median) + ' ' + variation,
       range: 'Faixa ' + amount(lower) + '–' + amount(upper) + (indicative ? ' · Indicativa' : ''),
-      tone: delta === 0 || indicative ? 'neutral' : delta < 0 ? 'below' : 'above',
+      tone: delta === 0 ? 'neutral' : delta < 0 ? 'below' : 'above',
     };
   }
 
@@ -50,18 +51,28 @@
   let revision = 0;
   const badges = new WeakMap();
   const visibleCurrencies = new Map();
+  const PRICE = '.cm-rodape .cm-preco';
 
   function identify(card) {
-    const id = card.querySelector('button.cm-fav[data-fav]')?.dataset.fav;
-    const node = card.querySelector('.cm-rodape > .cm-preco');
-    if (!node || !/^[A-Za-z0-9_-]{1,64}$/.test(id ?? '')) return null;
-    const denominations = ['gold', 'orb'].filter(value => node.classList.contains(value) || node.dataset.moeda === value);
-    if (denominations.length > 1) return null;
+    const rawId = card.querySelector('[data-fav]')?.dataset.fav ?? card.dataset.anuncioId ?? card.dataset.listingId;
+    const id = /^[A-Za-z0-9_-]{1,64}$/.test(rawId ?? '') ? rawId : null;
+    const node = card.querySelector(PRICE);
+    if (!node) return null;
     const hint = visibleCurrencies.get(id);
-    const currency = denominations[0] ?? (hint?.currency === 'gold' && Date.now() - hint.at < 600000 ? 'gold' : null);
-    if (!currency) return null;
-    const shown = displayPrice(node.dataset.preco ?? node.textContent, currency);
-    return shown ? { id, currency, ...shown } : null;
+    const seen = hint && Date.now() - hint.at < 600000;
+    const pokemon = seen || card.matches('.poke, [data-tipo="pokemon"]') ||
+      [...card.querySelectorAll('button, a, [role="button"]')].some(button => /^ver ficha$/i.test(button.textContent.trim()));
+    const icons = [...node.querySelectorAll('img')].map(image =>
+      [image.alt, image.title, image.getAttribute('src')?.split('/').at(-1)?.split(/[.?]/)[0]].join(' ')).join(' ');
+    const classifications = [node.dataset.moeda, card.dataset.moeda, ...node.classList, icons,
+      node.getAttribute('aria-label'), node.textContent].filter(Boolean).join(' ').replaceAll('_', ' ');
+    const coins = /(?:\b(?:gold|coins?|ouro)\b|🪙)/iu.test(classifications);
+    const gems = /(?:\b(?:orb|gemas?|gems?|diamond)\b|💎)/iu.test(classifications);
+    if (coins && gems) return null;
+    const currency = coins ? 'gold' : gems ? 'orb' : seen ? hint.currency : null;
+    if (!currency || (currency === 'gold' && !pokemon && !(id && coins))) return null;
+    const shown = displayPrice(node.dataset.preco, currency) ?? displayPrice(node.textContent, currency);
+    return { id, currency, pokemon: Boolean(pokemon), ...shown };
   }
 
   function render(card, offer) {
@@ -74,7 +85,7 @@
     const footer = card.querySelector('.cm-rodape');
     if (!footer) return;
     if (offer.currency === 'gold') {
-      const price = footer.querySelector('.cm-preco');
+      const price = card.querySelector(PRICE);
       if (!price) return;
       const host = document.createElement('span');
       host.dataset.pisCoinQuote = '';
@@ -87,7 +98,7 @@
       const badge = document.createElement('span');
       const palettes = {
         below: { fill: '#24533e', edge: '#4c8a6d' },
-        above: { fill: '#792d40', edge: '#ad5265' },
+        above: { fill: '#8f2535', edge: '#cf5866' },
         neutral: { fill: '#3c3a53', edge: '#696481' },
       };
       const palette = palettes[copy.tone];
@@ -126,9 +137,10 @@
     if (!market?.isConnected || !market.getClientRects().length) return offers;
     for (const card of market.querySelectorAll('.cm-card')) {
       const offer = identify(card);
-      const identity = offer && key(offer);
-      if (offer && offers.size < 100) offers.set(identity, offer);
-      render(card, identity ? current.get(identity) : null);
+      const identity = offer?.id && offer.price ? key(offer) : null;
+      if (identity && offers.size < 100) offers.set(identity, offer);
+      const fallback = offer?.currency === 'gold' && offer.pokemon ? { currency: 'gold', unread: true } : null;
+      render(card, (identity && current.get(identity)) || fallback);
     }
     return offers;
   }
@@ -147,7 +159,7 @@
     } catch { if (token === revision) current.clear(); }
     finally {
       pending = false;
-      if ([...visible().keys()].sort().join('\n') !== keys) schedule();
+      if (lastKeys !== keys || [...visible().keys()].sort().join('\n') !== keys) schedule();
     }
   }
 
@@ -159,7 +171,13 @@
 
   window.addEventListener('message', event => {
     const data = event.data;
-    if (event.source !== window || event.origin !== location.origin || data?.source !== 'PIS_MAIN' ||
+    if (event.source !== window || event.origin !== location.origin) return;
+    if (data?.source === 'PIS_BRIDGE' && data.type === 'MARKET_LISTINGS_SAVED') {
+      lastKeys = '';
+      if (market?.isConnected) schedule();
+      return;
+    }
+    if (data?.source !== 'PIS_MAIN' ||
         data.type !== 'MARKET_CORE_BATCH' || data.kind !== 'listing' || !Array.isArray(data.rows) ||
         data.rows.length > 100) return;
     const now = Date.now();
@@ -179,7 +197,7 @@
     market = next;
     cards.disconnect();
     if (market) cards.observe(market, { subtree: true, childList: true, characterData: true,
-      attributes: true, attributeFilter: ['data-fav', 'data-moeda', 'data-preco', 'class'] });
+      attributes: true, attributeFilter: ['data-fav', 'data-anuncio-id', 'data-listing-id', 'data-moeda', 'data-preco', 'class', 'src', 'alt'] });
     schedule();
   }
   new MutationObserver(discover).observe(document, { childList: true, subtree: true });
