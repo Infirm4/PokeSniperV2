@@ -1,120 +1,153 @@
 'use strict';
-// Automacao local de cliques MANUAIS do pokeidle.io.
-// A extensao NAO acessa cookies, credenciais, WebSockets do jogo nem APIs privadas.
-const SERVER = 'ws://127.0.0.1:8765';
+
+const SETTINGS = 'captureSettings';
+const TARGET = 'captureTarget';
+const LAST = 'captureLastResult';
+const ALARM = 'capture-wakeup';
 const GAME = 'https://pokeidle.io/*';
-let socket = null;
-let keepAliveTimer = null;
-let reconnectTimer = null;
-let lastResult = {status: 'iniciando', clicks: 0, found: 0};
+const DEFAULT_INTERVAL = 3;
+let tail = Promise.resolve();
 
-function connected() {
-  return Boolean(socket && socket.readyState === WebSocket.OPEN);
-}
-function send(payload) {
-  if (connected()) socket.send(JSON.stringify(payload));
+function enqueue(task) {
+  const result = tail.then(task);
+  tail = result.catch(() => {});
+  return result;
 }
 
-// Funcao executada em mundo isolado pelo Chrome dentro da aba, inclusive sem foco.
-// Captura usando os botoes que o jogador ja pode clicar manualmente, sem usar VIP.
-function clickGameButtons() {
-  const container = document.querySelector('#caidos-lista, .caidos-lista');
-  if (!container) return {status: 'sem_lista', clicks: 0, found: 0};
-
-  const buttons = [...container.querySelectorAll('button.caido, button[data-slot]')];
-  const now = Date.now();
-  // Este mapa fica no contexto isolado da extensao, entre injecoes na mesma aba.
-  const recently = globalThis.__pokeidleRecentThrows || new WeakMap();
-  globalThis.__pokeidleRecentThrows = recently;
-  let clicks = 0;
-  for (const button of buttons.slice(0, 12)) {
-    if (!button.isConnected || button.disabled || button.getAttribute('aria-disabled') === 'true') continue;
-    const style = getComputedStyle(button);
-    const rect = button.getBoundingClientRect();
-    if (style.display === 'none' || style.visibility === 'hidden' || rect.width < 1 || rect.height < 1) continue;
-    // Evita martelar o mesmo botao caso o jogo ainda processe o lancamento.
-    if (now - (recently.get(button) || 0) < 5000) continue;
-    recently.set(button, now);
-    button.click();
-    clicks++;
-    if (clicks >= 3) break; // no maximo 3 cliques por ciclo
-  }
-  return {status: clicks ? 'clicou' : buttons.length ? 'cooldown' : 'aguardando',
-          clicks, found: buttons.length};
+function isGame(tab) {
+  return /^https:\/\/pokeidle\.io\//i.test(tab?.url || '');
 }
 
-async function triggerThrow() {
-  const tabs = await chrome.tabs.query({url: GAME});
-  const candidates = tabs.filter(t => /^https:\/\/pokeidle\.io\//i.test(t.url || ''));
-  if (!candidates.length) return {status: 'sem_aba', clicks: 0, found: 0};
-  // Atua somente numa aba, sem ativa-la ou trazer o Chrome ao primeiro plano.
-  const tab = candidates[0];
-  if (tab.discarded) return {status: 'descartada', clicks: 0, found: 0};
+function settings(value) {
+  const interval = Number(value?.interval);
+  return { enabled: value?.enabled === true,
+    interval: Number.isFinite(interval) && interval >= 2 && interval <= 3600 ? interval : DEFAULT_INTERVAL };
+}
+
+async function updateTab(id, change) {
+  try { await chrome.tabs.update(id, change); } catch { /* A aba pode ter sido fechada. */ }
+}
+
+async function waitForDocument(work) {
+  let timer;
   try {
-    if (tab.autoDiscardable) await chrome.tabs.update(tab.id, {autoDiscardable: false});
-    const result = await chrome.scripting.executeScript({
-      target: {tabId: tab.id}, func: clickGameButtons
-    });
-    return result?.[0]?.result || {status: 'erro', clicks: 0, found: 0};
+    return await Promise.race([work, new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error('A aba não respondeu.');
+        error.pendingDocument = true;
+        reject(error);
+      }, 2500);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
+const send = (id, message) => waitForDocument(chrome.tabs.sendMessage(id, message, { frameId: 0 }));
+
+async function release(lease) {
+  if (!lease) return;
+  try { await send(lease.id, { type: 'capture:stop' }); } catch { /* Documento já trocado. */ }
+  if (lease.autoDiscardable) await updateTab(lease.id, { autoDiscardable: true });
+  await chrome.storage.session.remove(TARGET);
+}
+
+async function request(tab, config) {
+  const command = { type: 'capture:run', interval: config.interval };
+  try {
+    const reply = await send(tab.id, command);
+    return reply?.result;
   } catch (error) {
-    console.warn('Falha ao executar cliques de captura no pokeidle.io', error);
-    return {status: 'sem_permissao', clicks: 0, found: 0};
+    if (error.pendingDocument) throw error;
+    // Cobre a instalação/reinstalação enquanto o jogo já está aberto.
+    await waitForDocument(chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['capture.js'] }));
+    return (await send(tab.id, command))?.result;
   }
 }
-function clearHeartbeat() {
-  if (keepAliveTimer !== null) clearInterval(keepAliveTimer);
-  keepAliveTimer = null;
-}
-function connect() {
-  if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) return;
-  if (reconnectTimer !== null) clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-  try {
-    const ws = new WebSocket(SERVER);
-    socket = ws;
-    ws.onopen = () => {
-      send({type: 'hello', version: '2.0.0-io'});
-      clearHeartbeat();
-      keepAliveTimer = setInterval(() => send({type: 'ping'}), 20_000);
-    };
-    ws.onmessage = async event => {
-      let command;
-      try { command = JSON.parse(event.data); } catch { return; }
-      if (command.type === 'throw') {
-        lastResult = await triggerThrow();
-        send({type: 'result', ...lastResult});
-      }
-    };
-    ws.onclose = () => {
-      if (socket !== ws) return;
-      socket = null;
-      clearHeartbeat();
-      reconnectTimer = setTimeout(connect, 8000);
-    };
-    ws.onerror = () => {};
-  } catch {
-    reconnectTimer = setTimeout(connect, 8000);
+
+async function sweep() {
+  const config = settings((await chrome.storage.local.get(SETTINGS))[SETTINGS]);
+  let lease = (await chrome.storage.session.get(TARGET))[TARGET];
+  if (!config.enabled) {
+    await release(lease);
+    return;
   }
-}
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create('reconectar', {periodInMinutes: 0.5});
-  connect();
-});
-chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create('reconectar', {periodInMinutes: 0.5});
-  connect();
-});
-chrome.alarms.onAlarm.addListener(alarm => {
-  if (alarm.name === 'reconectar') connect();
-});
-chrome.runtime.onMessage.addListener((msg, _sender, respond) => {
-  if (msg.type === 'status') respond({connected: connected(), lastResult});
-  else if (msg.type === 'connect') {
-    connect();
-    respond({connected: connected(), lastResult});
+
+  const tabs = (await chrome.tabs.query({ url: GAME })).filter(isGame);
+  let tab = tabs.find(candidate => candidate.id === lease?.id);
+  if (!tab) {
+    await release(lease);
+    tab = tabs.find(candidate => candidate.active && !candidate.discarded && !candidate.frozen) ??
+      tabs.find(candidate => !candidate.discarded && !candidate.frozen) ?? tabs[0];
+    if (tab) {
+      lease = { id: tab.id, autoDiscardable: tab.autoDiscardable === true };
+      await chrome.storage.session.set({ [TARGET]: lease });
+    }
   }
+
+  let status = 'sem_aba', scan;
+  if (tab) {
+    if (tab.discarded) status = 'descartada';
+    else if (tab.frozen) status = 'congelada';
+    else {
+      if (tab.autoDiscardable) await updateTab(tab.id, { autoDiscardable: false });
+      try { scan = await request(tab, config); }
+      catch (error) { status = error.pendingDocument ? 'sem_resposta' : 'sem_permissao'; }
+      if (!scan && status === 'sem_aba') status = 'aguardando';
+    }
+  }
+  await chrome.storage.session.set({ [LAST]: scan ?? { status, found: 0, clicks: 0, at: Date.now() } });
+}
+
+async function ensureAlarm() {
+  const alarm = await chrome.alarms.get(ALARM);
+  if (!alarm) await chrome.alarms.create(ALARM, { periodInMinutes: 0.5 });
+}
+
+function wake() {
+  return enqueue(async () => {
+    await ensureAlarm();
+    await sweep();
+  });
+}
+
+function wakeSafely() {
+  wake().catch(error => console.warn('Captura automática:', error.message));
+}
+
+chrome.runtime.onInstalled.addListener(wakeSafely);
+chrome.runtime.onStartup.addListener(wakeSafely);
+chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) wakeSafely(); });
+chrome.tabs.onRemoved.addListener(async id => {
+  if ((await chrome.storage.session.get(TARGET))[TARGET]?.id === id) wakeSafely();
 });
-chrome.alarms.get('reconectar', alarm => {
-  if (!alarm) chrome.alarms.create('reconectar', {periodInMinutes: 0.5});
+chrome.tabs.onUpdated.addListener(async (id, change, tab) => {
+  if (!(change.url || change.status === 'complete' || 'discarded' in change || 'frozen' in change)) return;
+  if (isGame(tab) || (change.url && (await chrome.storage.session.get(TARGET))[TARGET]?.id === id)) wakeSafely();
 });
-connect();
+
+chrome.runtime.onMessage.addListener((message, sender, reply) => {
+  if (sender.id !== chrome.runtime.id) return false;
+  if (message?.type === 'capture:result') {
+    if (!isGame(sender.tab) || sender.frameId !== 0) return false;
+    (async () => {
+      const lease = (await chrome.storage.session.get(TARGET))[TARGET];
+      if (lease?.id === sender.tab.id) await chrome.storage.session.set({ [LAST]: message.result });
+    })().then(() => reply({ ok: true }), () => reply({ ok: false }));
+    return true;
+  }
+  if (sender.url !== chrome.runtime.getURL('popup.html')) return false;
+  const ops = {
+    'capture:get': async () => {
+      const config = settings((await chrome.storage.local.get(SETTINGS))[SETTINGS]);
+      return { config, result: (await chrome.storage.session.get(LAST))[LAST] };
+    },
+    'capture:set': async () => {
+      const config = settings(message.config);
+      await chrome.storage.local.set({ [SETTINGS]: config });
+      await wake();
+      return { config, result: (await chrome.storage.session.get(LAST))[LAST] };
+    },
+  };
+  if (!Object.hasOwn(ops, message?.type)) return false;
+  ops[message.type]().then(reply, () => reply({ error: 'Não foi possível acessar a aba do jogo.' }));
+  return true;
+});

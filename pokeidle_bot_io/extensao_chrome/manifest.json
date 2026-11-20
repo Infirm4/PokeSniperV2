@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "PokeIdle.io - Bot Local (sem VIP)",
-  "version": "2.0.0",
-  "description": "Clica nos Pokemon caidos no pokeidle.io por comando de um bot Python local, sem mover o mouse.",
+  "name": "PokeIdle.io - Captura automática",
+  "version": "3.0.0",
+  "description": "Envia cliques de captura na lista de Pokémon caídos da aba do PokéIdle.",
   "minimum_chrome_version": "120",
   "permissions": [
     "tabs",
     "scripting",
-    "alarms"
+    "alarms",
+    "storage"
   ],
   "host_permissions": [
     "https://pokeidle.io/*"
@@ -16,7 +17,18 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "PokeIdle.io Bot Local",
+    "default_title": "PokeIdle.io - Captura automática",
     "default_popup": "popup.html"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pokeidle.io/*"
+      ],
+      "js": [
+        "capture.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
 }

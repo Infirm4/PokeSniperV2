@@ -1,1 +1,44 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><title>PokeIdle.io Bot</title><style>body{font:14px system-ui,Arial,sans-serif;width:290px;margin:0;padding:17px;color:#18252f}h1{font-size:17px;margin:0 0 12px}#status{font-weight:600;margin-bottom:12px}button{border:0;padding:10px 12px;border-radius:7px;background:#2252c0;color:#fff;cursor:pointer;font-size:14px}p{line-height:1.45;color:#465968;font-size:12px}</style></head><body><h1>PokeIdle.io - Bot Local</h1><div id="status">Verificando...</div><div id="game">Aguardando dados...</div><button id="connect">Conectar agora</button><p>Abra pokeidle.io e entre na hunt. Inicie <b>iniciar_bot.bat</b> e mantenha o Chrome aberto. Pode minimizar sem mexer no mouse.</p><script src="popup.js"></script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Captura automática · PokéIdle</title>
+  <style>
+    :root { color-scheme: dark; background: #191421; color: #f5effa; font: 13px/1.45 system-ui, sans-serif; }
+    body { width: 284px; margin: 0; padding: 14px; }
+    main, form { display: grid; gap: 10px; }
+    h1, p { margin: 0; }
+    h1 { font-size: 18px; }
+    .capture-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .capture-card { padding: 10px; border: 1px solid #473553; border-radius: 9px; background: #23192d; }
+    button, input { font: inherit; border: 1px solid #68507d; border-radius: 7px; background: #191421; color: inherit; padding: 6px 9px; }
+    button { cursor: pointer; }
+    button[type=submit] { background: #bb92f4; color: #231732; font-weight: 700; }
+    button:disabled, input:disabled { opacity: .65; }
+    #interval { width: 68px; }
+    #status { font-weight: 700; }
+    #status[data-active=true] { color: #9ae6b9; }
+    #game, #interval-status { color: #d7c9e1; overflow-wrap: anywhere; }
+    :focus-visible { outline: 2px solid #d4b3ff; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Captura automática</h1>
+    <div class="capture-row">
+      <span id="status" role="status">Verificando…</span>
+      <button id="toggle" type="button" disabled>Ligar</button>
+    </div>
+    <p id="game" class="capture-card" role="status">Aguardando dados da aba.</p>
+    <form id="settings">
+      <label class="capture-row" for="interval">Intervalo (segundos)
+        <input id="interval" type="number" min="2" max="3600" step="0.1" required disabled>
+      </label>
+      <button id="save" type="submit" disabled>Salvar intervalo</button>
+      <p id="interval-status" role="status"></p>
+    </form>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
