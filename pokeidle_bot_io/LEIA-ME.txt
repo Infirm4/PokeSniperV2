@@ -1,0 +1,19 @@
+POKEIDLE.IO - BOT LOCAL PARA CHROME MINIMIZADO (VERSAO 2.0)
+==========================================================
+ESTA E A VERSAO PARA https://pokeidle.io/ (NAO POKE IDLE WORLD).
+
+1. EXTRAIA TODO o ZIP para uma pasta (nao execute dentro do WinRAR).
+2. Execute instalar_bot.bat.
+3. No Chrome NORMAL, abra chrome://extensions.
+4. Ative o modo desenvolvedor -> Carregar sem compactacao -> extensao_chrome.
+5. Remova a extensao antiga "Poke Idle World" se instalou.
+6. Abra https://pokeidle.io/, faca login e comece uma hunt.
+7. Escolha a Pokebola na lista de Pokemon caidos.
+8. Execute iniciar_bot.bat. Confira "Python conectado" no icone da extensao.
+9. Pode minimizar o Chrome e o CMD. Nao feche o navegador.
+10. Execute parar_bot.bat para encerrar.
+
+Atencao: capturas NAO foram testadas em conta real. Confira o bot.log e
+compare o numero de capturas no jogo. Ele apenas clica nos botoes manuais
+"button.caido"; nao usa VIP, nao faz login, nao quebra Cloudflare e nao move o mouse.
+A aba precisa permanecer ativa (nao descarregada) e o PC, ligado.

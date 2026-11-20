@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "PokeIdle.io - Bot Local (sem VIP)",
+  "version": "2.0.0",
+  "description": "Clica nos Pokemon caidos no pokeidle.io por comando de um bot Python local, sem mover o mouse.",
+  "minimum_chrome_version": "120",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://pokeidle.io/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "PokeIdle.io Bot Local",
+    "default_popup": "popup.html"
+  }
+}
