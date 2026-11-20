@@ -144,6 +144,7 @@ test('a ficha histórica completa exige todos os atributos e preserva IV igual a
   assert.deepEqual(validate('sale', [sale]), [sale]);
   assert.deepEqual(incompleteSaleFields({ ...sale, quality: null, sprite: null, ivs: { hp: 29 } }),
     ['quality', 'ivs', 'sprite']);
+  assert.deepEqual(incompleteSaleFields({ ...sale, sprite: null }, { requireSprite: false }), []);
 });
 
 test('identifica Pokémon da mochila por ID e exige nome e nível únicos no fallback', () => {

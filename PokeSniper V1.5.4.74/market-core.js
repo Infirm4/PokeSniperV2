@@ -180,16 +180,39 @@
   const historyRequest = /"t"\s*:\s*"market\.historicoGlobal"/;
   const linkageFields = ['listingId', 'anuncioId', 'idAnuncio', 'anuncio_id', 'listing_id', 'ofertaId', 'idOferta'];
 
+  const historyImageKeys = ['sprite', 'icone', 'icon', 'imagem', 'img', 'url', 'spriteUrl', 'looktype', 'dex', 'dexId'];
+
+  function imageFieldShape(row) {
+    return Object.fromEntries(historyImageKeys.filter(key => row?.[key] !== undefined).map(key =>
+      [key, row[key] === null ? 'null' : typeof row[key]]));
+  }
+
   function historyTrace(frame) {
     const rows = Array.isArray(frame.linhas) ? frame.linhas : [];
+    const pokemon = rows.filter(row => row?.tipo === 'pokemon' || (row?.tipo == null && row?.ficha));
+    const items = rows.filter(row => row?.tipo != null && row.tipo !== 'pokemon').length;
+    const samples = [];
+    let missingSprite = 0, outlawWithoutSprite = 0;
+    for (const row of pokemon) {
+      const sprite = listingSprite(row, shiny(row?.ficha?.shiny));
+      if (sprite.sprite || sprite.spriteFallback) continue;
+      if (isOutland(row)) {
+        outlawWithoutSprite++;
+      } else {
+        missingSprite++;
+        if (samples.length < 8) samples.push({
+          linha: imageFieldShape(row), ficha: imageFieldShape(row.ficha),
+          comNome: Boolean(row.ficha?.nome || row.ficha?.name),
+        });
+      }
+    }
     return {
-      page: frame.pagina,
-      rows: rows.length,
-      pokemon: rows.filter(row => row?.tipo === 'pokemon').length,
-      withProfile: rows.filter(row => row?.tipo === 'pokemon' && row.ficha && typeof row.ficha === 'object').length,
+      page: frame.pagina, rows: rows.length, pokemon: pokemon.length, items,
+      unclassified: rows.length - pokemon.length - items,
+      withProfile: pokemon.filter(row => row.ficha && typeof row.ficha === 'object').length,
+      missingSprite, outlawWithoutSprite, imageSamples: samples,
       more: frame.temMais,
-      candidateFields: Object.fromEntries(linkageFields.map(key => [key,
-        rows.filter(row => row?.tipo === 'pokemon' && id(row[key]) != null).length])),
+      candidateFields: Object.fromEntries(linkageFields.map(key => [key, pokemon.filter(row => id(row[key]) != null).length])),
     };
   }
 
@@ -308,7 +331,9 @@
     return match;
   }
 
-  function incompleteSaleFields(row) {
+  const hasSaleSprite = row => Boolean(safeSprite(row?.sprite) || safeSprite(row?.spriteFallback));
+
+  function incompleteSaleFields(row, { requireSprite = true } = {}) {
     const missing = [];
     for (const key of ['id', 'pokemonId', 'speciesId']) if (!id(row?.[key])) missing.push(key);
     if (!money(row?.currency)) missing.push('currency');
@@ -323,7 +348,7 @@
     const ivs = Object.keys(statAliases).map(stat => row?.ivs?.[stat]);
     if (!ivs.every(value => Number.isInteger(value) && value >= 0 && value <= 32)) missing.push('ivs');
     else if (row.ivTotal !== ivs.reduce((sum, value) => sum + value, 0)) missing.push('ivTotal');
-    if (!safeSprite(row?.sprite) && !safeSprite(row?.spriteFallback)) missing.push('sprite');
+    if (requireSprite && !hasSaleSprite(row)) missing.push('sprite');
     return missing;
   }
 
@@ -623,7 +648,7 @@
   }
 
   const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
-    WINDOW_MS, MAX_BATCH, estimateCoins, attackProfile, validIv, incompleteSaleFields, matchesDisplayPrice, inventoryProfiles, findInventoryProfile };
+    WINDOW_MS, MAX_BATCH, estimateCoins, attackProfile, validIv, hasSaleSprite, incompleteSaleFields, matchesDisplayPrice, inventoryProfiles, findInventoryProfile };
   if (typeof window === 'undefined' && typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
 })();

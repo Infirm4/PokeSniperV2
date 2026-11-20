@@ -3,6 +3,10 @@
   const KEY = 'marketHistoryTrace';
   const EVENTS = ['request', 'response', 'invalid_json', 'ignored_socket', 'legacy_batch'];
   const FIELDS = ['listingId', 'anuncioId', 'idAnuncio', 'anuncio_id', 'listing_id', 'ofertaId', 'idOferta'];
+  const IMAGE_KEYS = ['sprite', 'icone', 'icon', 'imagem', 'img', 'url', 'spriteUrl', 'looktype', 'dex', 'dexId'];
+  const imageShape = sample => Object.fromEntries(IMAGE_KEYS
+    .filter(key => ['null', 'number', 'string', 'object', 'boolean'].includes(sample?.[key]))
+    .map(key => [key, sample[key]]));
   const asCount = value => Number.isSafeInteger(value) && value >= 0 ? Math.min(10000, value) : 0;
   let tail = Promise.resolve();
 
@@ -14,6 +18,11 @@
     if (event === 'invalid_json') return base;
     return {
       ...base, totalLinhas: asCount(trace.rows), linhasPokemon: asCount(trace.pokemon),
+      itensNaoPokemon: asCount(trace.items), linhasSemTipoIdentificavel: asCount(trace.unclassified),
+      pokemonSemSpriteNaResposta: asCount(trace.missingSprite), outlawsSemSpriteNaResposta: asCount(trace.outlawWithoutSprite),
+      exemplosSemSprite: Array.isArray(trace.imageSamples) ? trace.imageSamples.slice(0, 8).map(sample => ({
+        linha: imageShape(sample?.linha), ficha: imageShape(sample?.ficha), comNome: sample?.comNome === true,
+      })) : [],
       comFicha: asCount(trace.withProfile), temMais: typeof trace.more === 'boolean' ? trace.more : null,
       camposCandidatosIdAnuncio: Object.fromEntries(FIELDS.map(field => [field, asCount(trace.candidateFields?.[field])])),
       lote: ['gravado', 'sem_registros_validos', 'fila_cheia', 'falha_na_gravação', 'lote_inválido'].includes(receipt.status)
@@ -21,6 +30,7 @@
       aceitas: asCount(receipt.accepted),
       fichasIncompletas: asCount(receipt.incomplete),
       outlawsIgnorados: asCount(receipt.outlaws),
+      novasAproveitadasSemSprite: asCount(receipt.newWithoutSprite),
       novas: asCount(receipt.new), repetidas: asCount(receipt.existing), conflitos: asCount(receipt.conflicts),
       ganharamIvsCompletos: asCount(receipt.gainedFullIvs),
     };

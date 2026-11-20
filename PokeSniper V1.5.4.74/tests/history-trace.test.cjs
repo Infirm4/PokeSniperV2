@@ -5,7 +5,7 @@ const history = require('../history-trace.js');
 
 test('preserva página fora da primeira chave, ficha reconhecida e resultado de gravação', () => {
   const frame = { pagina: 3, t: 'market', aba: 'historicoGlobal', linhas: [
-    { tipo: 'pokemon', id: 'private-sale', ficha: { nome: 'private-name' }, idAnuncio: 'private-id' },
+    { tipo: 'pokemon', id: 'private-sale', ficha: { nome: 'private-name', sprite: 'private-url', spriteUrl: {} }, idAnuncio: 'private-id' },
     { tipo: 'item', idAnuncio: 'private-other' },
   ] };
   assert.equal(core.historyReply.test(JSON.stringify(frame, null, 2)), true);
@@ -16,6 +16,9 @@ test('preserva página fora da primeira chave, ficha reconhecida e resultado de 
   assert.equal(result.totalLinhas, 2);
   assert.equal(result.linhasPokemon, 1);
   assert.equal(result.comFicha, 1);
+  assert.equal(result.itensNaoPokemon, 1);
+  assert.equal(result.pokemonSemSpriteNaResposta, 1);
+  assert.deepEqual(result.exemplosSemSprite, [{ linha: {}, ficha: { sprite: 'string', spriteUrl: 'object' }, comNome: true }]);
   assert.equal(result.camposCandidatosIdAnuncio.idAnuncio, 1);
   assert.equal(result.novas, 0);
   assert.equal(result.repetidas, 1);

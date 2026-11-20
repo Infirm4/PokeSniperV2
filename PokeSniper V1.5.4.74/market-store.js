@@ -2,9 +2,9 @@
 const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
-  const DB_VERSION = 16;
+  const DB_VERSION = 17;
   const ESTIMATE_REVISION = 8;
-  const revisionFor = row => row?.currency === 'gold' ? 9 : ESTIMATE_REVISION;
+  const revisionFor = row => row?.currency === 'gold' ? 10 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
   const fold = value => (value || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
   let opening;
@@ -87,16 +87,48 @@ const PISMarketStore = (() => {
             if (!cursor) return;
             const [currency, id] = cursor.primaryKey;
             const row = saleWithSprite(cursor.value);
-            if (PISMarketCore.incompleteSaleFields(row).length) {
+            if (PISMarketCore.incompleteSaleFields(row, { requireSprite: false }).length) {
               incomplete.put({ ...row, recoveryAt: 0 });
               cursor.delete();
               pending.delete([currency, id]);
             } else {
               if (row !== cursor.value) cursor.update(row);
-              // Reenvio único do banco limpo para preencher a planilha atual.
-              pending.put({ currency, id, revision: 'schema-15' });
+              if (PISMarketCore.hasSaleSprite(row) && !PISMarketCore.isOutland(row)) {
+                // Reenvio único do banco limpo para preencher a planilha atual.
+                pending.put({ currency, id, revision: 'schema-15' });
+              } else {
+                if (!PISMarketCore.isOutland(row)) incomplete.put({ ...row, recoveryAt: 0 });
+                pending.delete([currency, id]);
+              }
             }
             cursor.continue();
+          };
+        }
+        if (event.oldVersion >= 14 && event.oldVersion < 17) {
+          const prices = tx.objectStore('sales');
+          const pending = tx.objectStore('salesBackup');
+          const oldIncomplete = tx.objectStore('incompleteSales').openCursor();
+          oldIncomplete.onsuccess = () => {
+            const cursor = oldIncomplete.result;
+            if (!cursor) return;
+            const candidate = saleWithSprite(cursor.value);
+            if (PISMarketCore.isOutland(candidate) ||
+                PISMarketCore.incompleteSaleFields(candidate, { requireSprite: false }).length) {
+              cursor.continue();
+              return;
+            }
+            const existing = prices.get(cursor.primaryKey);
+            existing.onsuccess = () => {
+              if (!existing.result) {
+                const { recoveryAt, ...row } = candidate;
+                prices.put(row);
+                if (PISMarketCore.hasSaleSprite(row)) {
+                  pending.put({ currency: row.currency, id: row.id, revision: 'schema-17' });
+                  cursor.delete();
+                }
+              }
+              cursor.continue();
+            };
           };
         }
         if (event.oldVersion > 0 && event.oldVersion < 11) {
@@ -292,7 +324,7 @@ const PISMarketStore = (() => {
     const sales = tx.objectStore('sales');
     const listings = tx.objectStore('listings');
     const exposures = tx.objectStore('exposures');
-    const savedRows = { new: 0, existing: 0, gainedFullIvs: 0, conflicts: 0, incomplete: 0, outlaws: 0 };
+    const savedRows = { new: 0, existing: 0, gainedFullIvs: 0, conflicts: 0, incomplete: 0, outlaws: 0, newWithoutSprite: 0 };
     const hasFullIvs = row => Object.values(row?.ivs || {}).filter(Number.isFinite).length === 6;
     try {
       if (kind === 'sale') {
@@ -306,12 +338,14 @@ const PISMarketStore = (() => {
         for (const sale of rows) {
           const key = [sale.currency, sale.id];
           const complete = await result(sales.get(key));
-          const previous = complete ?? await result(incomplete.get(key));
+          const partial = PISMarketCore.hasSaleSprite(complete) ? null : await result(incomplete.get(key));
+          const previous = complete ?? partial;
           if (PISMarketCore.isOutland(sale) || PISMarketCore.isOutland(previous)) {
             savedRows.outlaws++;
             // Se a mesma venda antiga ganhou identificação, conserva a ficha para o diagnóstico.
             if (previous && !PISMarketCore.isOutland(previous) && !reconcileSale(previous, sale).conflict) {
               (complete ? sales : incomplete).put({ ...previous, outland: true });
+              if (complete && partial) incomplete.put({ ...partial, outland: true });
               if (complete) {
                 tx.objectStore('salesBackup').delete(key);
                 addGroup(previous);
@@ -323,23 +357,30 @@ const PISMarketStore = (() => {
           const next = reconcileSale(previous, incoming);
           if (next.conflict) savedRows.conflicts++;
           const saved = saleWithSprite(next.saved);
-          if (PISMarketCore.incompleteSaleFields(saved).length) {
+          if (PISMarketCore.incompleteSaleFields(saved, { requireSprite: false }).length) {
             if (!fromSheet && !complete && (next.changed || saved !== next.saved))
               incomplete.put({ ...saved, recoveryAt: previous?.recoveryAt ?? 0 });
             savedRows.incomplete++;
             continue;
           }
-          if (!complete && previous) incomplete.delete(key);
+          const hasSprite = PISMarketCore.hasSaleSprite(saved);
+          if (hasSprite && partial) incomplete.delete(key);
+          else if (!hasSprite && (!partial || next.changed || saved !== next.saved)) {
+            incomplete.put({ ...saved, recoveryAt: partial?.recoveryAt ?? 0 });
+          }
           const changed = !complete || next.changed || saved !== next.saved;
           if (complete) savedRows.existing++;
-          else savedRows.new++;
+          else {
+            savedRows.new++;
+            if (!hasSprite) savedRows.newWithoutSprite++;
+          }
           if (!changed) continue;
           addGroup(previous);
           addGroup(saved);
           if (!hasFullIvs(previous) && hasFullIvs(saved)) savedRows.gainedFullIvs++;
           const { recoveryAt, ...record } = saved;
           sales.put(record);
-          if (!fromSheet) tx.objectStore('salesBackup').put({
+          if (!fromSheet && hasSprite) tx.objectStore('salesBackup').put({
             currency: saved.currency, id: saved.id, revision: crypto.randomUUID(),
           });
           if (saved.pokemonId && saved.soldAt <= now) {
@@ -761,6 +802,7 @@ const PISMarketStore = (() => {
       result(tx.objectStore('incompleteSales').getAll()),
     ]);
     const missing = {};
+    const priceSalesWithoutSprite = sales.filter(row => !PISMarketCore.isOutland(row) && !PISMarketCore.hasSaleSprite(row)).length;
     let pending = 0, outlawsPending = 0, outlawsWithoutSprite = 0, unnamedWithoutSprite = 0;
     for (const row of incompleteSales) {
       const fields = PISMarketCore.incompleteSaleFields(row);
@@ -778,6 +820,7 @@ const PISMarketStore = (() => {
       vendas_sem_sprite: {
         outlaw_identificado: outlawsWithoutSprite, sem_indício_de_outlaw_com_nome: (missing.sprite ?? 0) - unnamedWithoutSprite,
         sem_indício_de_outlaw_sem_nome: unnamedWithoutSprite,
+        aptas_para_precificação: priceSalesWithoutSprite,
       },
       vendas_outlaw_legadas: { incompletas: outlawsPending, completas: sales.filter(PISMarketCore.isOutland).length },
       ...PISMarketDiagnostics.summarize({ listings, sales, exposures }, Date.now()) };

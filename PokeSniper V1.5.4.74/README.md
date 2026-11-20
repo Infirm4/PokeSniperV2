@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.73)
+# PokeIdle Market Sniper (v1.5.4.74)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -389,7 +389,12 @@ Ataque Especial separadamente. A Velocidade não recebe um ajuste direto no pre�
 No relatório do mercado, `banco.vendas_sem_sprite` separa Outlaws identificados
 de fichas sem indício de Outlaw, distinguindo se o nome estava disponível.
 `histórico_na_sessão` mostra `outlawsIgnorados` por lote. Novas vendas Outlaw
-ficam fora das fichas locais e da fila de envio ao Sheets.
+ficam fora das fichas locais e da fila de envio ao Sheets. Fichas com espécie e atributos
+completos podem sustentar a cotação enquanto aguardam a recuperação da sprite.
+Só fichas com sprite válida entram na fila do Sheets. O relatório mostra em
+`aptas_para_precificação` quantas vendas foram aproveitadas sem sprite e,
+por resposta do histórico, contabiliza itens que não são Pokémon e até oito
+amostras dos nomes e tipos dos campos de imagem (sem IDs ou URLs).
 
 ## Oportunidades e diagnóstico
 
