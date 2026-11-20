@@ -157,17 +157,24 @@
       message: [`${discount} · ${asking}`, coins ? tier : range, composition, hold, warning].filter(Boolean).join('\n') };
   }
 
+  const grades = [2, 3].map(digits => new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: digits, maximumFractionDigits: digits,
+  }));
+
+  function profileSummary(row, compact = true) {
+    const [label, grade] = compact ? ['N', grades[0]] : ['Nota', grades[1]];
+    return [
+      row.level > 0 ? 'Nvl ' + row.level : '',
+      row.power > 0 ? 'P' + row.power : '',
+      Number.isFinite(row.grade) ? label + ' ' + grade.format(row.grade) : '',
+    ].filter(Boolean).join(' · ');
+  }
+
   function noticePresentation(row, now = Date.now()) {
     const { composition, warning } = presentation(row, now, { noticeIvsOnly: true });
     const amount = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
     const discount = row.estimate.discount > 0 ? '−' + amount.format(row.estimate.discount * 100) + '%' : '0%';
     const title = `${row.name || 'Pokémon #' + row.speciesId} · ${discount}`;
-    const grade = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-    const profile = [
-      row.level > 0 ? 'Nvl ' + row.level : '',
-      row.power > 0 ? 'P' + row.power : '',
-      Number.isFinite(row.grade) ? 'Nota ' + grade.format(row.grade) : '',
-    ].filter(Boolean).join(' · ');
     const coins = row.currency === 'gold';
     const median = row.estimate.median;
     const money = value => {
@@ -178,10 +185,14 @@
     };
     const quoted = Number.isFinite(median) && median > 0 ? 'Preço justo ' + money(median) : 'Preço justo indisponível';
     const prices = `Mercado ${money(row.price)} · ${quoted}`;
-    return { title, message: [profile, prices, composition, warning].filter(Boolean).join('\n') };
+    const details = [prices, composition, warning];
+    return { title,
+      message: [profileSummary(row, false), ...details].filter(Boolean).join('\n'),
+      desktopMessage: [profileSummary(row), ...details].filter(Boolean).join('\n'),
+    };
   }
 
-  const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, noticePresentation };
+  const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, profileSummary, noticePresentation };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISOpportunities = core;
 })();

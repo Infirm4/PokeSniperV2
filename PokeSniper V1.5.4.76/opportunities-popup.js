@@ -162,8 +162,11 @@ function opportunityCard(row) {
   const offer = PISOpportunities.presentation(row, row.deliveredAt, { noticeIvsOnly: true });
   const block = document.createElement('span');
   block.className = 'pis-v2-opportunity-copy';
-  block.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')),
-    text('span', `${offer.discount} · ${offer.asking}`, 'pis-v2-opportunity-price'));
+  const heading = document.createElement('span');
+  heading.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')));
+  const profile = PISOpportunities.profileSummary(row);
+  if (profile) heading.append(text('span', ' - ' + profile, 'pis-v2-meta'));
+  block.append(heading, text('span', `${offer.discount} · ${offer.asking}`, 'pis-v2-opportunity-price'));
   if (offer.tier) block.append(text('span', offer.tier, 'pis-v2-meta'));
   if (offer.composition) block.append(text('span', offer.composition, 'pis-v2-meta'));
   if (row.currency === 'orb') {
