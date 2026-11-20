@@ -113,7 +113,7 @@
       ivs: Object.fromEntries(fields.map((key, index) => [gameKeys[index], row.ivs?.[key]])) };
     const evaluate = globalThis.PokeIdlePvePower?.calcular;
     const current = evaluate?.(ficha, species)?.power;
-    return fields.filter(key => Number.isInteger(row.ivs?.[key]) && row.ivs[key] < 10)
+    return fields.filter(key => isLowIv(row.ivs?.[key]))
       .sort((a, b) => Number(important.has(b)) - Number(important.has(a)))
       .map(key => {
         const iv = row.ivs[key];
@@ -126,8 +126,13 @@
       });
   }
 
+  const IV_LABELS = { hp: 'HP', attack: 'Ataque', defense: 'Defesa', specialAttack: 'Atq. Esp.',
+    specialDefense: 'Def. Esp.', speed: 'Velocidade' };
+  const CRITICAL_IVS = ['speed', 'attack', 'specialAttack'];
+  const isLowIv = value => Number.isInteger(value) && value >= 0 && value < 10;
+
   // Formata o mesmo desconto e os mesmos valores para painel e avisos.
-  function presentation(row, now = Date.now()) {
+  function presentation(row, now = Date.now(), { criticalIvsOnly = false } = {}) {
     const coins = row.currency === 'gold';
     const unit = coins ? 'Mi Coins' : 'Gemas';
     const money = value => new Intl.NumberFormat('pt-BR', {
@@ -139,10 +144,11 @@
     const { lower, upper } = row.estimate;
     const range = Number.isFinite(lower) && Number.isFinite(upper)
       ? `Faixa justa estimada · ${money(lower)}–${money(upper)} ${unit}` : '';
-    const stats = { hp: 'HP', attack: 'Ataque', defense: 'Defesa', specialAttack: 'Atq. Esp.', specialDefense: 'Def. Esp.', speed: 'Velocidade' };
-    const lowIvs = Object.entries(stats).filter(([key]) => Number.isInteger(row.ivs?.[key]) && row.ivs[key] < 10)
-      .map(([, label]) => label);
-    const ivs = coins ? coinIvs(row, stats) : lowIvs;
+    const ivs = criticalIvsOnly
+      ? CRITICAL_IVS.filter(key => isLowIv(row.ivs?.[key]))
+        .map(key => `${IV_LABELS[key]} ${row.ivs[key]} (crítico)`)
+      : coins ? coinIvs(row, IV_LABELS) : Object.keys(IV_LABELS)
+        .filter(key => isLowIv(row.ivs?.[key])).map(key => IV_LABELS[key]);
     const warning = [ivs.length ? 'IV baixo: ' + ivs.join(', ') : '',
       coins && row.estimate.qualityBelow ? 'Qualidade abaixo dos comparáveis' : ''].filter(Boolean).join(' · ');
     const { confidence, bepi, powerCounts } = row.estimate;
@@ -159,7 +165,7 @@
   }
 
   function noticePresentation(row, now = Date.now()) {
-    const { hold, composition, warning } = presentation(row, now);
+    const { hold, composition, warning } = presentation(row, now, { criticalIvsOnly: true });
     const amount = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
     const discount = row.estimate.discount > 0 ? '−' + amount.format(row.estimate.discount * 100) + '%' : '0%';
     const title = [discount, row.name || 'Pokémon #' + row.speciesId,

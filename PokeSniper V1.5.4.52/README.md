@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.51)
+# PokeIdle Market Sniper (v1.5.4.52)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -156,7 +156,9 @@ Com a vitrine fechada, o monitor intercala páginas de Coins e Gemas para
 preparar selos em segundo plano. A primeira página de lançamentos continua
 prioritária. Ao abrir a vitrine, as consultas auxiliares pausam. Os avisos
 usam o formato `−20% Gengar Nvl 100 P4` e mostram o preço justo com o ícone
-da moeda na linha seguinte.
+da moeda na linha seguinte. IVs abaixo de 10 em Velocidade, Ataque ou
+Ataque Especial aparecem no aviso com a marca `(crítico)`. Os demais IVs
+ficam disponíveis na ficha detalhada.
 
 ## Monitoramento e precificação
 

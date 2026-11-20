@@ -59,8 +59,9 @@ test('o aviso de Gemas resume a ficha e identifica a moeda do preço justo', () 
   const now = Date.UTC(2026, 10, 20, 3, 0, 0);
   const result = noticePresentation({
     currency: 'orb', name: 'Meganium', level: 306, power: 1, price: 30, availableAt: now + 60_000,
+    ivs: { speed: 0, attack: 10, specialAttack: 9, hp: 1, defense: 2, specialDefense: 3 },
     estimate: { discount: 1 - 30 / 71, median: 71 },
   }, now);
   assert.equal(result.title, '−57,7% Meganium Nvl 306 P1');
-  assert.equal(result.message, 'Preço justo 💎 71\nRetido até 00:01:00 (Brasília)');
+  assert.equal(result.message, 'Preço justo 💎 71\nRetido até 00:01:00 (Brasília)\nIV baixo: Velocidade 0 (crítico), Atq. Esp. 9 (crítico)');
 });
