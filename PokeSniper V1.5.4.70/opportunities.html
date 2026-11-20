@@ -32,10 +32,23 @@
   </div>
   <section class="backup-panel" aria-labelledby="backup-heading">
     <h2 id="backup-heading">Planilha de vendas</h2>
-    <button type="button" id="sales-backup-now">Enviar pendentes ao Sheets agora</button>
+    <button type="button" id="sales-backup-now">Sincronizar com o Sheets agora</button>
     <p id="sales-backup-status" role="status" class="offer-meta"></p>
     <details>
-      <summary>Importar histórico do Sheets</summary>
+      <summary>Conectar histórico compartilhado</summary>
+      <form id="sheet-access">
+        <label>Chave de leitura do Apps Script
+          <input id="sheet-key" type="password" maxlength="128" autocomplete="off" required>
+        </label>
+        <div class="actions">
+          <button id="save-sheet-access" type="submit">Conectar e sincronizar</button>
+          <button id="disconnect-sheet-access" type="button" disabled>Desconectar leitura</button>
+        </div>
+      </form>
+      <p id="sheet-access-status" role="status" class="offer-meta"></p>
+    </details>
+    <details>
+      <summary>Restaurar por CSV</summary>
       <label for="sales-backup-restore">CSV da aba de vendas</label>
       <input type="file" id="sales-backup-restore" accept=".csv,text/csv">
       <p id="sales-restore-status" role="status" class="offer-meta"></p>

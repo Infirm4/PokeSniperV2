@@ -61,12 +61,17 @@ test('Apps Script reconcilia reenvio sem duplicar, mantém vendas homônimas em 
       };
     },
   };
-  const lock = { waitLock() {}, releaseLock() {} };
+  let held = false;
+  const lock = {
+    waitLock() { assert.equal(held, false); held = true; },
+    releaseLock() { assert.equal(held, true); held = false; },
+  };
+  const secret = 'test-access-key-00000000000000000000';
   const { doPost, diagnosticarLinhasForaDoBanco, limparLinhasForaDoBanco } =
     runInNewContext(read('google-apps-script.gs') +
       '\n({ doPost, diagnosticarLinhasForaDoBanco, limparLinhasForaDoBanco })', {
     SpreadsheetApp: { openById: () => ({ getSheetByName: () => sheet }), flush() {} },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: () => 'test-sheet' }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: key => key === 'POKEIDLE_CHAVE_LEITURA_VENDAS' ? secret : 'test-sheet' }) },
     LockService: { getScriptLock: () => lock },
     ContentService: { MimeType: { JSON: 'JSON' }, createTextOutput: contents => ({ setMimeType: () => JSON.parse(contents) }) },
     console: { log() {}, warn() {}, error() {} },
@@ -110,6 +115,24 @@ test('Apps Script reconcilia reenvio sem duplicar, mantém vendas homônimas em 
   assert.equal(data[6][col('Pokemon')], 'Venda a conferir');
   assert.equal(data[3][col('IV SPED')], 0);
   assert.equal(limparLinhasForaDoBanco().aplicou, false);
+  const readSales = (chave, linha) => doPost({ postData: { contents: JSON.stringify({
+    tipo: 'pis_sales_pull_v1', chave, linha,
+  }) } });
+  assert.equal(readSales('outra-chave', 4).ok, false);
+  assert.equal(readSales('outra-chave', 4).vendas, undefined);
+  const first = readSales(secret, 4);
+  assert.equal(first.vendas.length, 2);
+  assert.deepEqual(first.vendas.map(row => row.currency), ['gold', 'orb']);
+  assert.equal(first.tem_mais, false);
+  assert.equal(first.ignoradas, 1);
+  assert.equal(readSales(secret, first.proxima_linha).vendas.length, 0);
+  assert.equal(readSales(secret, 999).reiniciar, true);
+  while (data.length < 104) data.push([]);
+  data.push([...data[3]]);
+  const paged = readSales(secret, 4);
+  assert.equal(paged.proxima_linha, 104);
+  assert.equal(paged.tem_mais, true);
+  assert.equal(readSales(secret, paged.proxima_linha).vendas[0].id, gold.id);
 });
 
 test('reabrir o jogo sincroniza a fila e só dá baixa após confirmação', async () => {
@@ -175,4 +198,64 @@ test('reabrir o jogo sincroniza a fila e só dá baixa após confirmação', asy
   assert.equal(afterStale.saved, 1);
   assert.equal(afterStale.skipped, 1);
   assert.equal(afterStale.pending, 0);
+});
+
+test('sincroniza vendas de outro PC, avança a página após gravar e preserva envio independente', async () => {
+  const storage = {}, contexts = [];
+  let listener, rejectLocalSave = true, calls = 0;
+  const accessKey = 'private-key-000000000000000000000000';
+  const access = { id: 'own', url: 'opportunities.html' };
+  const row = { ...sale, currency: 'orb', price: 25 };
+  const existing = new Set();
+  runInNewContext(read('sales-backup-worker.js'), {
+    PISSalesBackup: backup, PISMarketCore: core, SHEETS_URL: 'https://example.invalid/exec',
+    crypto: webcrypto, AbortSignal, console,
+    PISMarketStore: {
+      pendingSalesBackup: async () => [], pendingSalesBackupCount: async () => 0,
+      async ingest(kind, rows, _now, options) {
+        assert.equal(kind, 'sale');
+        assert.equal(options.fromSheet, true);
+        if (rejectLocalSave) throw new Error('Falha local simulada');
+        const unique = rows.filter(entry => !existing.has(entry.id));
+        unique.forEach(entry => existing.add(entry.id));
+        return { new: unique.length, incomplete: 0 };
+      },
+    },
+    chrome: {
+      alarms: { get: async () => ({ periodInMinutes: 60 }), create: async (...args) => contexts.push(args), onAlarm: { addListener() {} } },
+      storage: { local: { get: async () => structuredClone(storage), set: async value => Object.assign(storage, structuredClone(value)) } },
+      runtime: { id: 'own', getURL: page => page, onInstalled: { addListener() {} }, onStartup: { addListener() {} },
+        onMessage: { addListener(fn) { listener = fn; } } },
+    },
+    fetch: async (_, request) => {
+      const { tipo, chave, linha } = JSON.parse(request.body);
+      assert.equal(chave, accessKey);
+      assert.equal(tipo, 'pis_sales_pull_v1');
+      calls++;
+      const tem_mais = linha === 4;
+      const vendas = tem_mais ? [row] : [];
+      return { ok: true, json: async () => ({ ok: true, tipo, linha, proxima_linha: tem_mais ? 5 : linha,
+        tem_mais, vendas, ignoradas: 0 }) };
+    },
+  });
+  const action = message => new Promise(resolve => listener(message, access, resolve));
+  assert.equal(listener({ type: 'PIS_SET_SALES_SHEET_ACCESS', key: accessKey }, { ...access, id: 'other' }, () => {}), false);
+  const broken = await action({ type: 'PIS_SET_SALES_SHEET_ACCESS', key: accessKey });
+  assert.match(broken.pull.error, /Falha local/);
+  assert.equal(broken.saved, 0);
+  assert.equal(storage.pisSalesSheetCursor, null);
+  rejectLocalSave = false;
+  const first = await action({ type: 'PIS_SYNC_SALES_BACKUP' });
+  assert.equal(first.pull.imported, 1);
+  assert.equal(first.pull.more, false);
+  assert.equal(calls, 3);
+  assert.equal(contexts.length, 0);
+  assert.equal(storage.pisSalesSheetCursor.row, 5);
+  const next = await action({ type: 'PIS_SYNC_SALES_BACKUP' });
+  assert.equal(next.pull.imported, 0);
+  assert.equal(calls, 4);
+  assert.equal(JSON.stringify(next).includes(accessKey), false);
+  await action({ type: 'PIS_SET_SALES_SHEET_ACCESS', key: '' });
+  assert.equal((await action({ type: 'PIS_SYNC_SALES_BACKUP' })).pull.enabled, false);
+  assert.equal(calls, 4);
 });

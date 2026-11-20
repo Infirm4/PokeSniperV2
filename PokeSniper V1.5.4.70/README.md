@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.69)
+# PokeIdle Market Sniper (v1.5.4.70)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -96,22 +96,24 @@ são acrescentadas à direita e ocultadas na primeira gravação. A chave de
 venda contém moeda e ID da transação. Quando **Sheet** recebe as vendas
 confirmadas, a auditoria de anúncios continua na aba **eventos**.
 
-Atualize o Apps Script com `google-apps-script.gs`. Em **Implantar →
-Gerenciar implantações**, edite a implantação existente e publique uma
-**Nova versão**, mantendo a URL `/exec`. A versão nova usa a mesma planilha
-vinculada. A aba de backup criada pela versão anterior é preservada.
+Atualize o Apps Script com `google-apps-script.gs`. No editor, execute
+`gerarChaveLeituraVendas` uma vez. Em **Configurações do projeto →
+Propriedades do script**, copie o valor de `POKEIDLE_CHAVE_LEITURA_VENDAS`.
+Em **Implantar → Gerenciar implantações**, edite a implantação existente e
+publique uma **Nova versão**, mantendo a URL `/exec`. A planilha precisa
+estar vinculada como antes.
 
-Clique em **Planilha de vendas → Enviar pendentes ao Sheets agora** para
-enviar sem esperar o horário. O relatório mostrado em Diagnóstico inclui
-o estado em `backup_sheets`.
+Em cada perfil, abra **Planilha de vendas → Conectar histórico compartilhado**
+e use a mesma chave. O envio e a leitura sincronizam ao abrir o PokéIdle e
+a cada hora, enquanto o Chrome está aberto. **Sincronizar com o Sheets agora**
+faz os dois imediatamente. Históricos grandes são lidos em páginas, com
+continuação automática. Guarde a chave com as pessoas que podem ler o banco.
 
-Dois perfis podem usar a mesma planilha. O receptor bloqueia gravações
-concorrentes e usa a chave moeda + ID da venda para conciliar reenvios.
-Para dar a outro perfil uma cópia do histórico, mostre a coluna oculta
-**Dados da venda (JSON)**, exporte o CSV da aba de vendas e use **Planilha
-de vendas → Importar histórico do Sheets** no perfil de destino. As vendas
-completas entram no IndexedDB sem criar um novo envio à planilha.
-O importador também aceita o CSV da antiga aba **Vendas confirmadas**.
+Os dois PCs enviam para a mesma planilha. O receptor usa um bloqueio e a chave
+**moeda + ID da transação** para atualizar a mesma linha, e os registros
+importados do Sheets entram no IndexedDB sem voltar para a fila de envio.
+O CSV continua disponível para recuperação manual. O relatório de diagnóstico
+mostra a última sincronização em `backup_sheets`.
 
 No editor do Apps Script, **diagnosticarLinhasForaDoBanco** mostra quantas
 linhas da tabela não têm chave nem ficha de venda. **limparLinhasForaDoBanco**

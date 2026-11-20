@@ -49,7 +49,8 @@ const NOME_RESUMO = 'Sheet';
 const LINHA_CABECALHO_RESUMO = 3;
 const LINHA_DADOS_RESUMO = 4;
 
-const VERSAO = '1.5.4.39';
+const VERSAO = '1.5.4.70';
+const CHAVE_LEITURA_VENDAS = 'POKEIDLE_CHAVE_LEITURA_VENDAS';
 
 // A linha 3 da aba Sheet é a única fonte de verdade dos títulos.
 // Nenhum novo cabeçalho é escrito ou movido automaticamente.
@@ -113,6 +114,10 @@ function doPost(e) {
     // ---------------------------------------------
     // Interpretar eventos
     // ---------------------------------------------
+
+    if (dados.tipo === 'pis_sales_pull_v1') {
+      return resposta(lerBackupVendas_(dados));
+    }
 
     if (['pis_sales_backup_v1', 'pis_sales_backup_v2'].includes(dados.tipo)) {
       return resposta(receberBackupVendas_(dados));
@@ -1121,6 +1126,52 @@ function linhaVendaBackup_(row) {
     flag(row.legendary), flag(row.aoe), flag(row.zMove), flag(row.mega), row.refinement,
     row.battlePower, flag(row.outland), row.source, row.currency + ':' + row.id, JSON.stringify(row)
   ].map(value => value ?? '');
+}
+
+// Execute uma vez no editor, depois copie a propriedade nas configurações do projeto.
+function gerarChaveLeituraVendas() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    if (!props.getProperty(CHAVE_LEITURA_VENDAS)) {
+      props.setProperty(CHAVE_LEITURA_VENDAS, (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, ''));
+    }
+  } finally { lock.releaseLock(); }
+}
+
+function lerBackupVendas_(request) {
+  const tipo = 'pis_sales_pull_v1';
+  const secret = PropertiesService.getScriptProperties().getProperty(CHAVE_LEITURA_VENDAS);
+  if (!secret || typeof request.chave !== 'string' || request.chave !== secret)
+    return { ok: false, tipo, erro: 'Chave de leitura inválida ou não configurada no Apps Script.' };
+  const start = LINHA_DADOS_RESUMO;
+  const first = request.linha ?? start;
+  if (!Number.isSafeInteger(first) || first < start) throw new Error('Posição de leitura inválida.');
+  const sheet = escolherAbaVendas_(abrirPlanilhaConfigurada());
+  const last = Math.max(start - 1, sheet.getLastRow());
+  if (first > last + 1) return { ok: true, tipo, reiniciar: true, proxima_linha: start };
+  const count = Math.min(100, last - first + 1);
+  const titles = titulosVendas_(sheet).map(normalizarTitulo);
+  const key = titles.indexOf(normalizarTitulo('Chave da venda')) + 1;
+  const json = titles.indexOf(normalizarTitulo('Dados da venda (JSON)')) + 1;
+  const vendas = [];
+  let ignoradas = 0;
+  if (count && key && json) {
+    const keys = sheet.getRange(first, key, count, 1).getValues();
+    const data = sheet.getRange(first, json, count, 1).getValues();
+    for (const [index, [cell]] of data.entries()) {
+      const id = keys[index][0];
+      if (!cell && !id) continue;
+      try {
+        const row = limparVendaBackup_(JSON.parse(cell));
+        if (id !== row.currency + ':' + row.id) throw new Error('Chave incompatível.');
+        vendas.push(row);
+      } catch { ignoradas++; }
+    }
+  }
+  const proxima_linha = first + count;
+  return { ok: true, tipo, linha: first, proxima_linha, tem_mais: proxima_linha <= last, vendas, ignoradas };
 }
 
 function receberBackupVendas_(request) {

@@ -277,19 +277,62 @@ const salesBackupRestore = document.querySelector('#sales-backup-restore');
 const salesBackupStatus = document.querySelector('#sales-backup-status');
 const salesRestoreStatus = document.querySelector('#sales-restore-status');
 
+const sheetAccess = document.querySelector('#sheet-access');
+const sheetKey = document.querySelector('#sheet-key');
+const sheetAccessStatus = document.querySelector('#sheet-access-status');
+const saveSheetAccess = document.querySelector('#save-sheet-access');
+const disconnectSheetAccess = document.querySelector('#disconnect-sheet-access');
+
+function showSalesSync(result) {
+  if (!result) throw new Error('Sem resposta da extensão.');
+  const sending = result.error ? 'Envio: ' + result.error : result.saved || result.pending
+    ? `${result.saved} vendas confirmadas no Sheets · ${result.pending ?? '?'} pendentes.` : 'Nenhuma venda pendente para enviar.';
+  const pull = result.pull;
+  const reading = !pull?.enabled ? '' : pull.error ? 'Leitura: ' + pull.error :
+    `${pull.imported} vendas novas no banco local.` +
+    (pull.skipped ? ` ${pull.skipped} fichas inválidas ou incompletas ignoradas.` : '') +
+    (pull.more ? ' Ainda há páginas. A sincronização vai continuar.' : '');
+  salesBackupStatus.textContent = [sending, reading].filter(Boolean).join(' ');
+}
+
 async function runSalesBackup(initial = false) {
   if (salesBackupNow.disabled) return;
   salesBackupNow.disabled = true;
   salesBackupStatus.textContent = 'Sincronizando vendas com ficha completa…';
   try {
-    const result = await chrome.runtime.sendMessage({ type: initial ? 'PIS_START_SALES_BACKUP' : 'PIS_SYNC_SALES_BACKUP' });
-    if (!result || result.error) throw new Error(result?.error || 'Sem resposta da extensão.');
-    salesBackupStatus.textContent = result.saved || result.pending ?
-      `${result.saved} confirmadas no Sheets · ${result.pending ?? '?'} pendentes.` : 'Nenhuma venda pendente para enviar.';
+    showSalesSync(await chrome.runtime.sendMessage({ type: initial ? 'PIS_START_SALES_BACKUP' : 'PIS_SYNC_SALES_BACKUP' }));
   } catch (error) { salesBackupStatus.textContent = error.message; }
   finally { salesBackupNow.disabled = false; }
 }
 salesBackupNow.addEventListener('click', () => runSalesBackup());
+
+async function showSheetAccess() {
+  const status = await chrome.runtime.sendMessage({ type: 'PIS_SALES_SHEET_ACCESS_STATUS' });
+  disconnectSheetAccess.disabled = status?.enabled !== true;
+  sheetAccessStatus.textContent = status?.enabled ?
+    'Chave salva neste perfil. O histórico é lido durante a sincronização.' : 'Leitura da planilha desconectada.';
+}
+
+async function configureSheetAccess(key) {
+  saveSheetAccess.disabled = disconnectSheetAccess.disabled = true;
+  sheetAccessStatus.textContent = key ? 'Conectando e buscando vendas…' : 'Desconectando leitura…';
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'PIS_SET_SALES_SHEET_ACCESS', key });
+    if (!result || (result.error && !result.pull)) throw new Error(result?.error ?? 'Sem resposta da extensão.');
+    sheetKey.value = '';
+    await showSheetAccess();
+    if (key) showSalesSync(result);
+  } catch (error) { sheetAccessStatus.textContent = error.message; }
+  finally { saveSheetAccess.disabled = false; }
+}
+
+sheetAccess.addEventListener('submit', event => {
+  event.preventDefault();
+  const key = sheetKey.value.trim();
+  if (key) void configureSheetAccess(key);
+});
+disconnectSheetAccess.addEventListener('click', () => configureSheetAccess(''));
+showSheetAccess().catch(() => { sheetAccessStatus.textContent = 'Não foi possível verificar a conexão.'; });
 
 salesBackupRestore.addEventListener('change', async () => {
   const file = salesBackupRestore.files[0];
