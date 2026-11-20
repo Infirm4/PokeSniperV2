@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.78)
+# PokeIdle Market Sniper (v1.5.4.79)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -160,9 +160,9 @@ fallbacks. O novo cálculo tenta Nota mais distante, Potência adjacente com
 fator medido, banda de nível ampliada com curva validada e linha evolutiva
 com fator validado. As janelas são 14 dias, 30 dias e todo o histórico local.
 O banco compartilhado entra pela sincronização já existente. Os fallbacks
-são indicativos por padrão. A promoção dos níveis 1 e 2 usa o parâmetro
-`enableFallbackAlerts` de `coin-market.js` e exige 10 pontos percentuais a
-mais no desconto.
+são indicativos por padrão. Em **Filtros → Ligar Fallback**, é possível habilitar
+avisos dos níveis 1 e 2. Eles exigem 10 pontos percentuais a mais no desconto
+e preço abaixo do limite inferior da faixa.
 
 O limite normal do código é `|ln(nível alvo / nível da venda)| ≤ 0,30`.
 O nível 3 amplia o teto para uma razão de 1,50. A distância até a faixa

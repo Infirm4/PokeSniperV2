@@ -13,6 +13,8 @@ const header = document.querySelector('.pis-v2-header');
 const navigation = document.querySelector('.pis-v2-tabs');
 let panelVisible = !inOverlay;
 const noticeStatus = document.querySelector('#notice-status');
+const fallbackToggle = document.querySelector('#filter-fallback');
+const fallbackStatus = document.querySelector('#fallback-status');
 const format = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 let config;
 let generation = 0;
@@ -261,46 +263,6 @@ async function refreshDiagnosticStats() {
   }
 }
 
-const copySmartCoins = document.querySelector('#copy-smart-coins');
-copySmartCoins.addEventListener('click', async () => {
-  const status = document.querySelector('#coins-import-status');
-  copySmartCoins.disabled = true;
-  status.textContent = 'Copiando as vendas em Coins da aba do jogo…';
-  try {
-    const receipt = await chrome.runtime.sendMessage({ type: 'PIS_COPY_SMART_COINS' });
-    if (receipt?.ok) {
-      status.textContent = `${receipt.added} vendas novas em Coins de ${receipt.checked} verificadas.`;
-      await refresh();
-    } else {
-      status.textContent = receipt?.reason === 'no_cache'
-        ? 'O cache do Smart Market não foi encontrado neste perfil.'
-        : 'Abra e recarregue o PokéIdle e tente novamente. Você também pode importar um backup JSON.';
-    }
-  } catch { status.textContent = 'Falha ao copiar o cache de Coins.'; }
-  finally { copySmartCoins.disabled = false; }
-});
-
-const coinsImport = document.querySelector('#coins-import');
-coinsImport.addEventListener('change', async () => {
-  const file = coinsImport.files[0];
-  const status = document.querySelector('#coins-import-status');
-  if (!file) return;
-  coinsImport.disabled = true;
-  try {
-    if (file.size > 25 * 1024 * 1024) throw new Error('O arquivo excede 25 MiB.');
-    const rows = PISCoinsHistory.importRows(JSON.parse(await file.text()), PISMarketCore);
-    let added = 0;
-    for (let offset = 0; offset < rows.length; offset += PISMarketCore.MAX_BATCH) {
-      const receipt = await PISMarketStore.ingest('sale', rows.slice(offset, offset + PISMarketCore.MAX_BATCH));
-      added += receipt.new;
-      status.textContent = `${Math.min(rows.length, offset + PISMarketCore.MAX_BATCH)} de ${rows.length} verificadas…`;
-    }
-    status.textContent = `${added} vendas novas de ${rows.length} transações em Coins válidas. IDs repetidos foram conciliados.`;
-    await refresh();
-  } catch (error) { status.textContent = 'Falha ao importar. ' + error.message; }
-  finally { coinsImport.disabled = false; coinsImport.value = ''; }
-});
-
 const salesBackupNow = document.querySelector('#sales-backup-now');
 const salesBackupStatus = document.querySelector('#sales-backup-status');
 
@@ -515,6 +477,8 @@ copyDiagnostics.addEventListener('click', async () => {
 });
 
 function showNoticeStatus() {
+  fallbackToggle.setAttribute('aria-checked', String(config.fallbackAlerts));
+  fallbackStatus.textContent = config.fallbackAlerts ? 'Ligado para alertas de Coins dos níveis 1 e 2.' : 'Desligado para alertas de Coins dos níveis 1 e 2.';
   for (const toggle of noticeToggles) {
     toggle.setAttribute('aria-checked', String(config.notify));
     toggle.title = config.notify ? 'Desligar avisos' : 'Ligar avisos';
@@ -539,7 +503,7 @@ async function saveOpportunitySettings(next, status, success) {
 }
 
 function setSettingsDisabled(disabled) {
-  saveFilters.disabled = disabled;
+  saveFilters.disabled = fallbackToggle.disabled = disabled;
   for (const toggle of noticeToggles) toggle.disabled = disabled;
 }
 
@@ -550,12 +514,18 @@ for (const toggle of noticeToggles) {
   });
 }
 
+fallbackToggle.addEventListener('click', () => {
+  if (!config || fallbackToggle.disabled) return;
+  return saveOpportunitySettings({ ...config, fallbackAlerts: !config.fallbackAlerts }, fallbackStatus);
+});
+
 form.addEventListener('submit', event => {
   event.preventDefault();
   if (!config || saveFilters.disabled) return;
   const next = PISOpportunities.settings({
     ...Object.fromEntries(new FormData(form)),
     notify: config.notify,
+    fallbackAlerts: config.fallbackAlerts,
   });
   return saveOpportunitySettings(next, saveStatus, 'Filtros salvos.');
 });

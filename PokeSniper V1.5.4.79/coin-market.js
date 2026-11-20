@@ -13,7 +13,6 @@
     minEffective: 2.6,
     smoothingK: 5,
     fallbackPercentile: 0.40,
-    enableFallbackAlerts: false,
     extraDiscountPoints: 10,
     liquidityHours: 336,
     liquidityMinimum: 5,
@@ -317,7 +316,7 @@
           const result = { status: 'estimated', method: 'coins_fallback', segmentStage: stage, fallbackLevel: stage,
             count: sample.length, effectiveCount: n, lower: mix(lower, prior?.lower), median,
             upper: mix(upper, prior?.upper), confidence, discount: 1 - target.price / median,
-            alertSupported: options.enableFallbackAlerts && stage <= 2 && confidence !== 'baixa',
+            alertSupported: false,
             dispersion: spread };
           if (trace) Object.assign(trace, { w, estimativa: result, sem_suavização: { lower, median: middle, upper },
             nível_anterior_sem_suporte: !prior });

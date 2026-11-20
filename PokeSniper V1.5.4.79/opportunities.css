@@ -114,7 +114,7 @@ body.pis-v2[data-overlay] { height: 100vh; max-height: 520px; }
 
 .pis-v2-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.35fr;
+  grid-template-columns: 1fr 1.35fr 1fr;
   gap: 4px;
   padding: 0 10px 7px;
   border-bottom: 1px solid var(--pis-line);

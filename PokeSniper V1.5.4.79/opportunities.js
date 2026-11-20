@@ -16,6 +16,7 @@
       currency: ['gold', 'orb', 'all'].includes(raw.currency) ? raw.currency : DEFAULTS.currency,
       discount: Number.isFinite(discount) ? Math.min(99, Math.max(0, discount)) : DEFAULTS.discount,
       notify: raw.notify === true,
+      fallbackAlerts: raw.fallbackAlerts === true,
     };
   }
 
@@ -31,14 +32,15 @@
   }
 
   function notificationEligible(row, config = {}) {
+    const { bepi, lower, fallbackLevel, confidence } = row.estimate ?? {};
+    const fallback = row.currency === 'gold' && Boolean(fallbackLevel);
+    if (fallback && (config.fallbackAlerts !== true || ![1, 2].includes(fallbackLevel) ||
+        !['alta', 'média'].includes(confidence) || !(row.price < lower))) return false;
     if (row.currency === 'gold') {
-      const { bepi, lower, fallbackLevel } = row.estimate ?? {};
-      if (fallbackLevel && (!globalThis.PISCoinMarket?.OPTIONS.enableFallbackAlerts || fallbackLevel > 2 ||
-          row.estimate.confidence === 'baixa' || !(row.price < lower))) return false;
       if (bepi && (!(row.price < lower) ||
           row.price > Math.floor(row.estimate.median * Math.max(0, 95 - (config.discount ?? 0)) / 100))) return false;
     }
-    return row.estimate?.alertSupported !== false &&
+    return (fallback || row.estimate?.alertSupported !== false) &&
       (!row.estimate?.sourceAt || Date.now() - row.estimate.sourceAt <= 72 * 3600000) &&
       row.estimate?.profileReason !== 'rare_profile' &&
       (row.estimate?.method !== 'baseline' || ![row.aoe, row.zMove, row.mega].includes(1));

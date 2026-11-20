@@ -101,3 +101,24 @@ test('calcula liquidez por hora, separa mercados e não usa a liquidez para apro
   assert.equal(opportunity.fallbackWarning({ ...fallback, currency: 'orb' }), '');
   assert.equal(market.prepare(rows.slice(0, 4), now).liquidity(target, quote, [], []), null);
 });
+
+test('o controle de fallback reavalia a referência já gravada sem mudar BEPI ou Gemas', () => {
+  const quote = market.prepare([sale({ grade: 4.44 }), sale({ grade: 4.44 }), sale({ grade: 4.44 })], now).estimate(target);
+  const row = { ...target, estimate: quote };
+  const off = opportunity.settings({ discount: 20 });
+  const on = opportunity.settings({ discount: 20, fallbackAlerts: true });
+  assert.equal(off.fallbackAlerts, false);
+  assert.equal(on.fallbackAlerts, true);
+  assert.equal(quote.fallbackLevel, 1);
+  assert.equal(quote.alertSupported, false);
+  assert.equal(opportunity.approved(row, off, now), false);
+  assert.equal(opportunity.approved(row, on, now), true);
+  assert.equal(opportunity.approved({ ...row, price: 70_000_001 }, on, now), false);
+  assert.equal(opportunity.approved({ ...row, estimate: { ...quote, fallbackLevel: 2 } }, on, now), true);
+  assert.equal(opportunity.approved({ ...row, estimate: { ...quote, fallbackLevel: 3 } }, on, now), false);
+  assert.equal(opportunity.approved({ ...row, estimate: { ...quote, confidence: 'baixa' } }, on, now), false);
+  assert.equal(opportunity.approved({ ...row, estimate: { ...quote, lower: row.price } }, on, now), false);
+  assert.equal(opportunity.approved({ ...row, currency: 'orb' }, { ...on, currency: 'all' }, now), false);
+  const bepi = { ...row, estimate: { ...quote, fallbackLevel: null, bepi: true, alertSupported: true } };
+  assert.equal(opportunity.approved(bepi, off, now), true);
+});
