@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.40)
+# PokeIdle Market Sniper (v1.5.4.41)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -96,7 +96,7 @@ Gerenciar implantações**, edite a implantação existente e publique uma
 **Nova versão**, mantendo a URL `/exec`. A versão nova usa a mesma planilha
 vinculada. A aba de backup criada pela versão anterior é preservada.
 
-Para testar, use **Diagnóstico da versão → Sincronizar vendas com o Sheets**
+Para testar, use **Diagnóstico da versão → Sincronizar vendas completas com o Sheets**
 e confira a tabela. O relatório também mostra o estado em `backup_sheets`.
 Para restaurar, reexiba **Dados da venda (JSON)** na planilha antes de baixar
 o CSV da página atual, depois use **Restaurar vendas do CSV da planilha**.
@@ -119,6 +119,11 @@ moeda, preço, nome, nível, Nota, Potência, Qualidade, Shiny, os seis IVs, a
 soma de IVs e uma sprite válida. São aceitos IVs zero. Para espécies base
 identificadas, a sprite pode vir do catálogo. Os atributos opcionais continuam
 sendo gravados quando a ficha histórica os traz.
+
+A versão 1.5.4.41 reenfileira uma vez as vendas completas já armazenadas e
+começa a enviá-las ao abrir o painel. O receptor mantém uma linha por moeda e
+ID da venda. A extensão checa a ficha antes do POST e deixa pendente o lote
+cuja gravação não foi confirmada.
 
 A atualização retira de **sales** os registros incompletos e os separa na fila
 local de recuperação. Eles ficam fora da precificação e dos novos envios ao

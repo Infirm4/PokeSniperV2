@@ -2,7 +2,7 @@
 const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
-  const DB_VERSION = 14;
+  const DB_VERSION = 15;
   const ESTIMATE_REVISION = 6;
   const revisionFor = row => row?.currency === 'gold' ? 7 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
@@ -58,6 +58,9 @@ const PISMarketStore = (() => {
         if (event.oldVersion < 14) {
           const incomplete = db.createObjectStore('incompleteSales', { keyPath: ['currency', 'id'] });
           incomplete.createIndex('recoveryAt', 'recoveryAt');
+        }
+        if (event.oldVersion < 15) {
+          const incomplete = tx.objectStore('incompleteSales');
           const pending = tx.objectStore('salesBackup');
           const sales = tx.objectStore('sales').openCursor();
           sales.onsuccess = () => {
@@ -71,8 +74,8 @@ const PISMarketStore = (() => {
               pending.delete([currency, id]);
             } else {
               if (row !== cursor.value) cursor.update(row);
-              if (event.oldVersion < 13 || row !== cursor.value)
-                pending.put({ currency, id, revision: 'schema-14' });
+              // Reenvio único do banco limpo para preencher a planilha atual.
+              pending.put({ currency, id, revision: 'schema-15' });
             }
             cursor.continue();
           };

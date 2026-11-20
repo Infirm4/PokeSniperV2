@@ -335,7 +335,7 @@ const salesBackupStatus = document.querySelector('#sales-backup-status');
 async function runSalesBackup(initial = false) {
   if (salesBackupNow.disabled) return;
   salesBackupNow.disabled = true;
-  salesBackupStatus.textContent = 'Sincronizando vendas confirmadas…';
+  salesBackupStatus.textContent = 'Sincronizando vendas com ficha completa…';
   try {
     const result = await chrome.runtime.sendMessage({ type: initial ? 'PIS_START_SALES_BACKUP' : 'PIS_SYNC_SALES_BACKUP' });
     if (!result || result.error) throw new Error(result?.error || 'Sem resposta da extensão.');

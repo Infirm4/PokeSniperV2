@@ -1,17 +1,15 @@
 (() => {
   const ALARM = 'pis-sales-backup-hourly';
-  const INITIAL = 'pisSalesBackupInitialLayout';
+  const INITIAL = 'pisSalesBackupInitialCompleteSales';
   const INITIAL_ALARM = 'pis-sales-backup-catchup';
   const STATUS = 'pisSalesBackupStatus';
   let active;
 
   async function sendBatch(batch) {
     const lote = crypto.randomUUID();
-    const vendas = PISSalesBackup.normalize(batch.map(entry => entry.row), PISMarketCore).map(row => {
-      if (row.sprite) return row;
-      const [sprite] = globalThis.PISOpportunities?.spriteCandidates(row) ?? [];
-      return sprite ? { ...row, sprite, spriteSource: 'dex' } : row;
-    });
+    const vendas = PISSalesBackup.normalize(batch.map(entry => entry.row), PISMarketCore);
+    if (vendas.some(row => PISMarketCore.incompleteSaleFields(row).length))
+      throw new Error('O lote não passou na validação de ficha completa.');
     const response = await fetch(SHEETS_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ tipo: PISSalesBackup.FORMAT, lote, vendas }),
@@ -30,19 +28,29 @@
   function sync() {
     active ??= (async () => {
       const started = Date.now();
-      let saved = 0, error = null;
+      let saved = 0, skipped = 0, error = null;
       try {
         for (let i = 0; i < 10 && Date.now() - started < 90000; i++) {
           const batch = await PISMarketStore.pendingSalesBackup(100);
           if (!batch.length) break;
-          await sendBatch(batch);
-          saved += batch.length;
+          const complete = [], invalid = [];
+          for (const entry of batch)
+            (PISMarketCore.incompleteSaleFields(entry.row).length ? invalid : complete).push(entry);
+          if (invalid.length) {
+            // Remove apenas referências antigas da fila; os registros locais não são apagados.
+            await PISMarketStore.acknowledgeSalesBackup(invalid);
+            skipped += invalid.length;
+          }
+          if (complete.length) {
+            await sendBatch(complete);
+            saved += complete.length;
+          }
         }
       } catch (failure) {
         error = String(failure.message).slice(0, 240);
       }
       const pending = await PISMarketStore.pendingSalesBackupCount().catch(() => null);
-      const status = { at: Date.now(), saved, pending, error };
+      const status = { at: Date.now(), saved, pending, skipped, error };
       await chrome.storage.local.set({ [STATUS]: status });
       return status;
     })().finally(() => { active = null; });

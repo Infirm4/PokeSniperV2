@@ -114,7 +114,9 @@ test('Apps Script reconcilia reenvio sem duplicar, mantém vendas homônimas em 
 
 test('o alarme é horário e só dá baixa com confirmação do lote enviado', async () => {
   let listener, alarmSchedule, acknowledged = 0, confirm = false;
-  const queue = [{ row: sale }];
+  const fullSale = { ...sale, level: 810, grade: 3.576, power: 1, quality: 1.554, ivTotal: 146,
+    ivs: { hp: 29, attack: 32, defense: 30, specialAttack: 31, specialDefense: 24, speed: 0 } };
+  const queue = [{ row: fullSale }];
   const storage = {};
   const worker = runInNewContext(read('sales-backup-worker.js'), {
     PISSalesBackup: backup, PISMarketCore: core, SHEETS_URL: 'https://example.invalid/exec',
@@ -122,7 +124,12 @@ test('o alarme é horário e só dá baixa com confirmação do lote enviado', a
     PISMarketStore: {
       pendingSalesBackup: async () => queue,
       pendingSalesBackupCount: async () => queue.length,
-      acknowledgeSalesBackup: async () => { queue.pop(); acknowledged++; },
+      acknowledgeSalesBackup: async entries => {
+        for (const entry of entries) {
+          queue.splice(queue.indexOf(entry), 1);
+          acknowledged++;
+        }
+      },
     },
     chrome: {
       alarms: { get: async () => null, create: async (_, options) => { alarmSchedule = options; }, onAlarm: { addListener() {} } },
@@ -131,7 +138,10 @@ test('o alarme é horário e só dá baixa com confirmação do lote enviado', a
         onMessage: { addListener(fn) { listener = fn; } } },
     },
     fetch: async (_, request) => {
-      const { lote, tipo } = JSON.parse(request.body);
+      const { lote, tipo, vendas } = JSON.parse(request.body);
+      assert.equal(vendas.length, 1);
+      assert.equal(vendas[0].quality, 1.554);
+      assert.deepEqual(core.incompleteSaleFields(vendas[0]), []);
       return { ok: true, json: async () => ({ ok: true, lote: confirm ? lote : 'outro', tipo, vendas_confirmadas: 1 }) };
     },
   });
@@ -145,12 +155,17 @@ test('o alarme é horário e só dá baixa com confirmação do lote enviado', a
   confirm = true;
   assert.equal((await sync()).pending, 0);
   assert.equal(acknowledged, 1);
-  queue.push({ row: sale });
+  queue.push({ row: fullSale });
   const openPanel = () => new Promise(resolve =>
     listener({ type: 'PIS_START_SALES_BACKUP' }, { url: 'opportunities.html' }, resolve));
   assert.equal((await openPanel()).pending, 0);
   assert.equal(acknowledged, 2);
-  queue.push({ row: sale });
+  queue.push({ row: fullSale });
   await openPanel();
   assert.equal(acknowledged, 2);
+  queue.unshift({ row: { ...fullSale, id: 'partial', quality: null } });
+  const afterStale = await sync();
+  assert.equal(afterStale.saved, 1);
+  assert.equal(afterStale.skipped, 1);
+  assert.equal(afterStale.pending, 0);
 });
