@@ -18,8 +18,12 @@ li { padding: 10px; background: #302234; border-radius: 6px; }
 .offer-meta { margin-top: 4px; }
 :focus-visible { outline: 2px solid #f3a5d8; outline-offset: 2px; }
 
-.opportunity-history { margin-top: 16px; }
-.opportunity-history h2 { margin: 0; font-size: 16px; }
+.opportunity-history, .backup-panel { margin-top: 16px; }
+.opportunity-history h2, .backup-panel h2 { margin: 0; font-size: 16px; }
+.backup-panel > button, .backup-panel label { margin-top: 6px; }
+.backup-panel > details { margin-top: 7px; }
+.backup-panel input { box-sizing: border-box; max-width: 100%; }
+#sales-restore-status:empty { display: none; }
 #status { margin: 6px 0 10px; }
 #offers { margin: 0; }
 #offers li > details { margin: 0; }

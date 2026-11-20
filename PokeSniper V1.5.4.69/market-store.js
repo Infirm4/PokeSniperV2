@@ -267,7 +267,7 @@ const PISMarketStore = (() => {
     return { saved, changed, conflict };
   }
 
-  async function ingest(kind, rows, now = Date.now(), { live = false } = {}) {
+  async function ingest(kind, rows, now = Date.now(), { live = false, fromSheet = false } = {}) {
     const db = await open();
     let external = null;
     if (kind === 'listing' && rows.some(row => row.currency === 'orb' && !row.closed)) {
@@ -312,7 +312,7 @@ const PISMarketStore = (() => {
           if (next.conflict) savedRows.conflicts++;
           const saved = saleWithSprite(next.saved);
           if (PISMarketCore.incompleteSaleFields(saved).length) {
-            if (!complete && (next.changed || saved !== next.saved))
+            if (!fromSheet && !complete && (next.changed || saved !== next.saved))
               incomplete.put({ ...saved, recoveryAt: previous?.recoveryAt ?? 0 });
             savedRows.incomplete++;
             continue;
@@ -327,7 +327,7 @@ const PISMarketStore = (() => {
           if (!hasFullIvs(previous) && hasFullIvs(saved)) savedRows.gainedFullIvs++;
           const { recoveryAt, ...record } = saved;
           sales.put(record);
-          tx.objectStore('salesBackup').put({
+          if (!fromSheet) tx.objectStore('salesBackup').put({
             currency: saved.currency, id: saved.id, revision: crypto.randomUUID(),
           });
           if (saved.pokemonId && saved.soldAt <= now) {

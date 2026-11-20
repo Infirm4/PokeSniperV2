@@ -33,7 +33,8 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.68'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.69'; // versão realmente injetada na página
+  const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura
@@ -619,7 +620,7 @@
     const list = document.getElementById('cm-lista');
     return !!list?.getClientRects().length && getComputedStyle(list).visibility === 'visible';
   };
-  const censoAtivo = () => trackAtivo() && !watchOpportunities && !vitrineAberta();
+  const censoAtivo = () => LEGACY_PANEL_ENABLED && trackAtivo() && !watchOpportunities && !vitrineAberta();
   function monitorAtivo() { return watchOpportunities || trackAtivo(); }
   function marketModules() {
     return { parser: typeof globalThis.PISMarketCore?.decodeGameFrame === 'function',
@@ -1017,6 +1018,7 @@
   }
 
   function agendarConferenciaVendas(delay = 1500) {
+    if (!LEGACY_PANEL_ENABLED) return;
     if (!Object.keys(lerInventario()).length) return; // sem estoque, não existe venda para reconciliar
     if (st.timerVendas) clearTimeout(st.timerVendas);
     st.timerVendas = setTimeout(() => {
@@ -1025,7 +1027,7 @@
     }, delay);
   }
   // 1 consulta por minuto quando existe estoque real para revenda; fora da aba também.
-  setInterval(() => {
+  if (LEGACY_PANEL_ENABLED) setInterval(() => {
     if (Object.keys(lerInventario()).length) conferirVendas().catch(e => dbg('Consulta das vendas:', e.message));
   }, 60000);
 
@@ -2423,7 +2425,7 @@
   const K_REENVIO_SHEETS_147 = 'pis_reenvio_sheets_v147_concluido';
   const K_CENSO_VALIDO_154 = 'pis_censo_valido_v154';
   const K_CENSO_SENTIDO_154 = 'pis_censo_sentido_v154';
-  const trackAtivo = () => lsGet(K_POKE_TRACK, true) === true;
+  const trackAtivo = () => !LEGACY_PANEL_ENABLED || lsGet(K_POKE_TRACK, true) === true;
   const setTrackAtivo = v => lsSet(K_POKE_TRACK, !!v);
 
   const pkDb = (() => {
@@ -2466,7 +2468,7 @@
     return gravacao;
   }
   st.pkTrackTemBase = false; st.pkTrackInfo = null; st.pkTrackErros = 0;
-  pkDb.all().then(arr => {
+  if (LEGACY_PANEL_ENABLED) pkDb.all().then(arr => {
     const velho = Date.now() + st.off - 2 * 86400000, descartar = [], migrados = [];
     const atualizarSheet = lsGet(K_SHEET_MIGRADO, false) !== true;
     const reenviarHistorico = lsGet(K_REENVIO_SHEETS_147, false) !== true;
@@ -3275,7 +3277,7 @@
       }
     } finally { st.pkEnviando = false; }
   }
-  setInterval(() => enviarParaPlanilha().catch(e => dbg('Sheets:', e.message)), 15000);
+  if (LEGACY_PANEL_ENABLED) setInterval(() => enviarParaPlanilha().catch(e => dbg('Sheets:', e.message)), 15000);
 
   // ---------- Importação manual de CSV de auditoria para o Apps Script ----------
   // Envia o CSV diretamente ao banco remoto (abas eventos/Sheet), sem consultar o jogo,
@@ -3401,7 +3403,7 @@
       logPk(`💾 CSV salvo automaticamente em Downloads: ${n} eventos de auditoria.`);
     }
   }
-  setInterval(() => { try { csvAutomatico(); } catch (e) { dbg('CSV automático:', e.message); } }, 600000);
+  if (LEGACY_PANEL_ENABLED) setInterval(() => { try { csvAutomatico(); } catch (e) { dbg('CSV automático:', e.message); } }, 600000);
 
   async function loopPokemon(id) {
     while (st.running && id === st.loopId) {
@@ -3691,7 +3693,7 @@
     } finally { recentBusy = false; }
   }, 250);
 
-  (async function coletaContinua() {
+  if (LEGACY_PANEL_ENABLED) (async function coletaContinua() {
     for (;;) {
       // Só acelera o próximo ciclo após censo INTEGRALMENTE VALIDADO.
       // Falhas, interrupções, módulo desligado e coletas parciais não ativam isto.
@@ -4653,6 +4655,8 @@
 
   // Novo aviso identifica o código injetado; mensagens antigas ficam no histórico local.
   logPk(`🧭 PokéIdle Sniper v${EXT_VERSION}: consultas ≥${intervaloMinMercadoAtualMs()/1000}s (2→3→4→5→6→7s com sobrecarga); o monitor de avisos prioriza anúncios recentes com a vitrine fechada. Falhas mantêm recuo.`);
-  if (document.body) buildUI();
-  else document.addEventListener('DOMContentLoaded', buildUI);
+  if (LEGACY_PANEL_ENABLED) {
+    if (document.body) buildUI();
+    else document.addEventListener('DOMContentLoaded', buildUI);
+  }
 })();

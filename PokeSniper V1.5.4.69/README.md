@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.68)
+# PokeIdle Market Sniper (v1.5.4.69)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -80,7 +80,8 @@ se os anúncios carregam normalmente, feche-a e repita o diagnóstico.
 
 ## Backup de vendas no Google Sheets
 
-Na primeira abertura do painel, o Chrome inicia o envio das vendas já
+O painel antigo dentro do jogo está pausado. O menu da extensão reúne a
+seção **Planilha de vendas**. Na primeira abertura do menu, o Chrome inicia o envio das vendas já
 armazenadas no IndexedDB. Ao abrir ou reabrir o PokéIdle, a extensão também
 envia as vendas completas que ainda estão pendentes. Há uma sincronização
 por hora com o Chrome aberto, inclusive com o PokéIdle fechado. Lotes continuam pendentes
@@ -100,10 +101,16 @@ Gerenciar implantações**, edite a implantação existente e publique uma
 **Nova versão**, mantendo a URL `/exec`. A versão nova usa a mesma planilha
 vinculada. A aba de backup criada pela versão anterior é preservada.
 
-Para testar, use **Diagnóstico da versão → Sincronizar vendas completas com o Sheets**
-e confira a tabela. O relatório também mostra o estado em `backup_sheets`.
-Para restaurar, reexiba **Dados da venda (JSON)** na planilha antes de baixar
-o CSV da página atual, depois use **Restaurar vendas do CSV da planilha**.
+Clique em **Planilha de vendas → Enviar pendentes ao Sheets agora** para
+enviar sem esperar o horário. O relatório mostrado em Diagnóstico inclui
+o estado em `backup_sheets`.
+
+Dois perfis podem usar a mesma planilha. O receptor bloqueia gravações
+concorrentes e usa a chave moeda + ID da venda para conciliar reenvios.
+Para dar a outro perfil uma cópia do histórico, mostre a coluna oculta
+**Dados da venda (JSON)**, exporte o CSV da aba de vendas e use **Planilha
+de vendas → Importar histórico do Sheets** no perfil de destino. As vendas
+completas entram no IndexedDB sem criar um novo envio à planilha.
 O importador também aceita o CSV da antiga aba **Vendas confirmadas**.
 
 No editor do Apps Script, **diagnosticarLinhasForaDoBanco** mostra quantas

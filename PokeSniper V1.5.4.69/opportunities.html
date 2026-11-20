@@ -30,6 +30,17 @@
     <button id="toggle-notices" type="button" disabled>Ligar avisos</button>
     <span id="notice-status" class="offer-meta" role="status"></span>
   </div>
+  <section class="backup-panel" aria-labelledby="backup-heading">
+    <h2 id="backup-heading">Planilha de vendas</h2>
+    <button type="button" id="sales-backup-now">Enviar pendentes ao Sheets agora</button>
+    <p id="sales-backup-status" role="status" class="offer-meta"></p>
+    <details>
+      <summary>Importar histórico do Sheets</summary>
+      <label for="sales-backup-restore">CSV da aba de vendas</label>
+      <input type="file" id="sales-backup-restore" accept=".csv,text/csv">
+      <p id="sales-restore-status" role="status" class="offer-meta"></p>
+    </details>
+  </section>
   <details>
     <summary>Filtros e notificações</summary>
     <form id="settings">
@@ -54,11 +65,6 @@
     <p class="offer-meta">Também é possível importar um backup JSON de outro perfil.</p>
     <input type="file" id="coins-import" accept=".json,application/json" aria-label="Backup de vendas em Coins">
     <p role="status" class="offer-meta" id="coins-import-status"></p>
-    <div class="actions"><button type="button" id="sales-backup-now">Sincronizar vendas completas com o Sheets</button></div>
-    <label>Restaurar vendas do CSV da planilha
-      <input type="file" id="sales-backup-restore" accept=".csv,text/csv">
-    </label>
-    <p id="sales-backup-status" role="status" class="offer-meta"></p>
     <p id="diagnostics" class="offer-meta"></p>
     <p class="offer-meta">Mostra o estado da conexão, os testes locais e os avisos reais da fila. O relatório não inclui registros individuais.</p>
     <div class="actions">
