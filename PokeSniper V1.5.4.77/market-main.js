@@ -421,19 +421,19 @@ const mainMarketCore = (() => {
   const COIN_SCALES = [0.08, 0.12, 0.16, 0.24];
   const SPECIALS = ['aoe', 'zMove', 'mega'];
 
-  function coinProfile(target, sale, qualityWeight) {
+  function coinProfile(target, sale, qualityWeight, relaxed = false) {
     if ((target.shadow === 1 || sale.shadow === 1) && target.shadow !== sale.shadow) return null;
     for (const field of ['natureId', 'nature', 'rarity', 'legendary']) {
       if (target[field] != null && sale[field] != null && target[field] !== sale[field]) return null;
     }
-    if (target.name && sale.name && target.name.toLowerCase() !== sale.name.toLowerCase()) return null;
+    if (!relaxed && target.name && sale.name && target.name.toLowerCase() !== sale.name.toLowerCase()) return null;
     const grade = Math.abs(sale.grade - target.grade);
     const level = Math.abs(Math.log(sale.level / target.level));
     const differences = SPECIALS.filter(flag => (sale[flag] === 1) !== (target[flag] === 1)).length;
     const extraPremium = SPECIALS.some(flag => sale[flag] === 1 && target[flag] !== 1);
     const samePower = Number.isInteger(target.power) && sale.power === target.power;
     const neighbor = [4, 5].includes(target.power) && sale.power === target.power - 1;
-    if (!samePower && !neighbor && Number.isInteger(target.power) && Number.isInteger(sale.power)) return null;
+    if (!relaxed && !samePower && !neighbor && Number.isInteger(target.power) && Number.isInteger(sale.power)) return null;
     const refine = Number.isFinite(target.refinement) && Number.isFinite(sale.refinement) ?
       Math.min(2, Math.abs(target.refinement - sale.refinement) / Math.max(1, target.refinement * 0.2)) / 3 : 0;
     // A Qualidade direta só é usada na variante do backtest.
@@ -536,7 +536,7 @@ const mainMarketCore = (() => {
       })) };
   }
 
-  function estimateCoins(target, sales, now, { scales = COIN_SCALES, qualityWeight = false } = {}) {
+  function estimateCoins(target, sales, now, { scales = COIN_SCALES, qualityWeight = false, inspect } = {}) {
     const comparable = [];
     for (const sale of sales) {
       if (!id(sale.id) || !sameMarket(target, sale) ||
@@ -556,8 +556,12 @@ const mainMarketCore = (() => {
       const anchors = safe.filter(row => row.samePower);
       const direct = trimOutliers(anchors);
       latest = { rows, safe, direct, scale };
-      if (direct.length < 3 || effective(direct) < 2.6) continue;
+      if (direct.length < 3 || effective(direct) < 2.6) {
+        inspect?.('normal', direct, scale);
+        continue;
+      }
       const estimate = coinQuote(target, direct, scale, { direct: true, outlierCount: anchors.length - direct.length });
+      inspect?.('normal', direct, scale, estimate);
       if (estimate.alertSupported) return estimate;
       dispersed = estimate;
     }
@@ -573,7 +577,9 @@ const mainMarketCore = (() => {
       const multiplier = Math.min(0.35, anchorWeight * 0.75 / totalWeight(capped));
       const mixed = [...direct, ...capped.map(row => ({ ...row, weight: row.weight * multiplier }))]
         .sort((a, b) => a.price - b.price);
-      const estimate = coinQuote(target, trimOutliers(mixed), scale, { bepi: capped.length > 0 });
+      const retained = trimOutliers(mixed);
+      const estimate = coinQuote(target, retained, scale, { bepi: capped.length > 0 });
+      inspect?.('bepi', retained, scale, estimate);
       if (estimate.alertSupported && estimate.bepi && estimate.powerCounts[target.power] >= 2 &&
           estimate.powerCounts[target.power - 1] > 0) return estimate;
     }
@@ -581,7 +587,9 @@ const mainMarketCore = (() => {
     const trimmed = trimOutliers(reference);
     const reason = rows.some(row => row.verified && row.samePower && row.extraPremium)
       ? 'extras_sem_suporte' : 'comparáveis_insuficientes';
-    return coinQuote(target, trimmed, scale, { reason, outlierCount: reference.length - trimmed.length });
+    const indicative = coinQuote(target, trimmed, scale, { reason, outlierCount: reference.length - trimmed.length });
+    inspect?.('indicativa', trimmed, scale, indicative);
+    return indicative;
   }
 
   // Baseline conservadora: mesma espécie, moeda e Shiny, com meia-vida de 10 dias.
@@ -649,7 +657,7 @@ const mainMarketCore = (() => {
   }
 
   const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
-    WINDOW_MS, MAX_BATCH, estimateCoins, attackProfile, validIv, hasSaleSprite, incompleteSaleFields, matchesDisplayPrice, inventoryProfiles, findInventoryProfile };
+    WINDOW_MS, MAX_BATCH, estimateCoins, coinProfile, attackProfile, validIv, hasSaleSprite, incompleteSaleFields, matchesDisplayPrice, inventoryProfiles, findInventoryProfile };
   return core;
 })();
 const mainCoinsHistory = (() => {
@@ -790,7 +798,7 @@ const mainCoinsHistory = (() => {
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.76'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.77'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';

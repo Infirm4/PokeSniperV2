@@ -46,6 +46,18 @@ const PISOpportunityAlerts = (() => {
     await chrome.notifications.create(id, { ...options, iconUrl: chrome.runtime.getURL('opportunity-placeholder.png') });
   }
 
+  async function noticeLiquidity(row) {
+    if (row.currency !== 'gold' || !PISMarketStore.coinNoticeLiquidity) return null;
+    let timer;
+    try {
+      return await Promise.race([
+        PISMarketStore.coinNoticeLiquidity(row),
+        new Promise(resolve => { timer = setTimeout(resolve, globalThis.PISCoinMarket?.OPTIONS.liquidityBudgetMs ?? 750, null); }),
+      ]);
+    } catch { return null; }
+    finally { clearTimeout(timer); }
+  }
+
   async function sendPending() {
     const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
     const config = PISOpportunities.settings(opportunitySettings);
@@ -62,7 +74,9 @@ const PISOpportunityAlerts = (() => {
       const row = await PISMarketStore.currentOpportunity(candidate.key, candidate.id, current);
       if (!row) continue;
       // ID determinístico mantém apenas uma notificação para a mesma revisão após uma retomada.
-      const { title, message, desktopMessage } = PISOpportunities.noticePresentation(row);
+      const liquidityHours = await noticeLiquidity(row);
+      const notice = liquidityHours ? { ...row, liquidityHours } : row;
+      const { title, message, desktopMessage } = PISOpportunities.noticePresentation(notice);
       const sprites = PISOpportunities.spriteCandidates(row);
       const inGame = PISGameTab.show(title, message, false, sprites[0], PISMarketCore.purchaseOffer(row), sprites[1]).catch(() => false);
       let desktop = false;
@@ -73,7 +87,7 @@ const PISOpportunityAlerts = (() => {
         console.warn('[PIS] Aviso visual do Chrome indisponível.');
       }
       const game = await inGame;
-      await PISMarketStore.markDelivery(row.key, desktop || game, Date.now(), { desktop, game }, row);
+      await PISMarketStore.markDelivery(row.key, desktop || game, Date.now(), { desktop, game }, notice);
       globalThis.PISMarketEventLog?.record(chrome.storage.local, row.currency, desktop || game ? 'aviso_enviado' : 'aviso_falhou');
     }
   }

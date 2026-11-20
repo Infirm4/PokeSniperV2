@@ -6,6 +6,7 @@
   <title>Poke Sniper V2</title>
   <link rel="stylesheet" href="opportunities.css">
   <script defer src="market-core.js"></script>
+  <script defer src="coin-market.js"></script>
   <script defer src="opportunities.js"></script>
   <script defer src="vendor/briaoale/especies.js"></script>
   <script defer src="vendor/briaoale/pve-power.js"></script>
@@ -98,6 +99,10 @@
           <button type="button" id="copy-diagnostics" disabled>Copiar resultado</button>
           <button type="button" id="download-diagnostics" disabled>Baixar diagnóstico (.json)</button>
         </div>
+        <label>Anúncio em Coins para investigar (opcional)
+          <input id="coin-report-name" type="search" maxlength="100" placeholder="Nome ou ID do anúncio">
+        </label>
+        <button type="button" id="run-coin-report">Analisar cobertura, preço e liquidez de Coins</button>
         <label>Pokémon para comparar em Gemas (opcional)
           <input id="gem-comparison-name" type="search" maxlength="100" placeholder="Ex.: Dragonite">
         </label>

@@ -166,6 +166,8 @@ function opportunityCard(row) {
   heading.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')));
   const profile = PISOpportunities.profileSummary(row);
   if (profile) heading.append(text('span', ' - ' + profile, 'pis-v2-meta'));
+  const fallback = PISOpportunities.fallbackWarning(row);
+  if (fallback) block.append(text('span', fallback, 'pis-v2-fallback-notice'));
   block.append(heading, text('span', `${offer.discount} · ${offer.asking}`, 'pis-v2-opportunity-price'));
   if (offer.tier) block.append(text('span', offer.tier, 'pis-v2-meta'));
   if (offer.composition) block.append(text('span', offer.composition, 'pis-v2-meta'));
@@ -176,6 +178,13 @@ function opportunityCard(row) {
     }
   } else if (offer.range) block.append(text('span', offer.range, 'pis-v2-meta'));
   if (offer.warning) block.append(text('span', offer.warning, 'pis-v2-meta'));
+  const liquidity = PISOpportunities.liquidityLabel(row);
+  if (liquidity) {
+    const badge = text('span', liquidity, 'pis-v2-liquidity');
+    badge.dataset.level = row.liquidityHours.label;
+    badge.title = `Estimativa com fila parcial · ${row.liquidityHours.pages.length} páginas da vitrine observadas`;
+    block.append(badge);
+  }
   const time = text('time', noticeTime.format(row.deliveredAt), 'pis-v2-meta');
   time.dateTime = new Date(row.deliveredAt).toISOString();
   block.append(time);
@@ -470,6 +479,23 @@ compareGemAttackIv.addEventListener('click', async () => {
         'Sem fichas comparáveis. Abra a vitrine de Gemas no PokéIdle e tente novamente.';
   } catch { testStatus.textContent = 'Falha ao comparar as cotações em Gemas.'; }
   finally { compareGemAttackIv.disabled = runBacktest.disabled = runDiagnostics.disabled = false; }
+});
+
+const coinReportButton = document.querySelector('#run-coin-report');
+coinReportButton.addEventListener('click', async () => {
+  coinReportButton.disabled = true;
+  copyDiagnostics.disabled = downloadDiagnostics.disabled = true;
+  testStatus.textContent = 'Analisando vendas locais e segmentos de Coins…';
+  try {
+    const name = document.querySelector('#coin-report-name').value;
+    const result = await PISMarketStore.coinReport(name);
+    reportBox.value = JSON.stringify(result, null, 2);
+    reportBox.hidden = false;
+    copyDiagnostics.disabled = downloadDiagnostics.disabled = false;
+    testStatus.textContent = result.oportunidade ? 'Relatório de Coins gerado.' :
+      'Calibração disponível. Abra a vitrine de Coins para investigar um anúncio.';
+  } catch { testStatus.textContent = 'Falha ao analisar o histórico de Coins.'; }
+  finally { coinReportButton.disabled = false; }
 });
 
 downloadDiagnostics.addEventListener('click', () => {

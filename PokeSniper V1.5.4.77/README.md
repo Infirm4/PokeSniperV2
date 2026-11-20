@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.76)
+# PokeIdle Market Sniper (v1.5.4.77)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -152,6 +152,36 @@ Sheets. O monitor refaz a coleta do histórico e consulta pendências por exempl
 na própria fila de mercado, conferindo a transação antes de completar. O
 relatório mostra `vendas_pendentes_ficha_completa` e a contagem por lote.
 O histórico já sincronizado no Sheets segue disponível na planilha.
+
+## Cobertura e liquidez em Coins
+
+Os caminhos normal e BEPI do estimador existente precedem os quatro
+fallbacks. O novo cálculo tenta Nota mais distante, Potência adjacente com
+fator medido, banda de nível ampliada com curva validada e linha evolutiva
+com fator validado. As janelas são 14 dias, 30 dias e todo o histórico local.
+O banco compartilhado entra pela sincronização já existente. Os fallbacks
+são indicativos por padrão. A promoção dos níveis 1 e 2 usa o parâmetro
+`enableFallbackAlerts` de `coin-market.js` e exige 10 pontos percentuais a
+mais no desconto.
+
+O limite normal do código é `|ln(nível alvo / nível da venda)| ≤ 0,30`.
+O nível 3 amplia o teto para uma razão de 1,50. A distância até a faixa
+observada tem margem máxima de razão 1,20 nos fallbacks. Os ajustes são
+aprendidos com pares de exemplares independentes e só entram quando
+reduzem o erro mediano em pares mais recentes, fora do treino. Quando
+existe uma referência anterior com suporte, ela recebe suavização com
+`k = 5`.
+
+A liquidez é uma projeção em horas baseada no ritmo das vendas dos últimos
+14 dias e na fila ativa observada. A leitura da vitrine é parcial, por
+isso a estimativa pode ser otimista. O selo e o aviso usam o resultado
+somente para informação. Sem vendas suficientes, o selo é omitido.
+
+Em **Filtros → Diagnóstico da versão → Analisar cobertura, preço e liquidez
+de Coins**, use um nome ou ID de anúncio para selecionar o exemplo. O
+relatório mostra fatores medidos e validados, data/hora das vendas usadas,
+tentativas e pesos, cobertura antes e depois e o cálculo da oportunidade.
+Se omitido, o exemplo é o anúncio observado mais recentemente.
 
 ## Faixa estimada na vitrine de Coins e Gemas
 

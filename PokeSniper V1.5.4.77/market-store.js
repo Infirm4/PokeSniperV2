@@ -4,7 +4,7 @@ const PISMarketStore = (() => {
   const MAX_COMPARABLES = 1000;
   const DB_VERSION = 17;
   const ESTIMATE_REVISION = 8;
-  const revisionFor = row => row?.currency === 'gold' ? 10 : ESTIMATE_REVISION;
+  const revisionFor = row => row?.currency === 'gold' ? 11 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
   const fold = value => (value || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
   let opening;
@@ -158,6 +158,13 @@ const PISMarketStore = (() => {
     return opening;
   }
 
+  async function allCoinSales(store, now) {
+    const index = store.index('priceMarket');
+    const groups = await Promise.all([0, 1].map(shiny =>
+      result(index.getAll(IDBKeyRange.bound(['gold', shiny, 0], ['gold', shiny, now], false, true)))));
+    return groups.flat();
+  }
+
   // Leitura indexada por grupo, limitada às vendas mais recentes da janela.
   function recentSales(index, listing, now) {
     if (listing.shiny == null || PISMarketCore.isOutland(listing)) return Promise.resolve([]);
@@ -241,6 +248,9 @@ const PISMarketStore = (() => {
     const sales = tx.objectStore('sales');
     const listings = tx.objectStore('listings');
     const markets = new Map();
+    let coinModel;
+    if (globalThis.PISCoinMarket && rows.some(row => row.currency === 'gold'))
+      coinModel = PISCoinMarket.prepare(await allCoinSales(sales, now), now);
 
     for (const group of groups.values()) {
       const target = group[0];
@@ -248,7 +258,7 @@ const PISMarketStore = (() => {
       let local;
       for (const listing of group) {
         const previous = listing.estimate;
-        let estimate = listing.currency !== 'orb' ? null : publicEstimates ? publicEstimates.get(listing.id) :
+        let estimate = listing.currency === 'gold' ? coinModel?.estimate(listing) : publicEstimates ? publicEstimates.get(listing.id) :
           listing.pricingRevision === ESTIMATE_REVISION && previous?.method === 'briaoale_public' &&
           PISPublicGems.freshTimestamp(previous.sourceAt, now) ? previous : null;
         if (!estimate) {
@@ -605,6 +615,69 @@ const PISMarketStore = (() => {
     await done;
   }
 
+  async function coinContext(now, auditSales = false) {
+    const db = await open();
+    const tx = db.transaction(['listings', 'sales']);
+    const range = IDBKeyRange.bound(now - PISCoinMarket.OPTIONS.listingFreshHours * 3600000, now);
+    const store = tx.objectStore('sales');
+    const [sales, listings, session] = await Promise.all([
+      auditSales ? result(store.getAll()) : allCoinSales(store, now),
+      result(tx.objectStore('listings').index('observedAt').getAll(range)),
+      chrome.storage.session.get(null).catch(() => ({})),
+    ]);
+    const pages = Object.entries(session).filter(([key, value]) => key.startsWith('pisCoinSeenPage:') &&
+      Number.isFinite(value) && now - value <= PISCoinMarket.OPTIONS.listingFreshHours * 3600000)
+      .map(([key]) => Number(key.slice('pisCoinSeenPage:'.length))).sort((a, b) => a - b);
+    return { model: PISCoinMarket.prepare(sales, now), listings, pages };
+  }
+
+  async function coinNoticeLiquidity(row, now = Date.now()) {
+    const { model, listings, pages } = await coinContext(now);
+    return model.liquidity(row, row.estimate, listings, pages);
+  }
+
+  async function coinReport(name, now = Date.now()) {
+    const { model, listings, pages } = await coinContext(now, true);
+    const current = listings.filter(row => row.currency === 'gold' && !row.closed && (!row.expiresAt || row.expiresAt > now) &&
+      !PISMarketCore.isOutland(row)).reverse();
+    const segments = new Map();
+    for (const row of current) {
+      const key = JSON.stringify([row.speciesId, row.form, row.shiny, row.power, row.shadow, row.rarity, row.legendary,
+        row.aoe, row.zMove, row.mega, Math.floor((row.grade ?? 0) / .35), Math.floor(Math.log(row.level || 1) / .30)]);
+      if (!segments.has(key)) segments.set(key, row);
+    }
+    const bins = () => ({ normal: 0, bepi: 0, indicativa: 0, 1: 0, 2: 0, 3: 0, 4: 0, sem_estimativa: 0 });
+    const before = bins(), after = bins();
+    for (const row of segments.values()) {
+      const debug = { tentativas: [], base: null, summaryOnly: true };
+      const quote = model.estimate(row, debug);
+      before[debug.base?.status === 'estimated' ? debug.base.nível : 'sem_estimativa']++;
+      after[quote.segmentStage ?? 'sem_estimativa']++;
+    }
+    const wanted = fold(name.trim());
+    const example = current.find(row => wanted && (fold(row.name).includes(wanted) || row.id === wanted)) ??
+      (!wanted ? current[0] : null);
+    let inspect = null;
+    if (example) {
+      const debug = { tentativas: [], base: null };
+      const quote = model.estimate(example, debug);
+      const row = { ...example, estimate: quote };
+      const appSettings = PISOpportunities.settings((await chrome.storage.local.get('opportunitySettings')).opportunitySettings);
+      const isAlert = trackedLaunch(example, now) && PISOpportunities.approved(row, appSettings, now);
+      const hint = isAlert && appSettings.notify ? PISOpportunities.fallbackWarning(row) : null;
+      inspect = { anúncio: { id: example.id, espécie: example.name, nível: example.level, potência: example.power,
+        nota: example.grade, preço: example.price }, ...debug, resultado: quote,
+        liquidez: model.liquidity(row, quote, listings, pages, true), aviso: {
+          elegível_pelas_regras_atuais: isAlert && appSettings.notify, prefixo: hint,
+          motivo: hint ? 'referência de fallback' : isAlert && appSettings.notify ? 'estimativa normal' :
+            'aviso indisponível pelos filtros, pela política de fallback ou pela idade do anúncio',
+        } };
+    }
+    return { calibragem: model.calibrationReport(), cobertura: { segmentos: segments.size, antes: before, depois: after,
+      unidade: 'segmentos dos anúncios ativos observados nos últimos 30 min, agrupados por perfil, Nota e banda proporcional de nível' },
+      páginas_vistas: pages, oportunidade: inspect };
+  }
+
   async function liquidity(row, level, price, now = Date.now()) {
     const target = { ...row, price, level };
     if (row.shiny == null || !Number.isSafeInteger(level) || level < 1 ||
@@ -673,9 +746,11 @@ const PISMarketStore = (() => {
       return null;
     });
     const db = await open();
-    const sales = profile.shiny ? [] :
-      await recentSales(db.transaction('sales').objectStore('sales').index('comparables'), profile, now);
-    const gold = profile.shiny ? null : PISMarketCore.estimate(profile, sales, now);
+    const store = db.transaction('sales').objectStore('sales');
+    const coinTarget = { ...profile, currency: 'gold' };
+    const gold = profile.shiny ? null : globalThis.PISCoinMarket
+      ? PISCoinMarket.prepare(await allCoinSales(store, now), now).estimate(coinTarget)
+      : PISMarketCore.estimate(coinTarget, await recentSales(store.index('comparables'), coinTarget, now), now);
     const quote = estimate => {
       if (estimate?.status !== 'estimated' || !Number.isSafeInteger(estimate.median)) return null;
       const { lower, median, upper } = estimate;
@@ -688,6 +763,9 @@ const PISMarketStore = (() => {
     const db = await open();
     const tx = db.transaction(['sales', 'publicPricing']);
     const store = tx.objectStore('sales');
+    if (row.currency === 'gold' && globalThis.PISCoinMarket) {
+      return { ...row, estimate: PISCoinMarket.prepare(await allCoinSales(store, now), now).estimate(row) };
+    }
     const [sales, market, snapshot] = await Promise.all([
       recentSales(store.index('comparables'), row, now),
       row.currency === 'orb' ? marketSales(store.index('priceMarket'), row, now) : [],
@@ -889,5 +967,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, deliveredOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, compareGemAttackIv, backtest, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, deliveredOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, coinNoticeLiquidity, coinReport, compareGemAttackIv, backtest, diagnosticSnapshot, liquidity, diagnostics };
 })();

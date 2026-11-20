@@ -25,12 +25,16 @@
 
   function priceLimit(row, config) {
     if (row.estimate?.status !== 'estimated') return null;
-    return Math.max(0, Math.floor(row.estimate.median * (100 - config.discount) / 100));
+    const extra = row.currency === 'gold' && row.estimate.fallbackLevel
+      ? globalThis.PISCoinMarket?.OPTIONS.extraDiscountPoints ?? 10 : 0;
+    return Math.max(0, Math.floor(row.estimate.median * (100 - config.discount - extra) / 100));
   }
 
   function notificationEligible(row, config = {}) {
     if (row.currency === 'gold') {
-      const { bepi, lower } = row.estimate ?? {};
+      const { bepi, lower, fallbackLevel } = row.estimate ?? {};
+      if (fallbackLevel && (!globalThis.PISCoinMarket?.OPTIONS.enableFallbackAlerts || fallbackLevel > 2 ||
+          row.estimate.confidence === 'baixa' || !(row.price < lower))) return false;
       if (bepi && (!(row.price < lower) ||
           row.price > Math.floor(row.estimate.median * Math.max(0, 95 - (config.discount ?? 0)) / 100))) return false;
     }
@@ -170,11 +174,31 @@
     ].filter(Boolean).join(' · ');
   }
 
+  function fallbackWarning(row) {
+    if (row.currency !== 'gold') return '';
+    const level = row.estimate?.bepi ? 'BEPI' : row.estimate?.fallbackLevel ? 'nível ' + row.estimate.fallbackLevel : '';
+    if (!level) return '';
+    const options = globalThis.PISCoinMarket?.OPTIONS;
+    const icon = options?.useTextWarning ? options.textWarning :
+      options?.useLowConfidenceWarning && row.estimate.confidence === 'baixa' ? options.lowConfidenceWarning : options?.warning ?? '⚠️';
+    return `${icon} ${options?.warningText ?? 'Preço estimado'} (${level})`;
+  }
+
+  function liquidityLabel(row) {
+    const quote = row.currency === 'gold' ? row.liquidityHours : null;
+    const label = { alta: 'Alta', média: 'Média', baixa: 'Baixa' }[quote?.label];
+    if (!label) return '';
+    const duration = quote.hours == null ? '' : quote.hours > 48 ? ` · ~${Math.round(quote.hours / 24)} d` :
+      ` · ~${Math.max(1, Math.round(quote.hours))} h`;
+    return label + ' liquidez' + duration;
+  }
+
   function noticePresentation(row, now = Date.now()) {
     const { composition, warning } = presentation(row, now, { noticeIvsOnly: true });
     const amount = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
     const discount = row.estimate.discount > 0 ? '−' + amount.format(row.estimate.discount * 100) + '%' : '0%';
-    const title = `${row.name || 'Pokémon #' + row.speciesId} · ${discount}`;
+    const title = [fallbackWarning(row), `${row.name || 'Pokémon #' + row.speciesId} · ${discount}`]
+      .filter(Boolean).join(' · ');
     const coins = row.currency === 'gold';
     const median = row.estimate.median;
     const money = value => {
@@ -185,14 +209,14 @@
     };
     const quoted = Number.isFinite(median) && median > 0 ? 'Preço justo ' + money(median) : 'Preço justo indisponível';
     const prices = `Mercado ${money(row.price)} · ${quoted}`;
-    const details = [prices, composition, warning];
+    const details = [prices, liquidityLabel(row), composition, warning];
     return { title,
       message: [profileSummary(row, false), ...details].filter(Boolean).join('\n'),
       desktopMessage: [profileSummary(row), ...details].filter(Boolean).join('\n'),
     };
   }
 
-  const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, profileSummary, noticePresentation };
+  const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, profileSummary, fallbackWarning, liquidityLabel, noticePresentation };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISOpportunities = core;
 })();

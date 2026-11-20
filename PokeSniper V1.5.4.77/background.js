@@ -4,7 +4,7 @@ const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwPXSeG3xL5PUwDwsuCp
 const PIS_HOST = /^https:\/\/(?:[a-z0-9-]+\.)?pokeidle\.io(?:\/|$)/i;
 
 importScripts('vendor/briaoale/especies.js', 'vendor/briaoale/pve-power.js', 'vendor/briaoale/market-bonuses.js', 'vendor/briaoale/central.js', 'vendor/briaoale/nota.js', 'vendor/briaoale/pve-pricing.js');
-importScripts('market-core.js', 'pricing-model.js', 'liquidity.js', 'opportunities.js', 'market-store.js',
+importScripts('market-core.js', 'coin-market.js', 'pricing-model.js', 'liquidity.js', 'opportunities.js', 'market-store.js',
   'history-trace.js', 'public-gems.js', 'market-event-log.js');
 
 const gameTabKey = 'marketGameTab';
@@ -210,6 +210,8 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     if (currency) {
       receipts['pisMarketPage:' + currency] = page;
       if (req.preparation === true) receipts['pisMarketPrepared:' + currency] = page;
+      if (currency === 'gold' && page.status === 'gravado' && page.page >= 0 && page.page <= 999 && page.page != null)
+        receipts['pisCoinSeenPage:' + page.page] = page.at;
     }
     return chrome.storage.session.set(receipts).catch(() => {});
   }
