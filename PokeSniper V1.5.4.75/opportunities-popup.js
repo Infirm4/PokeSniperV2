@@ -166,7 +166,12 @@ function opportunityCard(row) {
     text('span', `${offer.discount} · ${offer.asking}`, 'pis-v2-opportunity-price'));
   if (offer.tier) block.append(text('span', offer.tier, 'pis-v2-meta'));
   if (offer.composition) block.append(text('span', offer.composition, 'pis-v2-meta'));
-  if (offer.range) block.append(text('span', offer.range, 'pis-v2-meta'));
+  if (row.currency === 'orb') {
+    const median = row.estimate.median;
+    if (Number.isFinite(median) && median > 0) {
+      block.append(text('span', `Preço justo ≈${format.format(median)} Gemas`, 'pis-v2-meta'));
+    }
+  } else if (offer.range) block.append(text('span', offer.range, 'pis-v2-meta'));
   if (offer.warning) block.append(text('span', offer.warning, 'pis-v2-meta'));
   const time = text('time', noticeTime.format(row.deliveredAt), 'pis-v2-meta');
   time.dateTime = new Date(row.deliveredAt).toISOString();

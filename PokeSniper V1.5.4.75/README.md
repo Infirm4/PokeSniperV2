@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.74)
+# PokeIdle Market Sniper (v1.5.4.75)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
