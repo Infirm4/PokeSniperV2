@@ -1,7 +1,8 @@
 # PokeSniper para Windows
 
-Extraia o ZIP e execute **PokeSniper.exe**. O aplicativo cria o atalho
-**PokeSniper** na Área de Trabalho e abre o Chrome em **pokeidle.io**.
+Baixe e execute [**PokeSniper.exe**](./PokeSniper.exe) no Windows x64. O
+aplicativo cria o atalho **PokeSniper** na Área de Trabalho e abre o Chrome
+em **pokeidle.io**. A extensão fica na pasta [extensao](./extensao).
 
 ## Primeira abertura
 
@@ -22,10 +23,19 @@ jogo com a versão atual. Sem conexão, o aplicativo usa a versão que já
 estiver instalada. Cada atualização guarda uma cópia da pasta anterior
 ao lado da pasta da extensão em um diretório `.pokesniper-backup-*`.
 
+## Recuperar a pasta da extensão
+
+Se a pasta cadastrada sumiu, abra o **PokeSniper.exe** baixado nesta página.
+Escolha **Sim** para baixar a extensão no mesmo caminho ou **Não** se já
+moveu a extensão para outra pasta. Após restaurar, clique em **Recarregar**
+em `chrome://extensions` se o Chrome mostrar um erro no PokeSniper. As
+configurações e o banco local ficam no perfil do Chrome. Restaurar o caminho
+permite reutilizar os dados que ainda estão nesse perfil.
+
 ## Compilar
 
-O projeto requer Go 1.23 ou mais recente. Dentro desta pasta, rode
-`go test ./...`. Para embutir a arte no executável e compilar no Windows x64:
+O projeto requer Go 1.23 ou mais recente. Na pasta `launcher-windows`, rode
+`go test ./...`. Os comandos abaixo compilam o executável com o ícone.
 
 ```powershell
 go run github.com/akavel/rsrc@v0.10.2 -arch amd64 -ico assets/desktop.ico -o rsrc_windows_amd64.syso

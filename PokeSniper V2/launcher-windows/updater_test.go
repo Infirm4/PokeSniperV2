@@ -88,3 +88,48 @@ func TestRejectsUnsafePackagePaths(t *testing.T) {
 		})
 	}
 }
+
+func TestRestoresMissingExtensionFromCurrentLayout(t *testing.T) {
+	const base = "PokeSniperV2-main/PokeSniper V2/"
+	data := packageZip(t, []string{"1.5.4.86"}, map[string]string{
+		base + "extensao/manifest.json":                                   `{"name":"PokeIdle Market Sniper","version":"1.5.4.87","manifest_version":3}`,
+		base + "extensao/background.js":                                   "worker",
+		base + "extensao/market-main.js":                                  "monitor",
+		base + "extensao/opportunities.html":                              "painel",
+		base + "PokeSniper.exe":                                           "launcher",
+		base + "launcher-windows/main_windows.go":                         "código do launcher",
+		"PokeSniperV2-main/pokeidle_bot_io/extensao_chrome/manifest.json": "outro projeto",
+	})
+	release, err := findUpdate(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "PokeSniper v2", "pokeidle-sniper")
+	if !canRestoreExtension(dir) {
+		t.Fatal("missing folder must be eligible for recovery")
+	}
+	if err := release.install(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := installedVersion(dir)
+	if err != nil || got.String() != "1.5.4.87" {
+		t.Fatalf("restored %s, %v", got, err)
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil || len(files) != 4 {
+		t.Fatalf("only extension files should be installed: %v, %v", files, err)
+	}
+}
+
+func TestRecoveryDoesNotOfferToReplaceNonEmptyUnknownFolder(t *testing.T) {
+	dir := t.TempDir()
+	if !canRestoreExtension(dir) {
+		t.Fatal("empty folder must be eligible for recovery")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "documento.txt"), []byte("arquivo local"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if canRestoreExtension(dir) {
+		t.Fatal("folder containing existing files must not be replaced during recovery")
+	}
+}

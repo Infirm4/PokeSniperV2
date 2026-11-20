@@ -82,17 +82,21 @@ func chromeRunning() (bool, error) {
 	return strings.Contains(strings.ToLower(string(data)), `"chrome.exe",`), err
 }
 
-func waitForChromeExit(next version) bool {
+func waitForChromeExit(next version, existing bool) bool {
+	prompt := "PokeSniper " + next.String() + " disponível. Saia do Chrome pelo menu ⋮ → Sair e clique em OK.\n\nCancelar abre o PokéIdle com a versão atual."
+	if !existing {
+		prompt = "Para restaurar a pasta da extensão, saia do Chrome pelo menu ⋮ → Sair e clique em OK.\n\nCancelar deixa a recuperação para depois."
+	}
 	for {
 		running, err := chromeRunning()
 		if err != nil {
-			message("Não foi possível confirmar se o Chrome está aberto. A versão instalada será usada.", okIcon)
+			message("Não foi possível confirmar se o Chrome está aberto. Saia do navegador e tente novamente.", okIcon)
 			return false
 		}
 		if !running {
 			return true
 		}
-		if message("PokeSniper "+next.String()+" disponível. Para atualizar, saia do Chrome pelo menu ⋮ → Sair. Depois clique em OK.\n\nCancelar abre o PokéIdle com a versão atual.", okCancel|okIcon) != ok {
+		if message(prompt, okCancel|okIcon) != ok {
 			return false
 		}
 	}
@@ -131,6 +135,23 @@ try {
 	default:
 		return "", false, nil
 	}
+}
+
+func recoverExtension(folder, home string, reason error) (string, bool, bool, error) {
+	if errors.Is(reason, os.ErrNotExist) && canRestoreExtension(folder) {
+		prompt := "A pasta da extensão não foi encontrada:\n\n" + folder + "\n\nSim: baixar a extensão de novo neste mesmo caminho para o Chrome recuperar a instalação.\nNão: indicar outra pasta ou preparar uma instalação nova."
+		switch message(prompt, yesNoCancel|okIcon) {
+		case yes:
+			return folder, false, true, nil
+		case no:
+		default:
+			return "", false, false, nil
+		}
+	} else if message("A extensão está indisponível neste caminho:\n\n"+folder+"\n\nClique em OK para selecionar a pasta atual ou preparar uma instalação nova.", okCancel|okIcon) != ok {
+		return "", false, false, nil
+	}
+	selected, newInstall, err := selectExtension(home)
+	return selected, newInstall, false, err
 }
 
 func readConfig(file string) (config, error) {
@@ -228,7 +249,7 @@ func run() error {
 	}
 
 	firstRun := setup.ExtensionFolder == ""
-	var newInstall bool
+	var newInstall, restoring bool
 	if firstRun {
 		setup.ExtensionFolder, newInstall, err = selectExtension(home)
 		if err != nil || setup.ExtensionFolder == "" {
@@ -236,13 +257,22 @@ func run() error {
 		}
 	}
 	localVersion, localErr := installedVersion(setup.ExtensionFolder)
-	if localErr != nil && (!newInstall || !errors.Is(localErr, os.ErrNotExist)) {
-		return fmt.Errorf("não foi possível ler a extensão em %s: %w", setup.ExtensionFolder, localErr)
+	if localErr != nil && !firstRun {
+		previous := setup.ExtensionFolder
+		setup.ExtensionFolder, newInstall, restoring, err = recoverExtension(previous, home, localErr)
+		if err != nil || setup.ExtensionFolder == "" {
+			return err
+		}
+		setup.ETag = ""
+		localVersion, localErr = installedVersion(setup.ExtensionFolder)
+	}
+	if localErr != nil && (!(newInstall || restoring) || !errors.Is(localErr, os.ErrNotExist) || !canRestoreExtension(setup.ExtensionFolder)) {
+		return fmt.Errorf("não foi possível usar a pasta da extensão em %s: %w", setup.ExtensionFolder, localErr)
 	}
 	if localErr != nil || setup.Installed != localVersion.String() {
 		setup.ETag = ""
 	}
-	client := &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 		return errors.New("a origem da atualização mudou")
 	}}
 	remote, etag, err := fetchUpdate(client, setup.ETag)
@@ -253,7 +283,7 @@ func run() error {
 			return fmt.Errorf("não foi possível baixar o PokeSniper: %w", err)
 		}
 	case remote != nil && (localErr != nil || remote.version.newerThan(localVersion)):
-		if localErr != nil || waitForChromeExit(remote.version) {
+		if (newInstall && !restoring && localErr != nil) || waitForChromeExit(remote.version, localErr == nil) {
 			if err := remote.install(setup.ExtensionFolder); err != nil {
 				problem := fmt.Errorf("não foi possível aplicar a atualização: %w", err)
 				if restored, readErr := installedVersion(setup.ExtensionFolder); readErr != nil || restored != localVersion {
@@ -263,8 +293,13 @@ func run() error {
 			} else {
 				localVersion, setup.ETag = remote.version, etag
 			}
+		} else if localErr != nil {
+			return nil
 		}
 	default:
+		if localErr != nil {
+			return errors.New("o GitHub ainda não forneceu uma versão para recuperar a extensão")
+		}
 		setup.ETag = etag
 	}
 
@@ -280,6 +315,10 @@ func run() error {
 	}
 	if err := writeConfig(configFile, setup); err != nil {
 		return err
+	}
+	if restoring {
+		message("Pasta restaurada no endereço anterior. Se a extensão aparecer com erro no Chrome, clique em Recarregar. Se estiver fora da lista, use Carregar sem compactação e indique:\n\n"+setup.ExtensionFolder, okIcon)
+		return openChrome(chrome, gameURL, "chrome://extensions/")
 	}
 	if newInstall {
 		message("O PokeSniper foi baixado. Faça este passo uma vez no Chrome.\n\nAtive o Modo do desenvolvedor, clique em Carregar sem compactação e escolha:\n\n"+setup.ExtensionFolder+"\n\nDepois de carregar a extensão, volte à aba do PokéIdle e recarregue o jogo.", okIcon)

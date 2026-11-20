@@ -79,6 +79,14 @@ func installedVersion(folder string) (version, error) {
 	return readVersion(file)
 }
 
+func canRestoreExtension(folder string) bool {
+	if !filepath.IsAbs(folder) || filepath.Dir(folder) == filepath.Clean(folder) {
+		return false
+	}
+	entries, err := os.ReadDir(folder)
+	return errors.Is(err, os.ErrNotExist) || err == nil && len(entries) == 0
+}
+
 type update struct {
 	version version
 	base    string
@@ -91,16 +99,23 @@ func findUpdate(data []byte) (*update, error) {
 		return nil, err
 	}
 	var latest *update
+search:
 	for _, file := range archive.File {
 		parts := strings.Split(file.Name, "/")
-		if len(parts) != 3 || !strings.HasPrefix(parts[1], extensionPrefix) || parts[2] != "manifest.json" {
-			continue
+		switch {
+		case len(parts) == 4 && parts[1] == "PokeSniper V2" && parts[2] == "extensao" && parts[3] == "manifest.json":
+			candidate, err := zipVersion(file)
+			if err != nil {
+				return nil, fmt.Errorf("manifesto inválido na pasta PokeSniper V2: %w", err)
+			}
+			latest = &update{version: candidate, base: strings.TrimSuffix(file.Name, "manifest.json")}
+			break search
+		case len(parts) == 3 && strings.HasPrefix(parts[1], extensionPrefix) && parts[2] == "manifest.json":
+			candidate, err := parseVersion(strings.TrimPrefix(parts[1], extensionPrefix))
+			if err == nil && (latest == nil || candidate.newerThan(latest.version)) {
+				latest = &update{version: candidate, base: strings.TrimSuffix(file.Name, "manifest.json")}
+			}
 		}
-		candidate, err := parseVersion(strings.TrimPrefix(parts[1], extensionPrefix))
-		if err != nil || latest != nil && !candidate.newerThan(latest.version) {
-			continue
-		}
-		latest = &update{version: candidate, base: parts[0] + "/" + parts[1] + "/"}
 	}
 	if latest == nil {
 		return nil, errors.New("nenhuma versão do PokeSniper foi encontrada no GitHub")
@@ -122,12 +137,7 @@ func findUpdate(data []byte) (*update, error) {
 		}
 		size += file.UncompressedSize64
 		if name == "manifest.json" {
-			stream, err := file.Open()
-			if err != nil {
-				return nil, err
-			}
-			current, err := readVersion(stream)
-			stream.Close()
+			current, err := zipVersion(file)
 			if err != nil || current != latest.version {
 				return nil, errors.New("o manifesto da atualização tem uma versão incompatível")
 			}
@@ -140,6 +150,15 @@ func findUpdate(data []byte) (*update, error) {
 		}
 	}
 	return latest, nil
+}
+
+func zipVersion(file *zip.File) (version, error) {
+	stream, err := file.Open()
+	if err != nil {
+		return version{}, err
+	}
+	defer stream.Close()
+	return readVersion(stream)
 }
 
 var archiveComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
@@ -211,6 +230,9 @@ func extract(file *zip.File, destination string) error {
 
 func (u *update) install(folder string) error {
 	parent := filepath.Dir(folder)
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		return err
+	}
 	staging, err := os.MkdirTemp(parent, ".pokesniper-novo-")
 	if err != nil {
 		return err
