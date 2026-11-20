@@ -84,3 +84,32 @@ test('a vitrine de Gemas só exibe estimativas frescas da fonte pública', async
   assert.equal(reply.offers[2].quote, null);
   assert.equal(reply.offers[3].quote.median, 2900);
 });
+
+test('a ficha sem ID usa a espécie do catálogo e marca o preço como indicativo', async () => {
+  let listener, received;
+  const context = {
+    chrome: { runtime: { id: 'own', onMessage: { addListener(fn) { listener ??= fn; } } } },
+    importScripts() {}, console, PISMarketCore: require('../market-core'),
+    PI_ESPECIES: [{ id: 141, n: 'Kabutops' }],
+    PISMarketStore: {
+      async initialize() {},
+      async inventoryQuote(profile) {
+        received = profile;
+        return { gold: { median: 38000000, indicative: false }, orb: null };
+      },
+    },
+  };
+  runInNewContext(source, context);
+  const profile = { catalogFallback: true, name: 'Kabutops', grade: 3.524, level: 80, power: 4, quality: 1.52, shiny: 0 };
+  const sender = { id: 'own', frameId: 0, url: 'https://pokeidle.io/', tab: { id: 1 } };
+  const send = profile => new Promise(resolve => {
+    if (!listener({ type: 'PIS_INVENTORY_QUOTE', profile }, sender, resolve)) resolve(null);
+  });
+  assert.equal(await send({ ...profile, grade: 3.499 }), null);
+  assert.equal(await send({ ...profile, name: 'Desconhecido' }), null);
+  const response = await send(profile);
+  assert.equal(received.speciesId, '141');
+  assert.equal(received.pokemonId, null);
+  assert.equal(received.grade, 3.524);
+  assert.equal(response.quotes.gold.indicative, true);
+});

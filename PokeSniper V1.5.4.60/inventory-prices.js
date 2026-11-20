@@ -7,7 +7,7 @@
   const cache = new Map();
   const MIN_SHEET_GRADE = 3.5;
   let hovered, tooltip, timer, hoverRequest = 0, requestSequence = 0;
-  let sheet, sheetBadge, sheetSignature, sheetRequest = 0, sheetFrame = false;
+  let sheet, sheetBadge, sheetSignature, sheetFallback, sheetRequest = 0, sheetFrame = false;
 
   function candidate(target) {
     if (!(target instanceof Element) || target.closest(excluded)) return null;
@@ -144,29 +144,70 @@
       getComputedStyle(sheet).visibility !== 'hidden');
   }
 
+  function sheetDetails() {
+    const text = sheet.innerText || sheet.textContent;
+    const id = [...sheet.querySelectorAll('.txt-num')].map(node =>
+      /^#(\d{1,64})$/.exec(node.textContent.trim())?.[1]).find(Boolean);
+    const name = sheet.querySelector('.fi-nome, .fi-heroi h2, .fi-heroi h3')?.textContent.trim();
+    const levelText = sheet.querySelector('.fi-nivel-chip')?.textContent || text;
+    const level = Number(/(?:nv(?:l)?\.?|nível|level)\s*([\d.]+)/iu.exec(levelText)?.[1]?.replaceAll('.', ''));
+    const score = sheet.querySelector('[data-nota]')?.dataset.nota?.trim() ||
+      /(\d{1,2}[.,]\d{2,4})\s*\/\s*10(?=[,./\s]|$)/u.exec(text)?.[1];
+    const grade = score ? Number(score.replace(',', '.')) : null;
+    const own = [...sheet.querySelectorAll('button, [role="button"]')].some(button =>
+      /^reduzir (?:o )?n[ií]vel$/iu.test(button.textContent.trim()));
+    let fallback = null;
+    if (own && name && Number.isSafeInteger(level) && level > 0 && grade >= MIN_SHEET_GRADE) {
+      const power = Number(/pot[eê]ncia\s*P\s*([1-5])/iu.exec(text)?.[1]);
+      const quality = /qualidade\s*(\d+[.,]\d+)/iu.exec(text)?.[1];
+      const statsArea = text.split(/stats atuais/iu)[1]?.split(/iv ao lado|stats-base/iu)[0] ?? '';
+      const labels = { hp: 'HP', attack: 'ATK', defense: 'DEF', specialAttack: 'SP[. ]*ATK',
+        specialDefense: 'SP[. ]*DEF', speed: 'SPD' };
+      const ivs = {};
+      for (const [key, label] of Object.entries(labels)) {
+        const raw = new RegExp('(?:^|\\s)' + label + '\\s*[\\d.,]+\\s*IV\\s*(\\d{1,2})(?!\\d)', 'iu').exec(statsArea)?.[1];
+        if (raw != null && Number(raw) <= 32) ivs[key] = Number(raw);
+      }
+      const extras = [...sheet.querySelectorAll('[title], [aria-label]')].map(node =>
+        node.title + ' ' + (node.getAttribute('aria-label') ?? '')).join(' ');
+      fallback = { catalogFallback: true, pokemonId: id ?? null, name, grade, level,
+        power: Number.isInteger(power) ? power : null,
+        quality: quality ? Number(quality.replace(',', '.')) : null,
+        shiny: /\bshiny\b|✨/iu.test(name + ' ' + text + ' ' + extras) ? 1 : 0,
+        aoe: /\b(?:tm )?aoe\b/iu.test(extras) ? 1 : null,
+        zMove: /\bz[- ]?move\b|tm elemental/iu.test(extras) ? 1 : null, ivs };
+    }
+    return { id, name, level, grade, fallback };
+  }
+
+  function drawSheetQuote(profile, requestId) {
+    loadQuote(profile).then(quotes => {
+      if (quotes && requestId === sheetRequest && visibleSheet()) showSheetPrice(profile, quotes);
+    }).catch(() => {});
+  }
+
   function inspectSheet() {
     sheetFrame = false;
-    let signature = null, id;
+    let signature = null, input;
     if (visibleSheet() && sheet.querySelector('.fi-heroi, .fi-acoes')) {
-      // A identidade da ficha permite consultar apenas o exemplar encontrado no inventário.
-      const identifiers = [...sheet.querySelectorAll('.txt-num')].map(node =>
-        /^#(\d{1,64})$/.exec(node.textContent.trim())?.[1]).filter(Boolean);
-      [id] = identifiers;
-      const name = sheet.querySelector('.fi-nome')?.textContent.trim();
-      const level = sheet.querySelector('.fi-nivel-chip')?.textContent.trim();
-      const visibleGrade = sheet.querySelector('[data-nota]')?.dataset.nota?.trim();
-      const grade = visibleGrade ? Number(visibleGrade.replace(',', '.')) : null;
-      if (id && name && (grade == null || !Number.isFinite(grade) || grade >= MIN_SHEET_GRADE))
-        signature = JSON.stringify([id, name, level, visibleGrade]);
+      input = sheetDetails();
+      if (input.name && (input.id || input.fallback) &&
+          (input.grade == null || !Number.isFinite(input.grade) || input.grade >= MIN_SHEET_GRADE))
+        signature = JSON.stringify(input);
     }
     if (signature === sheetSignature && (!sheetBadge || sheetBadge.isConnected)) return;
     sheetSignature = signature;
     sheetBadge?.remove();
     sheetBadge = null;
+    sheetFallback = null;
     sheetRequest = 0;
     if (!signature) return;
     sheetRequest = ++requestSequence;
-    window.postMessage({ source: 'PIS_BRIDGE', type: 'INVENTORY_PROFILE', requestId: sheetRequest, ids: [id] }, location.origin);
+    sheetFallback = input.fallback;
+    if (sheetFallback) showSheetPrice(sheetFallback, null);
+    if (input.id) window.postMessage({ source: 'PIS_BRIDGE', type: 'INVENTORY_PROFILE',
+      requestId: sheetRequest, ids: [input.id] }, location.origin);
+    else if (sheetFallback) drawSheetQuote(sheetFallback, sheetRequest);
   }
 
   function scheduleSheet() {
@@ -193,18 +234,17 @@
   window.addEventListener('message', event => {
     const result = event.data;
     if (event.source !== window || event.origin !== location.origin || result?.source !== 'PIS_MAIN' ||
-        result.type !== 'INVENTORY_PROFILE' || !result.profile?.id) return;
+        result.type !== 'INVENTORY_PROFILE') return;
     const { profile, requestId } = result;
-    if (hovered && requestId === hoverRequest) {
+    if (hovered && profile?.id && requestId === hoverRequest) {
       const card = hovered;
       loadQuote(profile).then(quotes => {
         if (quotes && requestId === hoverRequest && card === hovered) show(card, profile, quotes);
       }).catch(() => {});
     }
-    if (requestId === sheetRequest && profile.grade >= MIN_SHEET_GRADE) {
-      loadQuote(profile).then(quotes => {
-        if (quotes && requestId === sheetRequest && visibleSheet()) showSheetPrice(profile, quotes);
-      }).catch(() => {});
+    if (requestId === sheetRequest) {
+      if (profile?.grade >= MIN_SHEET_GRADE) drawSheetQuote(profile, requestId);
+      else if (sheetFallback) drawSheetQuote(sheetFallback, requestId);
     }
   });
   document.addEventListener('pointerover', enter);

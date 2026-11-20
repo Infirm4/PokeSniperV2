@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.59)
+# PokeIdle Market Sniper (v1.5.4.60)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -169,6 +169,9 @@ ou ficar sem estimativa. Os dados da ficha vêm do estado já recebido do jogo.
 Ao abrir a ficha de um Pokémon próprio no Depósito ou na Coleção, o selo
 também aparece abaixo do quadro principal para Nota 3,500 ou maior. O selo
 usa a identidade do exemplar e as mesmas duas referências da mochila.
+Se a identidade ou o perfil não estiverem disponíveis, fichas próprias que
+exibem **Reduzir o nível** podem usar os dados visíveis e o catálogo da espécie,
+com estimativas marcadas como indicativas.
 
 ## Monitoramento e precificação
 
