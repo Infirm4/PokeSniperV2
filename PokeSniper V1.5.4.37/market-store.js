@@ -2,7 +2,7 @@
 const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
-  const DB_VERSION = 11;
+  const DB_VERSION = 12;
   const ESTIMATE_REVISION = 4;
   const revisionFor = row => row?.currency === 'gold' ? 5 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
@@ -47,7 +47,19 @@ const PISMarketStore = (() => {
         if (event.oldVersion < 8) {
           tx.objectStore('sales').createIndex('priceMarket', ['currency', 'shiny', 'soldAt']);
         }
-        if (event.oldVersion > 0) {
+        if (event.oldVersion < 12) {
+          const pending = db.createObjectStore('salesBackup', { keyPath: ['currency', 'id'] });
+          const sales = tx.objectStore('sales').openKeyCursor();
+          sales.onsuccess = () => {
+            const cursor = sales.result;
+            if (!cursor) return;
+            // Chaves antigas entram na primeira sincronização sem copiar o banco.
+            const [currency, id] = cursor.primaryKey;
+            pending.put({ currency, id, revision: 'initial' });
+            cursor.continue();
+          };
+        }
+        if (event.oldVersion > 0 && event.oldVersion < 11) {
           const records = tx.objectStore('listings').getAll();
           records.onsuccess = () => {
             db.deleteObjectStore('listings');
@@ -199,7 +211,9 @@ const PISMarketStore = (() => {
       const snapshot = await result(db.transaction('publicPricing').objectStore('publicPricing').get('gems'));
       external = evaluatePublic(snapshot, rows, now);
     }
-    const tx = db.transaction(['sales', 'listings', 'opportunities', 'exposures'], 'readwrite');
+    const tables = ['sales', 'listings', 'opportunities', 'exposures'];
+    if (kind === 'sale') tables.push('salesBackup');
+    const tx = db.transaction(tables, 'readwrite');
     const done = new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
       tx.onabort = () => reject(tx.error || new Error('Gravação de mercado interrompida'));
@@ -230,6 +244,9 @@ const PISMarketStore = (() => {
           addGroup(saved);
           if (!hasFullIvs(previous) && hasFullIvs(saved)) savedRows.gainedFullIvs++;
           sales.put(saved);
+          tx.objectStore('salesBackup').put({
+            currency: saved.currency, id: saved.id, revision: crypto.randomUUID(),
+          });
           if (saved.pokemonId && saved.soldAt <= now) {
             const start = [saved.pokemonId, saved.currency, saved.soldAt - PISLiquidity.MAX_GAP];
             const end = [saved.pokemonId, saved.currency, saved.soldAt];
@@ -289,6 +306,37 @@ const PISMarketStore = (() => {
       try { tx.abort(); } catch { /* já encerrada */ }
       throw error;
     }
+  }
+
+  async function pendingSalesBackup(limit) {
+    const db = await open();
+    const tx = db.transaction(['salesBackup', 'sales']);
+    const keys = await result(tx.objectStore('salesBackup').getAll(null, limit));
+    return Promise.all(keys.map(async entry => ({
+      ...entry, row: await result(tx.objectStore('sales').get([entry.currency, entry.id])),
+    })));
+  }
+
+  async function acknowledgeSalesBackup(batch) {
+    const db = await open();
+    const tx = db.transaction('salesBackup', 'readwrite');
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error ?? new Error('Falha ao confirmar o backup local'));
+    });
+    done.catch(() => {});
+    const pending = tx.objectStore('salesBackup');
+    for (const entry of batch) {
+      const key = [entry.currency, entry.id];
+      const current = await result(pending.get(key));
+      if (current?.revision === entry.revision) pending.delete(key);
+    }
+    await done;
+  }
+
+  async function pendingSalesBackupCount() {
+    const db = await open();
+    return result(db.transaction('salesBackup').objectStore('salesBackup').count());
   }
 
   // Confere a revisão contra o anúncio mais recente, inclusive quando o preço deixou de ser oportunidade.
@@ -564,5 +612,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
 })();

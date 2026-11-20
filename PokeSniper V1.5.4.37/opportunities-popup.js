@@ -328,6 +328,43 @@ coinsImport.addEventListener('change', async () => {
   finally { coinsImport.disabled = false; coinsImport.value = ''; }
 });
 
+const salesBackupNow = document.querySelector('#sales-backup-now');
+const salesBackupRestore = document.querySelector('#sales-backup-restore');
+const salesBackupStatus = document.querySelector('#sales-backup-status');
+
+salesBackupNow.addEventListener('click', async () => {
+  salesBackupNow.disabled = true;
+  salesBackupStatus.textContent = 'Sincronizando vendas confirmadas…';
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'PIS_SYNC_SALES_BACKUP' });
+    if (!result || result.error) throw new Error(result?.error || 'Sem resposta da extensão.');
+    salesBackupStatus.textContent = `${result.saved} confirmadas no Sheets · ${result.pending ?? '?'} pendentes.`;
+  } catch (error) { salesBackupStatus.textContent = error.message; }
+  finally { salesBackupNow.disabled = false; }
+});
+
+salesBackupRestore.addEventListener('change', async () => {
+  const file = salesBackupRestore.files[0];
+  if (!file) return;
+  salesBackupRestore.disabled = true;
+  try {
+    if (file.size > 25 * 1024 * 1024) throw new Error('O CSV excede 25 MiB.');
+    const rows = PISSalesBackup.restore(await file.text(), PISMarketCore);
+    let added = 0;
+    for (let offset = 0; offset < rows.length; offset += PISMarketCore.MAX_BATCH) {
+      const receipt = await PISMarketStore.ingest('sale', rows.slice(offset, offset + PISMarketCore.MAX_BATCH));
+      added += receipt.new;
+      salesBackupStatus.textContent = `${Math.min(rows.length, offset + PISMarketCore.MAX_BATCH)} de ${rows.length} processadas…`;
+    }
+    salesBackupStatus.textContent = `${added} novas vendas de ${rows.length} registros recuperados.`;
+    await refresh();
+  } catch (error) { salesBackupStatus.textContent = 'Falha na restauração. ' + error.message; }
+  finally {
+    salesBackupRestore.disabled = false;
+    salesBackupRestore.value = '';
+  }
+});
+
 const runDiagnostics = document.querySelector('#run-diagnostics');
 const copyDiagnostics = document.querySelector('#copy-diagnostics');
 const downloadDiagnostics = document.querySelector('#download-diagnostics');
@@ -347,7 +384,7 @@ runDiagnostics.addEventListener('click', async () => {
     const pipeline = PISMarketStore.diagnostics(settings).catch(() => ({ erro: 'falha na leitura da fila' }));
     const trace = Promise.resolve().then(() => chrome.storage.session.get(PISHistoryTrace.KEY))
       .then(value => value[PISHistoryTrace.KEY] ?? []).catch(() => 'indisponível');
-    const sourceCheck = chrome.storage.local.get(['pisPublicGemsCheck', 'pisMarketEvents']).catch(() => ({}));
+    const sourceCheck = chrome.storage.local.get(['pisPublicGemsCheck', 'pisMarketEvents', 'pisSalesBackupStatus']).catch(() => ({}));
     const monitor = chrome.storage.session.get(['pisMarketMonitor', 'pisMarketAutomaticPage', 'pisMarketPage:gold', 'pisMarketPage:orb', 'pisMarketQuery:gold', 'pisMarketQuery:orb', 'pisMarketQuery:history', 'pisCoinsHistory:global', 'pisCoinsHistory:espécie', 'pisCoinsHistory:backfill']).catch(() => ({}));
     const [notificationPermission, database, alerts, history, automatic, publicSource] =
       await Promise.all([permission, snapshot, pipeline, trace, monitor, sourceCheck]);
@@ -357,6 +394,7 @@ runDiagnostics.addEventListener('click', async () => {
       testes: tests,
       log_do_mercado: publicSource.pisMarketEvents ?? [],
       banco: database,
+      backup_sheets: publicSource.pisSalesBackupStatus ?? null,
       histórico_na_sessão: history,
       atualização_coins: { recentes: automatic['pisCoinsHistory:global'], espécie: automatic['pisCoinsHistory:espécie'],
         histórico_anterior: automatic['pisCoinsHistory:backfill'] },

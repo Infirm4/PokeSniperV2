@@ -49,7 +49,7 @@ const NOME_RESUMO = 'Sheet';
 const LINHA_CABECALHO_RESUMO = 3;
 const LINHA_DADOS_RESUMO = 4;
 
-const VERSAO = '1.5.4.4';
+const VERSAO = '1.5.4.37';
 
 // A linha 3 da aba Sheet é a única fonte de verdade dos títulos.
 // Nenhum novo cabeçalho é escrito ou movido automaticamente.
@@ -113,6 +113,10 @@ function doPost(e) {
     // ---------------------------------------------
     // Interpretar eventos
     // ---------------------------------------------
+
+    if (dados.tipo === 'pis_sales_backup_v1') {
+      return resposta(receberBackupVendas_(dados));
+    }
 
     const linhas = Array.isArray(dados.linhas)
       ? dados.linhas.filter(
@@ -956,4 +960,139 @@ function repararIDsMarketplaceSeguro() {
       invalidosAntes:diag.invalidos.length,validosDepois:apos.idsUnicos}));
     // A stage é mantida intencionalmente para conferência independente.
   } finally {lock.releaseLock();}
+}
+
+const ABA_BACKUP_VENDAS = 'Vendas confirmadas';
+const CABECALHO_BACKUP_VENDAS = [
+  'Data', '#ID', 'Sprite', 'Pokemon', 'Preço (Mi)', 'Potência', 'Nota',
+  'IV ATQ', 'IV SPED', 'IV SP.ATQ', 'IV SP.DEF', 'IV DEF', 'IV HP', 'Qualidade',
+  'IV Total', 'Shiny', 'Status de Compra', 'Moeda', 'Preço exato', 'ID Pokémon',
+  'ID espécie', 'ID anúncio', 'Nível', 'Forma', 'Natureza', 'ID natureza',
+  'Shadow', 'Raridade', 'Lendário', 'AoE', 'Z-Move', 'Mega', 'Refino', 'Poder',
+  'Outland', 'Origem', 'Chave da venda', 'Dados da venda (JSON)'
+];
+
+function limparVendaBackup_(row) {
+  if (!row || !['gold', 'orb'].includes(row.currency) ||
+      !['game', 'smartmarket_backup'].includes(row.source) ||
+      !Number.isSafeInteger(row.soldAt) || row.soldAt < 1e12 ||
+      row.soldAt > Date.now() + 86400000 || !Number.isSafeInteger(row.price) || row.price < 1) {
+    throw new Error('Venda inválida no backup');
+  }
+  const id = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(value) ? value : null;
+  const clean = { id: id(row.id), currency: row.currency, source: row.source,
+    soldAt: row.soldAt, price: row.price, speciesId: id(row.speciesId) };
+  if (!clean.id || !clean.speciesId) throw new Error('ID de venda ou espécie inválido');
+
+  for (const key of ['pokemonId', 'listingId', 'natureId']) clean[key] = id(row[key]);
+  for (const key of ['name', 'form', 'nature', 'rarity'])
+    clean[key] = typeof row[key] === 'string' ? row[key].trim().slice(0, 100) || null : null;
+  for (const key of ['level', 'grade', 'power', 'quality', 'ivTotal', 'refinement', 'battlePower'])
+    clean[key] = Number.isFinite(row[key]) && row[key] >= 0 ? row[key] : null;
+  for (const key of ['shiny', 'shadow', 'legendary', 'aoe', 'zMove', 'mega'])
+    clean[key] = [0, 1].includes(row[key]) ? row[key] : null;
+  clean.outland = row.outland === true ? true : null;
+  const sprite = url => typeof url === 'string' && url.length <= 500 &&
+    /^https:\/\/(?:[\w-]+\.)?pokeidle\.io\/[a-zA-Z0-9/%._?=&~+@:-]+$|^https:\/\/raw\.githubusercontent\.com\/PokeAPI\/sprites\/master\/sprites\/pokemon\/(?:shiny\/)?\d+\.png$/.test(url) ? url : null;
+  clean.sprite = sprite(row.sprite);
+  clean.spriteFallback = sprite(row.spriteFallback);
+  clean.spriteSource = clean.sprite && ['market', 'dex'].includes(row.spriteSource) ? row.spriteSource : null;
+  for (const key of ['ivs', 'stats']) {
+    clean[key] = {};
+    for (const stat of ['hp', 'attack', 'defense', 'specialAttack', 'specialDefense', 'speed'])
+      if (Number.isFinite(row[key]?.[stat]) && row[key][stat] >= 0) clean[key][stat] = row[key][stat];
+  }
+  return clean;
+}
+
+function juntarVendaBackup_(old, incoming) {
+  if (!old) return incoming;
+  // O histórico do jogo prevalece sobre registros de cache importados.
+  const preferIncoming = old.source !== 'game' && incoming.source === 'game';
+  const [primary, secondary] = preferIncoming ? [incoming, old] : [old, incoming];
+  if (['soldAt', 'price', 'speciesId', 'pokemonId', 'listingId', 'shiny', 'form', 'shadow', 'rarity']
+    .some(key => primary[key] != null && secondary[key] != null && primary[key] !== secondary[key])) return primary;
+  const merged = { ...primary };
+  for (const [key, value] of Object.entries(secondary)) if (merged[key] == null) merged[key] = value;
+  merged.ivs = { ...secondary.ivs, ...primary.ivs };
+  merged.stats = { ...secondary.stats, ...primary.stats };
+  const ivs = Object.values(merged.ivs);
+  if (ivs.length === 6) merged.ivTotal = ivs.reduce((sum, value) => sum + value, 0);
+  if (secondary.outland) merged.outland = true;
+  if (incoming.spriteSource === 'market' && merged.spriteSource !== 'market') {
+    merged.sprite = incoming.sprite;
+    merged.spriteSource = incoming.spriteSource;
+    merged.spriteFallback = incoming.spriteFallback;
+  }
+  return merged;
+}
+
+function linhaVendaBackup_(row) {
+  const { ivs } = row;
+  // Células de texto livre não podem se tornar fórmulas ao serem inseridas.
+  const text = value => value == null ? '' : /^[-+=@\s]/.test(value) ? "'" + value : value;
+  const flag = value => value == null ? '' : value ? 'Sim' : 'Não';
+  const sprite = row.sprite || row.spriteFallback;
+  return [
+    new Date(row.soldAt), row.id, sprite ? '=IMAGE("' + sprite + '")' : '', text(row.name),
+    row.currency === 'gold' ? row.price / 1000000 : '', row.power, row.grade,
+    ivs.attack, ivs.speed, ivs.specialAttack, ivs.specialDefense, ivs.defense, ivs.hp,
+    row.quality, row.ivTotal, flag(row.shiny), 'Vendido', row.currency === 'gold' ? 'Coins' : 'Gemas',
+    row.price, row.pokemonId, row.speciesId, row.listingId, row.level,
+    text(row.form), text(row.nature), row.natureId, flag(row.shadow), text(row.rarity),
+    flag(row.legendary), flag(row.aoe), flag(row.zMove), flag(row.mega), row.refinement,
+    row.battlePower, flag(row.outland), row.source, row.currency + ':' + row.id, JSON.stringify(row)
+  ].map(value => value ?? '');
+}
+
+function receberBackupVendas_(request) {
+  if (typeof request.lote !== 'string' || !/^[a-f0-9-]{36}$/.test(request.lote) ||
+      !Array.isArray(request.vendas) || !request.vendas.length || request.vendas.length > 100)
+    throw new Error('Lote de backup inválido');
+  const incoming = request.vendas.map(limparVendaBackup_);
+  const sales = new Map(incoming.map(row => [row.currency + ':' + row.id, row]));
+  if (sales.size !== incoming.length) throw new Error('Lote de backup com IDs repetidos');
+  const book = abrirPlanilhaConfigurada();
+  const sheet = book.getSheetByName(ABA_BACKUP_VENDAS) || book.insertSheet(ABA_BACKUP_VENDAS);
+  const width = CABECALHO_BACKUP_VENDAS.length;
+  if (sheet.getMaxColumns() < width)
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), width - sheet.getMaxColumns());
+  const header = sheet.getRange(1, 1, 1, width);
+  if (!sheet.getLastRow()) {
+    header.setValues([CABECALHO_BACKUP_VENDAS]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  } else if (header.getValues()[0].some((label, i) => label !== CABECALHO_BACKUP_VENDAS[i])) {
+    throw new Error('Cabeçalhos da aba Vendas confirmadas foram alterados');
+  }
+  const last = sheet.getLastRow();
+  const keys = last > 1 ? sheet.getRange(2, width - 1, last - 1, 1).getValues() : [];
+  const positions = new Map();
+  keys.forEach(([key], index) => {
+    if (!key) return;
+    if (positions.has(key)) throw new Error('Chave repetida na aba Vendas confirmadas');
+    positions.set(key, index + 2);
+  });
+
+  const updates = [], additions = [];
+  for (const [key, sale] of sales) {
+    const position = positions.get(key);
+    if (!position) { additions.push(linhaVendaBackup_(sale)); continue; }
+    const cell = sheet.getRange(position, width).getValue();
+    const old = JSON.parse(cell);
+    const merged = limparVendaBackup_(juntarVendaBackup_(limparVendaBackup_(old), sale));
+    if (JSON.stringify(merged) !== cell) updates.push([position, linhaVendaBackup_(merged)]);
+  }
+  // Uma reentrega depois de perda da resposta reconcilia pela mesma chave.
+  for (const [position, values] of updates) sheet.getRange(position, 1, 1, width).setValues([values]);
+  if (additions.length) {
+    if (last + additions.length > sheet.getMaxRows())
+      sheet.insertRowsAfter(sheet.getMaxRows(), last + additions.length - sheet.getMaxRows());
+    for (const col of [2, 20, 21, 22, 26])
+      sheet.getRange(last + 1, col, additions.length, 1).setNumberFormat('@');
+    sheet.getRange(last + 1, 1, additions.length, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    sheet.getRange(last + 1, 1, additions.length, width).setValues(additions);
+  }
+  SpreadsheetApp.flush();
+  return { ok: true, tipo: request.tipo, lote: request.lote, vendas_confirmadas: incoming.length,
+    novas: additions.length, atualizadas: updates.length };
 }

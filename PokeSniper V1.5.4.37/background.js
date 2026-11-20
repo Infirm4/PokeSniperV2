@@ -40,7 +40,7 @@ const PISGameTab = {
   }
 };
 
-importScripts('opportunities-worker.js', 'public-gems-worker.js');
+importScripts('opportunities-worker.js', 'public-gems-worker.js', 'sales-backup.js', 'sales-backup-worker.js');
 PISMarketStore.initialize().catch(error => {
   console.warn('[PIS] Não foi possível iniciar o banco de mercado:', error.message);
 });

@@ -167,7 +167,7 @@
     if (sale) {
       const soldAt = timestamp(row.em);
       if (!soldAt) return null;
-      return { ...profile, source: 'game', soldAt, listingId: linkageFields.map(field => id(row[field])).find(Boolean) ?? null };
+      return { ...profile, ...listingSprite(row, profile.shiny), source: 'game', soldAt, listingId: linkageFields.map(field => id(row[field])).find(Boolean) ?? null };
     }
     const closed = ['cancelado', 'expirado'].includes(row.estado) ? row.estado : null;
     if ((!closed && row.estado != null && row.estado !== 'aberto') || row.comprador) return null;

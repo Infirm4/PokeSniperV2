@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.36)
+# PokeIdle Market Sniper (v1.5.4.37)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -74,6 +74,31 @@ deixar o jogo conectado por alguns minutos com o Mercado fechado. Se o
 diagnóstico continuar em `aguardando_tráfego`, abra a vitrine uma vez, veja
 se os anúncios carregam normalmente, feche-a e repita o diagnóstico.
 
+
+## Backup de vendas no Google Sheets
+
+O Chrome envia a cada hora as vendas do IndexedDB para **Vendas confirmadas**,
+na planilha vinculada ao Apps Script. A primeira sincronização inclui o histórico
+local já existente, em lotes. O backup registra Coins e Gemas com seus preços
+inteiros e preserva a origem dos registros importados. A mesma moeda e ID de
+transação identificam uma linha. Cada lote continua pendente até confirmação.
+O histórico original continua no IndexedDB.
+
+Atualize o código no Apps Script com `google-apps-script.gs`. Em **Implantar →
+Gerenciar implantações**, edite a implantação existente, selecione **Nova versão**
+e implante para manter a URL `/exec`. A vinculação existente da planilha é usada
+pela nova rota. A aba **Vendas confirmadas** é criada no primeiro lote.
+
+Para verificar logo, clique em **Diagnóstico da versão → Sincronizar vendas
+com o Sheets**. O relatório também inclui `backup_sheets`, com o horário,
+o total confirmado na última execução, o total pendente e possíveis erros.
+A agenda funciona com o Chrome aberto, inclusive com o PokéIdle fechado.
+
+Para recuperar o banco, selecione a aba **Vendas confirmadas** no Google Sheets
+e use **Arquivo → Fazer download → CSV (página atual)**. No painel da extensão,
+use **Restaurar vendas do CSV da aba Vendas confirmadas**. Mantenha a coluna
+**Dados da venda (JSON)** no arquivo, pois ela guarda as fichas completas,
+preços inteiros e IDs originais.
 
 ## Monitoramento e precificação
 
