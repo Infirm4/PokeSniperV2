@@ -56,6 +56,11 @@
           <label>Moeda<select name="currency"><option value="gold">Coins</option><option value="orb">Gemas</option><option value="all">Todas</option></select></label>
           <label>Desconto mínimo (%)<input name="discount" type="number" min="0" max="99" required></label>
         </div>
+        <label class="pis-v2-filter-row">Nota mínima
+          <input name="minGrade" type="text" inputmode="decimal" placeholder="0,00"
+            pattern="(?:[0-9](?:[.,][0-9]{1,2})?|10(?:[.,]0{1,2})?)"
+            title="De 3,50 a 10,00. Use 0 ou deixe vazio para desativar.">
+        </label>
         <fieldset class="pis-v2-shiny" disabled aria-describedby="shiny-unavailable">
           <div class="pis-v2-filter-row">
             <label for="shiny-alert-preview">Avisar shiny novo</label>

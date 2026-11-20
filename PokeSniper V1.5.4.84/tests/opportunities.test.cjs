@@ -31,6 +31,24 @@ test('aplica moeda e desconto, ignorando filtros antigos de espécie', () => {
   assert.equal(settings().notify, false);
 });
 
+test('aplica a nota mínima a Coins e Gemas e mantém o filtro desligado quando vazio', () => {
+  assert.equal(settings().minGrade, 0);
+  assert.equal(settings({ minGrade: '0,00' }).minGrade, 0);
+  assert.equal(settings({ minGrade: '3' }).minGrade, 3.5);
+  assert.equal(settings({ minGrade: '3.50' }).minGrade, 3.5);
+  assert.equal(settings({ minGrade: '10,00' }).minGrade, 10);
+  const config = settings({ currency: 'all', minGrade: '3,55' });
+  assert.equal(config.minGrade, 3.55);
+  for (const currency of ['gold', 'orb']) {
+    const offer = { ...row, currency };
+    assert.equal(matches({ ...offer, grade: 3.54 }, config), false);
+    assert.equal(matches(offer, config), false);
+    assert.equal(matches({ ...offer, grade: 3.55 }, config), true);
+    assert.equal(matches({ ...offer, grade: 3.56 }, config), true);
+    assert.equal(matches(offer, settings({ currency: 'all', minGrade: '' })), true);
+  }
+});
+
 test('exibe pelo desconto mínimo mesmo acima da faixa inferior e ignora o teto salvo na versão antiga', () => {
   const withinBand = { ...row, price: 95_000_000,
     estimate: { status: 'estimated', lower: 90_000_000, median: 100_000_000, discount: 0.05 } };

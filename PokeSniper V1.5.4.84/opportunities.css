@@ -145,6 +145,7 @@ body.pis-v2[data-overlay] { height: 100vh; max-height: 520px; }
 .pis-v2-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .pis-v2-fields { display: grid; grid-template-columns: 1fr 1.2fr; gap: 8px; }
 .pis-v2 .pis-v2-filter-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pis-v2-filter-row input[name="minGrade"] { max-width: 72px; }
 .pis-v2-shiny { display: grid; gap: 6px; margin: 0; padding: 8px 0 0; border: 0; border-top: 1px solid var(--pis-line); color: var(--pis-muted); }
 .pis-v2-shiny input[type=number] { max-width: 62px; }
 .pis-v2-shiny input:disabled { opacity: .65; }

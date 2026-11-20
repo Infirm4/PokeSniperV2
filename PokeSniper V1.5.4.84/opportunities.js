@@ -8,13 +8,22 @@
   function freshLaunch(row, now = Date.now()) {
     return Number.isFinite(row.postedAt) && row.postedAt >= now - NEW_OFFER_AGE && row.postedAt <= now + 15000;
   }
-  const DEFAULTS = { currency: 'gold', discount: 20, notify: false };
+  const DEFAULTS = { currency: 'gold', discount: 20, minGrade: 0, notify: false };
+  const MIN_ACTIVE_GRADE = 3.5;
+
+  function minimumGrade(value) {
+    const text = String(value ?? '').trim();
+    if (!/^(?:[0-9](?:[.,][0-9]{1,2})?|10(?:[.,]0{1,2})?)$/.test(text)) return DEFAULTS.minGrade;
+    const grade = Number(text.replace(',', '.'));
+    return grade > 0 ? Math.max(MIN_ACTIVE_GRADE, grade) : DEFAULTS.minGrade;
+  }
 
   function settings(raw = {}) {
     const discount = Number(raw.discount ?? DEFAULTS.discount);
     return {
       currency: ['gold', 'orb', 'all'].includes(raw.currency) ? raw.currency : DEFAULTS.currency,
       discount: Number.isFinite(discount) ? Math.min(99, Math.max(0, discount)) : DEFAULTS.discount,
+      minGrade: minimumGrade(raw.minGrade),
       notify: raw.notify === true,
       fallbackAlerts: raw.fallbackAlerts === true,
     };
@@ -47,6 +56,7 @@
   }
 
   function matches(row, config) {
+    if (config.minGrade > 0 && (!Number.isFinite(row.grade) || row.grade < config.minGrade)) return false;
     const limit = priceLimit(row, config);
     return (config.currency === 'all' || config.currency === row.currency) &&
       limit != null && row.price <= limit;
@@ -218,7 +228,7 @@
     };
   }
 
-  const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, profileSummary, fallbackWarning, liquidityLabel, noticePresentation };
+  const core = { TTL, freshLaunch, settings, minimumGrade, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, profileSummary, fallbackWarning, liquidityLabel, noticePresentation };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISOpportunities = core;
 })();

@@ -1,4 +1,5 @@
 const form = document.querySelector('#settings');
+const minGradeInput = form.elements.minGrade;
 const offers = document.querySelector('#offers');
 const panelStatus = document.querySelector('#status');
 const saveStatus = document.querySelector('#save-status');
@@ -16,6 +17,7 @@ const noticeStatus = document.querySelector('#notice-status');
 const fallbackToggle = document.querySelector('#filter-fallback');
 const fallbackStatus = document.querySelector('#fallback-status');
 const format = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+const gradeFormat = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 let config;
 let generation = 0;
 let rendered = '';
@@ -519,9 +521,15 @@ fallbackToggle.addEventListener('click', () => {
   return saveOpportunitySettings({ ...config, fallbackAlerts: !config.fallbackAlerts }, fallbackStatus);
 });
 
+function formatGradeInput() {
+  if (minGradeInput.validity.valid) minGradeInput.value = gradeFormat.format(PISOpportunities.minimumGrade(minGradeInput.value));
+}
+
+minGradeInput.addEventListener('blur', formatGradeInput);
 form.addEventListener('submit', event => {
   event.preventDefault();
   if (!config || saveFilters.disabled) return;
+  formatGradeInput();
   const next = PISOpportunities.settings({
     ...Object.fromEntries(new FormData(form)),
     notify: config.notify,
@@ -599,6 +607,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const next = PISOpportunities.settings(changes.opportunitySettings.newValue);
   if (next.currency !== config.currency) form.elements.currency.value = next.currency;
   if (next.discount !== config.discount) form.elements.discount.value = next.discount;
+  if (next.minGrade !== config.minGrade) minGradeInput.value = gradeFormat.format(next.minGrade);
   config = next;
   showNoticeStatus();
 });
@@ -609,6 +618,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   void runSalesBackup(true);
   form.elements.currency.value = config.currency;
   form.elements.discount.value = config.discount;
+  minGradeInput.value = gradeFormat.format(config.minGrade);
   showNoticeStatus();
   setSettingsDisabled(false);
   void refresh();
