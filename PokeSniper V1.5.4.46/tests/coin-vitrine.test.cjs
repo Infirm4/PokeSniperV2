@@ -8,16 +8,19 @@ test('a vitrine mostra referência, faixa e desconto e preço relativo ao valor 
   const below = coinBadge({ quote, actualPrice: 400_000_000 });
   const above = coinBadge({ quote, actualPrice: 600_000_000 });
   assert.deepEqual([below.tone, above.tone], ['below', 'above']);
-  assert.match(below.label, /^≈500\sMi ~ 20%$/);
-  assert.match(above.label, /^≈500\sMi ~ 120%$/);
-  assert.match(above.range, /450\smi–550\smi/i);
+  assert.match(below.label, /^≈500MI 20%$/);
+  assert.match(above.label, /^≈500MI 120%$/);
+  assert.match(above.range, /450MI–550MI/);
+  const smaller = { lower: 2_500_000, median: 2_900_000, upper: 3_100_000 };
+  assert.equal(coinBadge({ quote: smaller, actualPrice: 2_320_000 }).label, '≈2,9MI 20%');
+  assert.match(coinBadge({ quote: { lower: 1, median: 4, upper: 8 }, actualPrice: 2 }).label, /^≈0,000004MI/);
   const equal = coinBadge({ quote, actualPrice: 500_000_000 });
   assert.equal(equal.tone, 'neutral');
-  assert.match(equal.label, /~ 100%$/);
-  assert.match(coinBadge({ quote, actualPrice: 499_999_999 }).label, /~ <0,1%$/);
-  assert.match(coinBadge({ quote, actualPrice: 500_000_001 }).label, /~ >100%$/);
+  assert.match(equal.label, / 100%$/);
+  assert.match(coinBadge({ quote, actualPrice: 499_999_999 }).label, / <0,1%$/);
+  assert.match(coinBadge({ quote, actualPrice: 500_000_001 }).label, / >100%$/);
   assert.match(coinBadge({ quote: { ...quote, indicative: true }, actualPrice: 400_000_000 }).range, /Indicativa/);
-  assert.equal(coinBadge({ quote: null }).label, 'Sem estimativa em Coins');
+  assert.equal(coinBadge({ quote: null }).label, 'Sem estimativa');
 });
 
 test('um anúncio abreviado usa o preço confirmado e não confunde preços incompatíveis ou Gemas', () => {

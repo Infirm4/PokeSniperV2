@@ -1,7 +1,7 @@
 // Anota oportunidades validadas no banco da extensão sem alterar os filtros do jogo.
 (() => {
   const SCALES = { mil: 1000, k: 1000, mi: 1000000, m: 1000000, bi: 1000000000, b: 1000000000 };
-  const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 2 });
+  const millions = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 6 });
   const percent = new Intl.NumberFormat('pt-BR', { style: 'percent', maximumFractionDigits: 1 });
 
   function displayPrice(value, currency) {
@@ -21,16 +21,19 @@
   function readPrice(value, currency) { return displayPrice(value, currency)?.price ?? null; }
 
   function coinBadge({ quote, actualPrice }) {
-    if (!quote) return { label: 'Sem estimativa em Coins', range: '', tone: 'neutral' };
+    if (!quote) return { label: 'Sem estimativa', range: '', tone: 'neutral' };
     const { lower, median, upper, indicative } = quote;
     const delta = (actualPrice - median) / median;
     const formatted = percent.format(delta < 0 ? -delta : actualPrice / median);
     const variation = delta < 0 ? (formatted === '0%' ? '<0,1%' : formatted) :
       delta > 0 && formatted === '100%' ? '>100%' : formatted;
-    const amount = value => compact.format(value)
-      .replace(/\b(?:mi|bi)$/, unit => unit[0].toUpperCase() + unit.slice(1));
+    const amount = value => {
+      const valueInMillions = value / SCALES.mi;
+      const decimals = valueInMillions >= 0.01 ? 2 : 6;
+      return millions.format(Number(valueInMillions.toFixed(decimals))) + 'MI';
+    };
     return {
-      label: '≈' + amount(median) + ' ~ ' + variation,
+      label: '≈' + amount(median) + ' ' + variation,
       range: 'Faixa ' + amount(lower) + '–' + amount(upper) + (indicative ? ' · Indicativa' : ''),
       tone: delta === 0 || indicative ? 'neutral' : delta < 0 ? 'below' : 'above',
     };
@@ -71,28 +74,34 @@
     const footer = card.querySelector('.cm-rodape');
     if (!footer) return;
     if (offer.currency === 'gold') {
-      const host = document.createElement('div');
+      const price = footer.querySelector('.cm-preco');
+      if (!price) return;
+      const host = document.createElement('span');
       host.dataset.pisCoinQuote = '';
+      Object.assign(host.style, {
+        display: 'inline-flex', flex: '0 0 auto', alignSelf: 'center',
+        marginInlineStart: '4px', verticalAlign: 'middle',
+      });
       const shadow = host.attachShadow({ mode: 'open' });
       const copy = coinBadge(offer);
-      const badge = document.createElement('div');
-      const colors = { below: '#a5f3da', above: '#ffb9b0', neutral: '#dce1ee' };
+      const badge = document.createElement('span');
+      const palettes = {
+        below: { fill: '#24533e', edge: '#4c8a6d' },
+        above: { fill: '#792d40', edge: '#ad5265' },
+        neutral: { fill: '#3c3a53', edge: '#696481' },
+      };
+      const palette = palettes[copy.tone];
       Object.assign(badge.style, {
-        display: 'grid', gap: '2px', padding: '4px 6px', margin: '3px 0', boxSizing: 'border-box',
-        color: '#fff', background: '#242435', borderInlineStart: '2px solid ' + colors[copy.tone],
-        borderRadius: '3px', font: '600 10px/1.25 system-ui', fontVariantNumeric: 'tabular-nums',
+        display: 'inline-block', boxSizing: 'border-box', padding: '1px 4px', color: '#fff',
+        background: palette.fill, borderTop: '1px solid ' + palette.edge, borderRadius: '3px',
+        font: '700 9px/1.2 system-ui', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
       });
-      const label = document.createElement('span');
-      label.textContent = copy.label;
-      badge.append(label);
-      if (copy.range) {
-        const range = document.createElement('span');
-        range.textContent = copy.range;
-        range.style.fontWeight = '400';
-        badge.append(range);
-      }
+      badge.textContent = copy.label;
+      host.title = copy.range || 'Sem estimativa em Coins';
+      host.setAttribute('aria-label', copy.range ? copy.label + '. ' + copy.range : host.title);
       shadow.append(badge);
-      footer.querySelector('.cm-preco')?.after(host);
+      // O Shadow DOM mantém o texto do selo fora da leitura do preço do jogo.
+      price.append(host);
       badges.set(card, { host, signature });
       return;
     }

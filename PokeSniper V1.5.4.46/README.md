@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.45)
+# PokeIdle Market Sniper (v1.5.4.46)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -134,13 +134,11 @@ O histórico já sincronizado no Sheets segue disponível na planilha.
 
 ## Faixa estimada na vitrine de Coins
 
-Cada anúncio em Coins que o Sniper reconhece mostra a referência (mediana),
-o percentual do preço pedido e a faixa entre os quartis inferior e superior.
-O texto branco mostra `≈500 Mi ~ 20%` quando o anúncio custa
-400 Mi e `≈500 Mi ~ 120%` quando custa 600 Mi. A barra lateral indica a
-situação do preço. Selos usam o histórico
-local e não exigem avisos habilitados. A navegação e os filtros do jogo
-continuam sob controle do jogador.
+O selo em Coins fica na mesma linha do preço do jogo. O texto branco mostra
+`≈500MI 20%` quando o anúncio custa 400 MI e `≈500MI 120%` quando custa
+600 MI. O fundo é verde abaixo da referência, vermelho acima e neutro
+para estimativas indicativas. Passe o cursor sobre o selo para ver a
+faixa estimada. O selo usa o histórico local e não exige avisos habilitados.
 
 ## Monitoramento e precificação
 
