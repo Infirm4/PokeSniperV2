@@ -374,6 +374,25 @@ const reportBox = document.querySelector('#diagnostic-report');
 const testStatus = document.querySelector('#test-status');
 
 
+document.querySelector('#sample-sale').addEventListener('click', async () => {
+  const button = document.querySelector('#sample-sale');
+  button.disabled = true;
+  try {
+    const row = await PISMarketStore.recentSaleSample();
+    if (!row) { testStatus.textContent = 'Nenhuma venda com moeda e Shiny identificados no banco.'; return; }
+    const { id, pokemonId, speciesId, name, currency, price, soldAt, grade, power, quality, ivTotal, ivs,
+      level, shiny, sprite, spriteSource, source } = row;
+    reportBox.value = JSON.stringify({ id, pokemonId: pokemonId ?? null, speciesId, name: name ?? null,
+      currency, price, soldAt: new Date(soldAt).toISOString(), grade: grade ?? null, power: power ?? null,
+      quality: quality ?? null, ivTotal: ivTotal ?? null, ivs, level: level ?? null, shiny, sprite: sprite ?? null,
+      spriteSource: spriteSource ?? null, source: source ?? null }, null, 2);
+    reportBox.hidden = false;
+    copyDiagnostics.disabled = downloadDiagnostics.disabled = false;
+    testStatus.textContent = 'Venda mais recente do seu IndexedDB. Campos nulos estão ausentes no registro.';
+  } catch { testStatus.textContent = 'Falha ao ler uma venda do IndexedDB.'; }
+  finally { button.disabled = false; }
+});
+
 runDiagnostics.addEventListener('click', async () => {
   runDiagnostics.disabled = runBacktest.disabled = true;
   copyDiagnostics.disabled = downloadDiagnostics.disabled = true;

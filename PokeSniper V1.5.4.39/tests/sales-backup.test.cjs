@@ -33,6 +33,15 @@ test('Apps Script reconcilia reenvio sem duplicar, mantém vendas homônimas em 
     getMaxColumns: () => 50, getMaxRows: () => 50, getLastRow: () => data.length,
     getLastColumn: () => Math.max(...data.map(row => row.length)), getName: () => 'Sheet',
     hideColumns: (start, count) => hidden.push([start, count]),
+    getRangeList(addresses) {
+      return { clearContent() {
+        for (const address of addresses) {
+          const [row, col, height, width] = address.split(',').map(Number);
+          for (let y = 0; y < height; y++)
+            for (let x = 0; x < width; x++) data[row + y - 1][col + x - 1] = '';
+        }
+      } };
+    },
     getRange(row, col, height = 1, width = 1) {
       const matrix = produce => Array.from({ length: height }, (_, y) =>
         Array.from({ length: width }, (_, x) => produce(row + y, col + x)));
@@ -40,6 +49,7 @@ test('Apps Script reconcilia reenvio sem duplicar, mantém vendas homônimas em 
         getFormulas: () => matrix(() => ''), getNumberFormats: () => matrix(() => 'General'),
         setNumberFormats() {},
         getValue: () => readCell(row, col),
+        getA1Notation: () => [row, col, height, width].join(','),
         setValues(values) {
           values.forEach((line, y) => {
             const target = data[row + y - 1] ??= [];
@@ -52,14 +62,16 @@ test('Apps Script reconcilia reenvio sem duplicar, mantém vendas homônimas em 
     },
   };
   const lock = { waitLock() {}, releaseLock() {} };
-  const post = runInNewContext(read('google-apps-script.gs') + '\ndoPost', {
+  const { doPost, diagnosticarLinhasForaDoBanco, limparLinhasForaDoBanco } =
+    runInNewContext(read('google-apps-script.gs') +
+      '\n({ doPost, diagnosticarLinhasForaDoBanco, limparLinhasForaDoBanco })', {
     SpreadsheetApp: { openById: () => ({ getSheetByName: () => sheet }), flush() {} },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => 'test-sheet' }) },
     LockService: { getScriptLock: () => lock },
     ContentService: { MimeType: { JSON: 'JSON' }, createTextOutput: contents => ({ setMimeType: () => JSON.parse(contents) }) },
     console: { log() {}, warn() {}, error() {} },
   });
-  const send = (...vendas) => post({ postData: { contents: JSON.stringify({
+  const send = (...vendas) => doPost({ postData: { contents: JSON.stringify({
     tipo: backup.FORMAT, lote: webcrypto.randomUUID(), vendas,
   }) } });
   const [gold, gem] = backup.normalize([sale, { ...sale, currency: 'orb', price: 123 }], core);
@@ -81,6 +93,23 @@ test('Apps Script reconcilia reenvio sem duplicar, mantém vendas homônimas em 
   const restored = JSON.parse(data[3][col(backup.COLUMN)]);
   assert.equal(restored.ivs.hp, 31);
   assert.equal(restored.ivs.speed, 0);
+  const key = col('Chave da venda');
+  data[5] = [];
+  data[5][col('Pokemon')] = 'Registro legado';
+  data[5][0] = 'Anotação alheia';
+  data[6] = [];
+  data[6][col('Pokemon')] = 'Venda a conferir';
+  data[6][key] = 'gold:04';
+  const preview = diagnosticarLinhasForaDoBanco();
+  assert.equal(preview.linhas_fora_do_db, 1);
+  assert.equal(preview.linhas_incertas_preservadas, 1);
+  assert.equal(data[5][col('Pokemon')], 'Registro legado');
+  assert.equal(limparLinhasForaDoBanco().aplicou, true);
+  assert.equal(data[5][0], 'Anotação alheia');
+  assert.equal(data[5][col('Pokemon')], '');
+  assert.equal(data[6][col('Pokemon')], 'Venda a conferir');
+  assert.equal(data[3][col('IV SPED')], 0);
+  assert.equal(limparLinhasForaDoBanco().aplicou, false);
 });
 
 test('o alarme é horário e só dá baixa com confirmação do lote enviado', async () => {

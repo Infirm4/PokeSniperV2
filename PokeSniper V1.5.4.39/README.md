@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.38)
+# PokeIdle Market Sniper (v1.5.4.39)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -101,6 +101,16 @@ e confira a tabela. O relatório também mostra o estado em `backup_sheets`.
 Para restaurar, reexiba **Dados da venda (JSON)** na planilha antes de baixar
 o CSV da página atual, depois use **Restaurar vendas do CSV da planilha**.
 O importador também aceita o CSV da antiga aba **Vendas confirmadas**.
+
+No editor do Apps Script, **diagnosticarLinhasForaDoBanco** mostra quantas
+linhas da tabela não têm chave nem ficha de venda. **limparLinhasForaDoBanco**
+limpa apenas os campos da tabela nessas linhas. Registros com chave ou ficha
+inconsistente ficam para conferência. A função exige pelo menos uma venda
+válida do IndexedDB na aba antes de gravar.
+
+**Diagnóstico da versão → Ver uma venda do banco** mostra a venda mais
+recente com moeda e Shiny registrados. A amostra é lida diretamente do
+IndexedDB e fica no painel até você copiá-la.
 
 ## Monitoramento e precificação
 

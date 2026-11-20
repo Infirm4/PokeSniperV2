@@ -536,6 +536,15 @@ const PISMarketStore = (() => {
     return PISMarketBacktest.run(groups.flat(), config, now);
   }
 
+  async function recentSaleSample() {
+    const db = await open();
+    const index = db.transaction('sales').objectStore('sales').index('priceMarket');
+    const latest = await Promise.all(['gold', 'orb'].flatMap(currency => [0, 1].map(shiny =>
+      result(index.openCursor(IDBKeyRange.bound([currency, shiny, 0], [currency, shiny, Date.now()]), 'prev'))
+        .then(cursor => cursor?.value))));
+    return latest.filter(Boolean).sort((a, b) => b.soldAt - a.soldAt)[0] ?? null;
+  }
+
   // Leitura local iniciada pelo usuário. Só o resumo agregado sai do banco para o relatório.
   async function diagnosticSnapshot() {
     const db = await open();
@@ -613,5 +622,5 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
+  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, analyzeListing, backtest, diagnosticSnapshot, liquidity, diagnostics };
 })();

@@ -49,7 +49,7 @@ const NOME_RESUMO = 'Sheet';
 const LINHA_CABECALHO_RESUMO = 3;
 const LINHA_DADOS_RESUMO = 4;
 
-const VERSAO = '1.5.4.38';
+const VERSAO = '1.5.4.39';
 
 // A linha 3 da aba Sheet é a única fonte de verdade dos títulos.
 // Nenhum novo cabeçalho é escrito ou movido automaticamente.
@@ -1163,4 +1163,73 @@ function receberBackupVendas_(request) {
   SpreadsheetApp.flush();
   return { ok: true, tipo: request.tipo, lote: request.lote, vendas_confirmadas: incoming.length,
     novas: additions.length, atualizadas: updates.length };
+}
+
+// Ferramentas do editor para limpar apenas a tabela de vendas vinculada.
+function diagnosticarLinhasForaDoBanco() {
+  return executarLimpezaVendas_(false);
+}
+
+function limparLinhasForaDoBanco() {
+  return executarLimpezaVendas_(true);
+}
+
+function executarLimpezaVendas_(apply) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sheet = escolherAbaVendas_(abrirPlanilhaConfigurada());
+    const titles = titulosVendas_(sheet).map(normalizarTitulo);
+    const keyIndex = titles.indexOf(normalizarTitulo('Chave da venda'));
+    const jsonIndex = titles.indexOf(normalizarTitulo('Dados da venda (JSON)'));
+    if (keyIndex < 0 || jsonIndex < 0)
+      throw new Error('A tabela ainda não tem as colunas de identificação do IndexedDB.');
+
+    const first = LINHA_DADOS_RESUMO;
+    const count = Math.max(0, sheet.getLastRow() - first + 1);
+    const rows = count ? sheet.getRange(first, 1, count, titles.length).getValues() : [];
+    const known = new Set(CABECALHO_BACKUP_VENDAS.map(normalizarTitulo));
+    const managed = titles.map((title, index) => known.has(title) || Object.prototype.hasOwnProperty.call(ALIASES_MARKETPLACE, title)
+      ? index : -1).filter(index => index !== -1);
+    const toClear = [];
+    let saved = 0, uncertain = 0;
+    rows.forEach((row, i) => {
+      const key = row[keyIndex], content = row[jsonIndex];
+      if (key !== '' || content !== '') {
+        try {
+          const sale = limparVendaBackup_(JSON.parse(content));
+          if (sale.currency + ':' + sale.id !== key) throw new Error();
+          saved++;
+        } catch { uncertain++; }
+      } else if (managed.some(index => row[index] !== '' && row[index] != null)) {
+        toClear.push(first + i);
+      }
+    });
+    const report = { aba: sheet.getName(), vendas_db: saved, linhas_incertas_preservadas: uncertain,
+      linhas_fora_do_db: toClear.length, amostra_de_linhas: toClear.slice(0, 30), aplicou: false };
+    if (apply && toClear.length) {
+      if (!saved) throw new Error('Nenhuma venda do IndexedDB identificada. Confira o diagnóstico antes de limpar.');
+      // Preserva a formatação, os cabeçalhos e colunas sem relação com a tabela.
+      const blocks = [];
+      for (const index of managed) {
+        const last = blocks.at(-1);
+        if (last && index === last[1] + 1) last[1] = index;
+        else blocks.push([index, index]);
+      }
+      const runs = [];
+      for (const row of toClear) {
+        const last = runs.at(-1);
+        if (last && row === last[1] + 1) last[1] = row;
+        else runs.push([row, row]);
+      }
+      const addresses = runs.flatMap(([from, to]) => blocks.map(([left, right]) =>
+        sheet.getRange(from, left + 1, to - from + 1, right - left + 1).getA1Notation()));
+      for (let i = 0; i < addresses.length; i += 100)
+        sheet.getRangeList(addresses.slice(i, i + 100)).clearContent();
+      SpreadsheetApp.flush();
+      report.aplicou = true;
+    }
+    console.log(JSON.stringify(report));
+    return report;
+  } finally { lock.releaseLock(); }
 }
