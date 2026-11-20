@@ -305,7 +305,7 @@ function showSalesSync(result) {
   const pull = result.pull;
   const reading = !pull?.enabled ? '' : pull.error ? 'Leitura: ' + pull.error :
     `${pull.imported} vendas novas no banco local.` +
-    (pull.skipped ? ` ${pull.skipped} fichas inválidas ou incompletas ignoradas.` : '') +
+    (pull.skipped ? ` ${pull.skipped} registros incompletos, inválidos ou Outlaws ignorados.` : '') +
     (pull.more ? ' Ainda há páginas. A sincronização vai continuar.' : '');
   salesBackupStatus.textContent = [sending, reading].filter(Boolean).join(' ');
 }

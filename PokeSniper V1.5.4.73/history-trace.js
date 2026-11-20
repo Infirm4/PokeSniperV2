@@ -20,6 +20,7 @@
         ? receipt.status : null,
       aceitas: asCount(receipt.accepted),
       fichasIncompletas: asCount(receipt.incomplete),
+      outlawsIgnorados: asCount(receipt.outlaws),
       novas: asCount(receipt.new), repetidas: asCount(receipt.existing), conflitos: asCount(receipt.conflicts),
       ganharamIvsCompletos: asCount(receipt.gainedFullIvs),
     };

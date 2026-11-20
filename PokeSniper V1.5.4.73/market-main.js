@@ -98,7 +98,7 @@ const mainMarketCore = (() => {
     // #2001+ se refere à Pokédex do jogo. speciesId é um identificador interno.
     const dex = number(ficha?.dex ?? ficha?.dexId ?? ficha?.numeroNacional ?? row?.dex);
     if (Number.isSafeInteger(dex) && dex >= 2001) return true;
-    const name = ficha?.nome ?? row?.name ?? row?.nome;
+    const name = ficha?.nome ?? ficha?.name ?? row?.name ?? row?.nome;
     if (typeof name !== 'string') return false;
     const clean = name.trim().replace(/^✨\s*/u, '').replace(/^shiny\s+/i, '');
     return outlandNames.has(clean.toLowerCase()) || outlandPrefix.test(clean);
@@ -765,7 +765,7 @@ const mainCoinsHistory = (() => {
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.72'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.73'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';

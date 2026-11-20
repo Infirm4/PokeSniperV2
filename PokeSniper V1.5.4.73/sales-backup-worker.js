@@ -54,7 +54,7 @@
         if (rows.length) {
           const receipt = await PISMarketStore.ingest('sale', rows, Date.now(), { fromSheet: true });
           imported += receipt.new;
-          skipped += receipt.incomplete;
+          skipped += receipt.incomplete + (receipt.outlaws ?? 0);
         }
         read += rows.length;
         skipped += Number.isSafeInteger(reply.ignoradas) && reply.ignoradas > 0 ? reply.ignoradas : 0;
@@ -95,8 +95,10 @@
           const batch = await PISMarketStore.pendingSalesBackup(100);
           if (!batch.length) break;
           const complete = [], invalid = [];
-          for (const entry of batch)
-            (PISMarketCore.incompleteSaleFields(entry.row).length ? invalid : complete).push(entry);
+          for (const entry of batch) {
+            const excluded = PISMarketCore.isOutland(entry.row) || PISMarketCore.incompleteSaleFields(entry.row).length > 0;
+            (excluded ? invalid : complete).push(entry);
+          }
           if (invalid.length) {
             // Remove apenas referências antigas da fila; os registros locais não são apagados.
             await PISMarketStore.acknowledgeSalesBackup(invalid);

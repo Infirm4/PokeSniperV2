@@ -292,7 +292,7 @@ const PISMarketStore = (() => {
     const sales = tx.objectStore('sales');
     const listings = tx.objectStore('listings');
     const exposures = tx.objectStore('exposures');
-    const savedRows = { new: 0, existing: 0, gainedFullIvs: 0, conflicts: 0, incomplete: 0 };
+    const savedRows = { new: 0, existing: 0, gainedFullIvs: 0, conflicts: 0, incomplete: 0, outlaws: 0 };
     const hasFullIvs = row => Object.values(row?.ivs || {}).filter(Number.isFinite).length === 6;
     try {
       if (kind === 'sale') {
@@ -307,6 +307,18 @@ const PISMarketStore = (() => {
           const key = [sale.currency, sale.id];
           const complete = await result(sales.get(key));
           const previous = complete ?? await result(incomplete.get(key));
+          if (PISMarketCore.isOutland(sale) || PISMarketCore.isOutland(previous)) {
+            savedRows.outlaws++;
+            // Se a mesma venda antiga ganhou identificação, conserva a ficha para o diagnóstico.
+            if (previous && !PISMarketCore.isOutland(previous) && !reconcileSale(previous, sale).conflict) {
+              (complete ? sales : incomplete).put({ ...previous, outland: true });
+              if (complete) {
+                tx.objectStore('salesBackup').delete(key);
+                addGroup(previous);
+              }
+            }
+            continue;
+          }
           const incoming = saleWithSprite(sale);
           const next = reconcileSale(previous, incoming);
           if (next.conflict) savedRows.conflicts++;
@@ -412,7 +424,7 @@ const PISMarketStore = (() => {
         const cursor = request.result;
         if (!cursor) { resolve(null); return; }
         const row = cursor.value;
-        if (!/^\d+$/.test(row.pokemonId ?? '') || row.soldAt < now - PISMarketCore.WINDOW_MS) {
+        if (PISMarketCore.isOutland(row) || !/^\d+$/.test(row.pokemonId ?? '') || row.soldAt < now - PISMarketCore.WINDOW_MS) {
           cursor.continue();
           return;
         }
@@ -749,11 +761,26 @@ const PISMarketStore = (() => {
       result(tx.objectStore('incompleteSales').getAll()),
     ]);
     const missing = {};
+    let pending = 0, outlawsPending = 0, outlawsWithoutSprite = 0, unnamedWithoutSprite = 0;
     for (const row of incompleteSales) {
-      for (const field of PISMarketCore.incompleteSaleFields(row)) missing[field] = (missing[field] ?? 0) + 1;
+      const fields = PISMarketCore.incompleteSaleFields(row);
+      if (PISMarketCore.isOutland(row)) {
+        outlawsPending++;
+        if (fields.includes('sprite')) outlawsWithoutSprite++;
+        continue;
+      }
+      pending++;
+      for (const field of fields) missing[field] = (missing[field] ?? 0) + 1;
+      if (fields.includes('sprite') && fields.includes('name')) unnamedWithoutSprite++;
     }
-    return { dbVersion: db.version, vendas_pendentes_ficha_completa: incompleteSales.length,
-      campos_faltantes_em_vendas_pendentes: missing, ...PISMarketDiagnostics.summarize({ listings, sales, exposures }, Date.now()) };
+    return { dbVersion: db.version, vendas_pendentes_ficha_completa: pending,
+      campos_faltantes_em_vendas_pendentes: missing,
+      vendas_sem_sprite: {
+        outlaw_identificado: outlawsWithoutSprite, sem_indício_de_outlaw_com_nome: (missing.sprite ?? 0) - unnamedWithoutSprite,
+        sem_indício_de_outlaw_sem_nome: unnamedWithoutSprite,
+      },
+      vendas_outlaw_legadas: { incompletas: outlawsPending, completas: sales.filter(PISMarketCore.isOutland).length },
+      ...PISMarketDiagnostics.summarize({ listings, sales, exposures }, Date.now()) };
   }
 
   async function diagnostics(config, now = Date.now()) {

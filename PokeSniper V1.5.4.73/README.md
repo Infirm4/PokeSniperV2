@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.72)
+# PokeIdle Market Sniper (v1.5.4.73)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -385,6 +385,11 @@ Nos avisos de Coins e Gemas, a Velocidade é sempre mostrada: crítico abaixo
 de 15, média de 15 a 24 e Pica a partir de 25. O aviso também mostra o IV
 do ataque dominante. Em espécies equilibradas, mostra Ataque e
 Ataque Especial separadamente. A Velocidade não recebe um ajuste direto no preço.
+
+No relatório do mercado, `banco.vendas_sem_sprite` separa Outlaws identificados
+de fichas sem indício de Outlaw, distinguindo se o nome estava disponível.
+`histórico_na_sessão` mostra `outlawsIgnorados` por lote. Novas vendas Outlaw
+ficam fora das fichas locais e da fila de envio ao Sheets.
 
 ## Oportunidades e diagnóstico
 

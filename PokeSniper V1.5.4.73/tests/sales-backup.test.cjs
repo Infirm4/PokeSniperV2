@@ -193,10 +193,11 @@ test('reabrir o jogo sincroniza a fila e só dá baixa após confirmação', asy
   assert.equal(reopened.pending, 0);
   assert.equal(acknowledged, 2);
   queue.push({ row: fullSale });
-  queue.unshift({ row: { ...fullSale, id: 'partial', quality: null } });
+  queue.unshift({ row: { ...fullSale, id: 'partial', quality: null } },
+    { row: { ...fullSale, id: 'outlaw', name: 'Trickmaster Gengar' } });
   const afterStale = await sync();
   assert.equal(afterStale.saved, 1);
-  assert.equal(afterStale.skipped, 1);
+  assert.equal(afterStale.skipped, 2);
   assert.equal(afterStale.pending, 0);
 });
 
