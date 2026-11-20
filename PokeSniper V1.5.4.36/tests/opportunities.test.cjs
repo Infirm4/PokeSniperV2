@@ -48,7 +48,7 @@ test('formata desconto, anúncio e intervalo em milhões de Coins, sem misturar 
   const { presentation } = require('../opportunities.js');
   const row = { price: 78_500_000, currency: 'gold',
     estimate: { discount: 0.215, lower: 90_000_000, upper: 120_000_000 } };
-  assert.equal(presentation(row).message, '21,5% de desconto · 78,5 Mi Coins\nFaixa justa estimada · 90–120 Mi Coins');
+  assert.equal(presentation(row).message, '21,5% de desconto · 78,5 Mi Coins\nOferta forte');
   assert.equal(presentation({ ...row, price: 123, currency: 'gold' }).asking, '0,000123 Mi Coins');
   const gems = presentation({ price: 100, currency: 'orb', estimate: { discount: 0.20, lower: 110, upper: 140 } });
   assert.equal(gems.message, '20% de desconto · 100 Gemas\nFaixa justa estimada · 110–140 Gemas');

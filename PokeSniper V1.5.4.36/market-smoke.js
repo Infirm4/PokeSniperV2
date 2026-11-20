@@ -60,11 +60,11 @@
         const estimate = PISMarketCore.estimate(target, history, now);
         return estimate.lower === 100 && estimate.median === 110 && estimate.upper === 120;
       }),
-      check('perfil comum exclui vendas com especiais incompatíveis', () => {
+      check('extras no comparável não sustentam alerta para perfil comum', () => {
         const target = capture('vitrine', [listing]).rows[0];
         const premium = sales.map(row => ({ ...row, ficha: { ...row.ficha, tmAoe: true } }));
-        return PISMarketCore.estimate(target, capture('historicoGlobal', premium).rows, now)
-          .status === 'insufficient_sales';
+        const quote = PISMarketCore.estimate(target, capture('historicoGlobal', premium).rows, now);
+        return quote.status === 'estimated' && quote.alertSupported === false;
       }),
       check('Outlaws ficam fora da referência e dos alertas', () => {
         const target = capture('vitrine', [listing]).rows[0];

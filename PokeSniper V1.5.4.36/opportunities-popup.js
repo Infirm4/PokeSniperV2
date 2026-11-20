@@ -161,7 +161,9 @@ function opportunityCard(row) {
   block.className = 'opportunity-copy';
   block.append(text('strong', (row.name || 'Pokémon #' + row.speciesId) + (row.shiny ? ' · Shiny' : '')),
     text('span', `${offer.discount} · ${offer.asking}`, 'opportunity-price'));
-  if (offer.range) block.append(text('span', offer.range, 'offer-meta'));
+  if (offer.tier) block.append(text('span', offer.tier, 'offer-meta'));
+  if (offer.composition) block.append(text('span', offer.composition, 'offer-meta'));
+  if (row.currency !== 'gold' && offer.range) block.append(text('span', offer.range, 'offer-meta'));
   if (offer.hold) block.append(text('span', offer.hold, 'offer-meta'));
   if (offer.warning) block.append(text('span', offer.warning, 'offer-meta'));
   const sprite = document.createElement('img');
@@ -175,7 +177,7 @@ function opportunityCard(row) {
       const panel = card(row, true);
       const body = document.createElement('div');
       body.append(...panel.childNodes);
-      if (PISMarketCore.purchaseOffer(row) && PISOpportunities.notificationEligible(row)) {
+      if (PISMarketCore.purchaseOffer(row) && PISOpportunities.notificationEligible(row, config)) {
         const checkout = text('button', 'Revisar compra no jogo');
         checkout.type = 'button';
         checkout.addEventListener('click', async () => {
@@ -203,7 +205,7 @@ async function refresh() {
       PISMarketStore.recentOpportunities(config), PISMarketStore.diagnostics(config),
     ]);
     if (request !== generation) return;
-    const visible = rows.filter(row => PISOpportunities.approved(row, config)).slice(0, 100);
+    const visible = rows.filter(row => PISOpportunities.approved(row, { ...config, coinStrongOnly: false })).slice(0, 100);
     const signature = JSON.stringify([config, visible]);
     // Uma oferta que deixou de atender aos filtros sai mesmo se o cartão estiver aberto.
     if (signature !== rendered) {
@@ -366,6 +368,7 @@ runDiagnostics.addEventListener('click', async () => {
       alertas: {
         ...alerts,
         notificações_ativadas: settings.notify,
+        filtros_coins: { bepi: settings.coinBepi, só_ofertas_fortes: settings.coinStrongOnly },
         permissão_do_Chrome: notificationPermission,
 
       },
@@ -455,6 +458,8 @@ form.addEventListener('submit', event => {
     ...Object.fromEntries(new FormData(form)),
     notify: config.notify,
     resale: form.elements.resale.checked,
+    coinBepi: form.elements.coinBepi.checked,
+    coinStrongOnly: form.elements.coinStrongOnly.checked,
   });
   return saveOpportunitySettings(next, saveStatus, 'Filtros salvos.');
 });
@@ -469,7 +474,7 @@ document.querySelector('#open').addEventListener('click', () => {
   config = PISOpportunities.settings(opportunitySettings);
   for (const [name, value] of Object.entries(config)) {
     if (name === 'notify') continue;
-    if (name === 'resale') form.elements[name].checked = value;
+    if (typeof value === 'boolean') form.elements[name].checked = value;
     else form.elements[name].value = value ?? '';
   }
   showNoticeStatus();

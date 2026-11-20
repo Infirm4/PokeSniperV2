@@ -53,7 +53,7 @@ const PISOpportunityAlerts = (() => {
 
     const recent = await PISMarketStore.recentOpportunities(config);
     const pending = recent.filter(row => row.delivery === 'pending' && row.nextAttemptAt <= Date.now() &&
-      PISOpportunities.notificationEligible(row));
+      PISOpportunities.notificationEligible(row, config));
     delivering = true;
     for (const candidate of pending.slice(0, 5)) {
       const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');

@@ -86,13 +86,63 @@ test('teto de revenda considera taxa e retorno sem mudar o desconto ou usar liqu
   assert.equal(opportunities.priceLimit(row, opportunities.settings({ resale: true })), null);
 });
 
-test('a referência básica exclui especiais e atributos incompatíveis mesmo em vendas numerosas', () => {
+test('referência de Coins relaxa especiais e qualidade e mantém a potência incompatível separada', () => {
   const target = profile(true);
   const variants = [{ aoe: 1 }, { zMove: 1 }, { mega: 1 }, { power: 5 }, { quality: 2.9 }];
   for (const change of variants) {
     const sales = Array.from({ length: 10 }, (_, i) => ({
-      ...target, ...change, id: 'premium-' + i, pokemonId: String(i), soldAt: now - 1000, price: 1000,
+      ...target, ...change, id: 'premium-' + i, pokemonId: String(i), source: 'game', soldAt: now - 1000, price: 1000,
     }));
-    assert.equal(core.estimate(target, sales, now).status, 'insufficient_sales');
+    const estimate = core.estimate(target, sales, now);
+    assert.equal(estimate.status, change.power == null ? 'estimated' : 'insufficient_sales');
+    assert.equal(Boolean(estimate.alertSupported), change.quality != null);
   }
+});
+
+test('BEPI usa a potência inferior, preserva a âncora e exige desconto reforçado', () => {
+  const target = { ...profile(true), power: 5, price: 60 };
+  const prices = [100, 105, 90, 92, 94, 96, 1000];
+  const sales = prices.map((price, index) => ({ ...target, price, id: 'sale-' + index,
+    pokemonId: 'sample-' + index, source: 'game', soldAt: now - 1000,
+    power: index < 2 ? 5 : 4 }));
+  const quote = core.estimate(target, sales, now);
+  assert.equal(quote.bepi, true);
+  assert.equal(quote.alertSupported, true);
+  assert.deepEqual(quote.powerCounts, { 4: 4, 5: 2 });
+  assert.ok(quote.median <= 100);
+  const row = { ...target, estimate: quote };
+  const config = opportunities.settings({ discount: 20, coinBepi: true });
+  assert.equal(opportunities.approved(row, config, now), true);
+  assert.equal(opportunities.approved({ ...row, price: 77 }, config, now), false);
+  assert.equal(opportunities.approved({ ...row, price: quote.lower }, config, now), false);
+  assert.equal(opportunities.approved(row, { ...config, coinBepi: false }, now), false);
+  assert.match(opportunities.presentation(row).message, /Registros: 2 P5 e 4 P4/);
+
+  const p4 = { ...target, power: 4 };
+  const stronger = sales.map(sale => ({ ...sale, power: sale.power === 5 ? 4 : 5 }));
+  assert.equal(core.estimate(p4, stronger, now).alertSupported, undefined);
+  assert.equal(core.estimate(p4, stronger.map(sale => ({ ...sale, power: sale.power === 5 ? 3 : 4 })), now).bepi, true);
+});
+
+test('Coins alarga a escala quando falta suporte e aproveita fichas sem o extra do alvo', () => {
+  const row = { ...profile(true), aoe: 1, price: 75 };
+  const sales = [0, 0.24, 0.29].map((delta, i) => ({
+    ...row, id: String(i + 1), pokemonId: String(i + 5), source: 'game',
+    grade: row.grade + delta, aoe: 0, quality: 2, ivTotal: 50, price: 100, soldAt: now - 1000,
+  }));
+  const quote = core.estimate(row, sales, now);
+  assert.equal(quote.alertSupported, true);
+  assert.ok(quote.gradeScale > 0.08);
+  assert.equal(quote.qualityBelow, false);
+  const reverse = core.estimate({ ...row, aoe: 0 }, sales.map(sale => ({ ...sale, aoe: 1 })), now);
+  assert.equal(reverse.alertReason, 'extras_sem_suporte');
+  assert.ok(!reverse.alertSupported);
+});
+
+test('o corte por quartil é opcional e exclusivo de Coins', () => {
+  const row = { ...profile(true), price: 85, estimate: { status: 'estimated', lower: 80, median: 100 } };
+  const config = opportunities.settings({ currency: 'all', discount: 10, coinStrongOnly: true });
+  assert.equal(opportunities.approved(row, config, now), false);
+  assert.equal(opportunities.approved(row, { ...config, coinStrongOnly: false }, now), true);
+  assert.equal(opportunities.approved({ ...row, currency: 'orb' }, config, now), true);
 });

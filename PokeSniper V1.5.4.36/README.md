@@ -1,8 +1,17 @@
-# PokeIdle Market Sniper (v1.5.4.35)
+# PokeIdle Market Sniper (v1.5.4.36)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
 O relatório inclui **versão_na_aba** e a disponibilidade dos dois módulos.
+
+Em **Coins**, a escala da Nota se adapta ao suporte do histórico. Especiais
+diferentes pesam menos e extras que faltam no alvo não sustentam alertas.
+IVs e Qualidade viraram avisos de ficha. **Avisos BEPI em Coins** e **Só avisar
+ofertas fortes em Coins** são opções independentes, desligadas por padrão.
+No BEPI, a oferta deve ficar abaixo do quartil inferior e superar em cinco
+pontos percentuais o desconto configurado. A porcentagem é sempre relativa
+à mediana. O teste de precisão compara as escalas de Nota e a variante com
+Qualidade no mesmo corte cronológico das vendas locais.
 
 Para regenerar o arquivo do monitor depois de editar seus módulos ou
 `sniper.js`, use `node scripts/build-market-main.cjs`.
@@ -25,7 +34,7 @@ O identificador do exemplar impede que revendas dominem a referência.
 A precificação de Coins pondera a semelhança de Nota, nível e Potência,
 os atributos comparáveis e a recência. Usa quartis ponderados e filtra
 extremos no cálculo. Os avisos exigem suporte de vendas confirmadas pelo jogo.
-Os IVs individuais pesam na semelhança e o alerta exige pelo menos três
+IVs individuais e Qualidade ajudam a interpretar a ficha. O alerta normal exige pelo menos três
 comparáveis próximos de exemplares diferentes, com amostra efetiva e
 dispersão de preços aceitáveis.
 A margem de revenda, quando ativada, considera a taxa configurada pelo usuário.
@@ -74,7 +83,7 @@ de Coins. Os limites de consulta e o recuo do servidor continuam valendo.
 
 - **Coins:** as transações confirmadas ficam separadas por moeda e ID de venda.
   O ID do exemplar ajuda a deduplicar os comparáveis. O cálculo considera
-  espécie, forma, Shiny, nível, Nota, Potência, Qualidade, IVs e Nature conforme
+  espécie, forma, Shiny, nível, Nota, Potência e Natureza conforme
   os campos disponíveis, com menor peso para vendas mais antigas. Extremos são
   filtrados na avaliação. Histórico incompleto pode fornecer uma referência
   exploratória. Só referências com suporte suficiente podem gerar alertas.

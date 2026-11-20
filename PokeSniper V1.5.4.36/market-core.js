@@ -284,7 +284,10 @@
     return sorted.at(-1).price;
   }
 
-  function coinProfile(target, sale) {
+  const COIN_SCALES = [0.08, 0.12, 0.16, 0.24];
+  const SPECIALS = ['aoe', 'zMove', 'mega'];
+
+  function coinProfile(target, sale, qualityWeight) {
     if ((target.shadow === 1 || sale.shadow === 1) && target.shadow !== sale.shadow) return null;
     for (const field of ['natureId', 'nature', 'rarity', 'legendary']) {
       if (target[field] != null && sale[field] != null && target[field] !== sale[field]) return null;
@@ -292,33 +295,18 @@
     if (target.name && sale.name && target.name.toLowerCase() !== sale.name.toLowerCase()) return null;
     const grade = Math.abs(sale.grade - target.grade);
     const level = Math.abs(Math.log(sale.level / target.level));
-    const precisePower = Number.isFinite(target.power) && Number.isFinite(sale.power);
-    if ((precisePower && target.power !== sale.power) || (Number.isFinite(target.quality) && Number.isFinite(sale.quality) &&
-        Math.abs(target.quality - sale.quality) > Math.max(0.01, Math.max(target.quality, sale.quality) * 0.3))) return null;
-    // A Potência conhecida separa os grupos; Nota e nível têm pesos graduais.
-    let distance = ((grade / 0.24) ** 2 + (level / 0.30) ** 2) / 2;
-    const close = grade <= 0.35 && level <= 0.3 && precisePower;
-    const fields = [
-      [target.refinement, sale.refinement, Math.max(1, target.refinement * 0.2)],
-      [target.quality, sale.quality, Math.max(0.01, target.quality * 0.12)],
-      [target.ivTotal, sale.ivTotal, Math.max(5, target.ivTotal * 0.15)],
-    ];
-    // IVs refinam a semelhança. A diferença em um atributo não elimina uma
-    // venda comparável de Nota, nível e Potência próximos.
-    const ivDistances = Object.keys(statAliases).filter(stat => Number.isFinite(target.ivs?.[stat]))
-      .map(stat => Number.isFinite(sale.ivs?.[stat])
-        ? Math.min(2, Math.abs(target.ivs[stat] - sale.ivs[stat]) / 10) : 0.5);
-    if (ivDistances.length) distance += ivDistances.reduce((sum, value) => sum + value, 0) / ivDistances.length;
-    for (const [desired, actual, scale] of fields) {
-      if (!Number.isFinite(desired)) continue;
-      if (!Number.isFinite(actual)) { distance += 0.25; continue; }
-      const delta = Math.abs(desired - actual) / scale;
-      distance += Math.min(2, delta) / 3;
-    }
-    for (const field of ['natureId', 'nature', 'aoe', 'zMove', 'mega']) {
-      if (target[field] != null && sale[field] == null) distance += 0.2;
-    }
-    return { distance, close };
+    const differences = SPECIALS.filter(flag => (sale[flag] === 1) !== (target[flag] === 1)).length;
+    const extraPremium = SPECIALS.some(flag => sale[flag] === 1 && target[flag] !== 1);
+    const samePower = Number.isInteger(target.power) && sale.power === target.power;
+    const neighbor = [4, 5].includes(target.power) && sale.power === target.power - 1;
+    if (!samePower && !neighbor && Number.isInteger(target.power) && Number.isInteger(sale.power)) return null;
+    const refine = Number.isFinite(target.refinement) && Number.isFinite(sale.refinement) ?
+      Math.min(2, Math.abs(target.refinement - sale.refinement) / Math.max(1, target.refinement * 0.2)) / 3 : 0;
+    // A Qualidade direta só é usada na variante do backtest. IVs ficam no aviso.
+    const quality = qualityWeight && Number.isFinite(target.quality) && Number.isFinite(sale.quality)
+      ? Math.min(2, Math.abs(target.quality - sale.quality) / Math.max(0.01, target.quality * 0.12)) / 3 : 0;
+    return { grade, close: grade <= 0.35 && level <= 0.3, samePower, neighbor, extraPremium,
+      weight: Math.exp(-((level / 0.30) ** 2 / 2 + refine + quality)) * 0.3 ** differences };
   }
 
   const totalWeight = rows => rows.reduce((sum, row) => sum + row.weight, 0);
@@ -335,53 +323,97 @@
     return rows.filter(row => Math.abs(Math.log(row.price) - median) <= spread);
   }
 
-  function estimateCoins(target, sales, now) {
-    const comparable = [];
-    for (const sale of sales) {
-      if (!id(sale.id) || !sameMarket(target, sale) ||
-          !['aoe', 'zMove', 'mega'].every(flag => (target[flag] === 1) === (sale[flag] === 1)) ||
-          !(sale.soldAt >= now - WINDOW_MS && sale.soldAt < now) || !positiveInteger(sale.price) ||
-          !(sale.level > 0 && Number.isFinite(sale.grade)) || (sale.pokemonId && sale.pokemonId === target.pokemonId)) continue;
-      const profile = coinProfile(target, sale);
-      if (!profile) continue;
-      const weight = 2 ** (-(now - sale.soldAt) / (5 * DAY)) * Math.exp(-profile.distance);
-      if (weight >= 0.01) comparable.push({ sale, price: Number(sale.price), weight, close: profile.close });
-    }
-    comparable.sort((a, b) => Number(b.close) - Number(a.close) ||
-      Number(b.sale.source === 'game') - Number(a.sale.source === 'game') || b.weight - a.weight || b.sale.soldAt - a.sale.soldAt);
-    const salesSeen = new Set();
-    const pokemonSeen = new Set();
-    const distinct = comparable.filter(({ sale }) => {
-      const tx = id(sale.id), pokemon = id(sale.pokemonId);
-      if (salesSeen.has(tx) || (pokemon && pokemonSeen.has(pokemon))) return false;
-      salesSeen.add(tx);
-      if (pokemon) pokemonSeen.add(pokemon);
+  function coinSamples(comparable, scale) {
+    const ranked = comparable.map(row => ({ ...row, weight: row.weight * Math.exp(-((row.grade / scale) ** 2 / 2)) }))
+      .filter(row => row.weight >= 0.01)
+      .sort((a, b) => Number(b.verified && b.close) - Number(a.verified && a.close) ||
+        Number(b.samePower) - Number(a.samePower) || Number(a.extraPremium) - Number(b.extraPremium) ||
+        b.weight - a.weight || b.sale.soldAt - a.sale.soldAt);
+    const transactions = new Set(), pokemon = new Set();
+    return ranked.filter(row => {
+      const tx = id(row.sale.id), specimen = id(row.sale.pokemonId);
+      if (transactions.has(tx) || (specimen && pokemon.has(specimen))) return false;
+      transactions.add(tx);
+      if (specimen) pokemon.add(specimen);
       return true;
     }).sort((a, b) => a.price - b.price);
-    const similar = distinct.filter(row => row.close);
-    const verified = similar.filter(row => row.sale.source === 'game' && id(row.sale.pokemonId));
-    const close = trimOutliers(verified);
-    const direct = close.length >= 3 && effective(close) >= 2.6 && Number.isFinite(target.power);
-    const rows = direct ? close : trimOutliers(distinct);
-    const count = rows.length;
-    const stats = { count, independentCount: count, effectiveCount: effective(rows),
-      closeCount: close.length, outlierCount: (direct ? verified.length : distinct.length) - count };
-    if (count < (direct ? 3 : 5) || stats.effectiveCount < (direct ? 2.6 : 4))
-      return { status: 'insufficient_sales', ...stats, alertReason: 'comparáveis_insuficientes' };
+  }
+
+  function coinQuote(target, rows, scale, { direct = false, bepi = false, outlierCount = 0, reason } = {}) {
+    const count = rows.length, effectiveCount = effective(rows);
+    const stats = { count, independentCount: count, effectiveCount, outlierCount, gradeScale: scale,
+      closeCount: rows.filter(row => row.verified && row.close && row.samePower && !row.extraPremium).length };
+    if (count < (direct || bepi ? 3 : 5) || effectiveCount < (direct || bepi ? 2.6 : 4))
+      return { status: 'insufficient_sales', ...stats, alertReason: reason || 'comparáveis_insuficientes' };
     const weight = totalWeight(rows);
     const lower = quantile(rows, weight, 0.25);
     const median = quantile(rows, weight, 0.5);
     const upper = quantile(rows, weight, 0.75);
-    const spread = Math.log(upper / lower);
-    const confidence = stats.effectiveCount >= 8 && spread <= Math.log(1.6) ? 'alta' :
-      stats.effectiveCount >= 2.6 && spread <= Math.log(count <= 4 ? 1.6 : 2) ? 'média' : 'baixa';
-    return { status: 'estimated', method: 'coins_comparables', ...stats, lower, median, upper,
-      confidence, discount: 1 - target.price / median, alertSupported: direct && confidence !== 'baixa',
-      alertReason: !direct ? 'comparáveis_insuficientes' : confidence === 'baixa' ? 'preços_dispersos' : null,
+    const spread = upper / lower;
+    const confidence = effectiveCount >= 8 && spread <= 1.6 ? 'alta' :
+      spread <= (count <= 4 ? 1.6 : 2) ? 'média' : 'baixa';
+    const qualities = rows.filter(row => row.grade <= scale && row.samePower && Number.isFinite(row.sale.quality))
+      .map(row => ({ weight: row.weight, price: row.sale.quality })).sort((a, b) => a.price - b.price);
+    const qualityLower = qualities.length >= 3 && effective(qualities) >= 2.6
+      ? quantile(qualities, totalWeight(qualities), 0.25) : null;
+    const powerCounts = bepi ? Object.fromEntries([target.power, target.power - 1].map(power =>
+      [power, rows.filter(row => row.sale.power === power).length])) : null;
+    return { status: 'estimated', method: 'coins_comparables', ...stats, lower, median, upper, confidence, bepi,
+      powerCounts, qualityBelow: Number.isFinite(target.quality) && qualityLower != null && target.quality < qualityLower,
+      discount: 1 - target.price / median, alertSupported: (direct || bepi) && confidence !== 'baixa',
+      alertReason: reason || (!(direct || bepi) ? 'comparáveis_insuficientes' : confidence === 'baixa' ? 'preços_dispersos' : null),
       comparables: [...rows].sort((a, b) => b.weight - a.weight).slice(0, 5).map(({ sale }) => ({
         id: sale.id, price: sale.price, soldAt: sale.soldAt, grade: sale.grade, level: sale.level,
         power: sale.power, speed: sale.ivs?.speed,
       })) };
+  }
+
+  function estimateCoins(target, sales, now, { scales = COIN_SCALES, qualityWeight = false } = {}) {
+    const comparable = [];
+    for (const sale of sales) {
+      if (!id(sale.id) || !sameMarket(target, sale) ||
+          !(sale.soldAt >= now - WINDOW_MS && sale.soldAt < now) || !positiveInteger(sale.price) ||
+          !(sale.level > 0 && Number.isFinite(sale.grade)) || (sale.pokemonId && sale.pokemonId === target.pokemonId)) continue;
+      const profile = coinProfile(target, sale, qualityWeight);
+      if (!profile) continue;
+      comparable.push({ ...profile, sale, price: Number(sale.price),
+        verified: sale.source === 'game' && Boolean(id(sale.pokemonId)),
+        weight: profile.weight * 2 ** (-(now - sale.soldAt) / (5 * DAY)) });
+    }
+    let latest, dispersed;
+    for (const scale of scales) {
+      const rows = coinSamples(comparable, scale);
+      // Extras ausentes no alvo podem inflar o preço mesmo depois de reduzir seu peso.
+      const safe = rows.filter(row => row.verified && row.close && !row.extraPremium);
+      const anchors = safe.filter(row => row.samePower);
+      const direct = trimOutliers(anchors);
+      latest = { rows, safe, direct, scale };
+      if (direct.length < 3 || effective(direct) < 2.6) continue;
+      const estimate = coinQuote(target, direct, scale, { direct: true, outlierCount: anchors.length - direct.length });
+      if (estimate.alertSupported) return estimate;
+      dispersed = estimate;
+    }
+    if (dispersed) return dispersed;
+    const { rows, safe, direct, scale } = latest;
+    const neighbors = safe.filter(row => row.neighbor);
+    if (direct.length >= 2 && neighbors.length && effective(direct) >= 1.75 &&
+        direct.at(-1).price <= direct[0].price * 1.6) {
+      // A potência inferior só complementa o perfil-alvo e nunca eleva a sua mediana.
+      const anchorWeight = totalWeight(direct);
+      const anchorMedian = quantile(direct, anchorWeight, 0.5);
+      const capped = neighbors.filter(row => row.price <= anchorMedian);
+      const multiplier = Math.min(0.35, anchorWeight * 0.75 / totalWeight(capped));
+      const mixed = [...direct, ...capped.map(row => ({ ...row, weight: row.weight * multiplier }))]
+        .sort((a, b) => a.price - b.price);
+      const estimate = coinQuote(target, trimOutliers(mixed), scale, { bepi: capped.length > 0 });
+      if (estimate.alertSupported && estimate.bepi && estimate.powerCounts[target.power] >= 2 &&
+          estimate.powerCounts[target.power - 1] > 0) return estimate;
+    }
+    const reference = rows.filter(row => !row.neighbor);
+    const trimmed = trimOutliers(reference);
+    const reason = rows.some(row => row.verified && row.samePower && row.extraPremium)
+      ? 'extras_sem_suporte' : 'comparáveis_insuficientes';
+    return coinQuote(target, trimmed, scale, { reason, outlierCount: reference.length - trimmed.length });
   }
 
   // Baseline conservadora: mesma espécie, moeda e Shiny, com meia-vida de 10 dias.
@@ -449,7 +481,7 @@
   }
 
   const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
-    WINDOW_MS, MAX_BATCH };
+    WINDOW_MS, MAX_BATCH, estimateCoins };
   if (typeof window === 'undefined' && typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
 })();

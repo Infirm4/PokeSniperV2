@@ -16,6 +16,8 @@
       currency: ['gold', 'orb', 'all'].includes(raw.currency) ? raw.currency : DEFAULTS.currency,
       discount: Number.isFinite(discount) ? Math.min(99, Math.max(0, discount)) : DEFAULTS.discount,
       notify: raw.notify === true,
+      coinBepi: raw.coinBepi === true,
+      coinStrongOnly: raw.coinStrongOnly === true,
       resale: raw.resale === true,
       fee: raw.fee != null && raw.fee !== '' && Number.isFinite(Number(raw.fee)) &&
         Number(raw.fee) >= 0 && Number(raw.fee) < 100 ? Number(raw.fee) : null,
@@ -42,7 +44,13 @@
     return Math.max(0, Math.floor(Math.min(...caps)));
   }
 
-  function notificationEligible(row) {
+  function notificationEligible(row, config = {}) {
+    if (row.currency === 'gold') {
+      const { bepi, lower } = row.estimate ?? {};
+      if (bepi && (!config.coinBepi || !(row.price < lower) ||
+          row.price > Math.floor(row.estimate.median * Math.max(0, 95 - (config.discount ?? 0)) / 100))) return false;
+      if (config.coinStrongOnly && !(row.price <= lower)) return false;
+    }
     return row.estimate?.alertSupported !== false &&
       (!row.estimate?.sourceAt || Date.now() - row.estimate.sourceAt <= 72 * 3600000) &&
       row.estimate?.profileReason !== 'rare_profile' &&
@@ -51,12 +59,13 @@
 
   function matches(row, config) {
     const limit = priceLimit(row, config);
-    return (config.currency === 'all' || config.currency === row.currency) &&
+    return (row.currency !== 'gold' || !row.estimate?.bepi || config.coinBepi) &&
+      (config.currency === 'all' || config.currency === row.currency) &&
       limit != null && row.price <= limit;
   }
 
   function approved(row, config, now = Date.now()) {
-    return eligible(row, now) && matches(row, config) && notificationEligible(row, now);
+    return eligible(row, now) && matches(row, config) && notificationEligible(row, config);
   }
 
   let dexNames;
@@ -86,6 +95,37 @@
     return true;
   }
 
+  let speciesByName;
+  function coinIvs(row, labels) {
+    speciesByName ??= new Map();
+    if (!speciesByName.size && Array.isArray(globalThis.PI_ESPECIES)) {
+      for (const species of globalThis.PI_ESPECIES) speciesByName.set(species.n.toLowerCase(), species);
+    }
+    const name = row.name?.trim().replace(/^✨\s*|^shiny\s+/giu, '').toLowerCase();
+    const species = speciesByName.get(name);
+    const important = new Set(['speed']);
+    const physical = species?.b?.[1], special = species?.b?.[3];
+    if (physical >= special * 0.9) important.add('attack');
+    if (special >= physical * 0.9) important.add('specialAttack');
+    const fields = ['hp', 'attack', 'defense', 'specialAttack', 'specialDefense', 'speed'];
+    const gameKeys = ['hp', 'atk', 'def', 'spAtk', 'spDef', 'speed'];
+    const ficha = { level: row.level, potencia: row.power, quality: row.quality, shiny: row.shiny,
+      ivs: Object.fromEntries(fields.map((key, index) => [gameKeys[index], row.ivs?.[key]])) };
+    const evaluate = globalThis.PokeIdlePvePower?.calcular;
+    const current = evaluate?.(ficha, species)?.power;
+    return fields.filter(key => Number.isInteger(row.ivs?.[key]) && row.ivs[key] < 10)
+      .sort((a, b) => Number(important.has(b)) - Number(important.has(a)))
+      .map(key => {
+        const iv = row.ivs[key];
+        if (important.has(key)) return `${labels[key]} ${iv} (prioritário)`;
+        const gameKey = gameKeys[fields.indexOf(key)];
+        const corrected = current >= 10 ? evaluate({ ...ficha, ivs: { ...ficha.ivs, [gameKey]: 20 } }, species)?.power : null;
+        const impact = corrected > current * 1.05 ? ' (afeta PvE)' :
+          corrected > 0 ? ' (baixo impacto no PvE)' : '';
+        return `${labels[key]} ${iv}${impact}`;
+      });
+  }
+
   // Formata o mesmo desconto e os mesmos valores para painel e avisos.
   function presentation(row, now = Date.now()) {
     const coins = row.currency === 'gold';
@@ -102,12 +142,20 @@
     const stats = { hp: 'HP', attack: 'Ataque', defense: 'Defesa', specialAttack: 'Atq. Esp.', specialDefense: 'Def. Esp.', speed: 'Velocidade' };
     const lowIvs = Object.entries(stats).filter(([key]) => Number.isInteger(row.ivs?.[key]) && row.ivs[key] < 10)
       .map(([, label]) => label);
-    const warning = lowIvs.length ? 'IV baixo: ' + lowIvs.join(', ') : '';
+    const ivs = coins ? coinIvs(row, stats) : lowIvs;
+    const warning = [ivs.length ? 'IV baixo: ' + ivs.join(', ') : '',
+      coins && row.estimate.qualityBelow ? 'Qualidade abaixo dos comparáveis' : ''].filter(Boolean).join(' · ');
+    const { confidence, bepi, powerCounts } = row.estimate;
+    const label = coins ? bepi ? 'BEPI' : ({ alta: 'Alta', média: 'Média' })[confidence] : '';
+    const composition = coins && bepi && powerCounts ? 'Registros: ' + Object.entries(powerCounts)
+      .reverse().map(([power, count]) => `${count} P${power}`).join(' e ') : '';
+    const strength = coins && Number.isFinite(lower) ? row.price <= lower ? 'Oferta forte' : 'Oferta fraca' : '';
+    const tier = [label, strength].filter(Boolean).join(' · ');
     const hold = row.availableAt > now ? 'Retido até ' + new Intl.DateTimeFormat('pt-BR', {
       timeStyle: 'medium', timeZone: 'America/Sao_Paulo',
     }).format(row.availableAt) + ' (Brasília)' : '';
-    return { discount, asking, range, warning, hold,
-      message: [`${discount} · ${asking}`, range, hold, warning].filter(Boolean).join('\n') };
+    return { discount, asking, range, warning, hold, tier, composition,
+      message: [`${discount} · ${asking}`, coins ? tier : range, composition, hold, warning].filter(Boolean).join('\n') };
   }
 
   const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation };

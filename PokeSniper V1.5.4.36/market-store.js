@@ -4,6 +4,7 @@ const PISMarketStore = (() => {
   const MAX_COMPARABLES = 1000;
   const DB_VERSION = 11;
   const ESTIMATE_REVISION = 4;
+  const revisionFor = row => row?.currency === 'gold' ? 5 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
   let opening;
 
@@ -159,7 +160,7 @@ const PISMarketStore = (() => {
         const external = listing.currency !== 'orb' ? null : publicEstimates ? publicEstimates.get(listing.id) :
           listing.pricingRevision === ESTIMATE_REVISION && previous?.method === 'briaoale_public' &&
           now - previous.sourceAt <= 72 * 3600000 ? previous : null;
-        const priced = { ...listing, pricingRevision: ESTIMATE_REVISION, estimate: external || estimate(listing) };
+        const priced = { ...listing, pricingRevision: revisionFor(listing), estimate: external || estimate(listing) };
         listings.put(priced);
         if (recordOpportunities && trackedLaunch(priced, now) &&
             PISOpportunities.eligible(priced)) {
@@ -299,7 +300,7 @@ const PISMarketStore = (() => {
       .getAll(IDBKeyRange.lowerBound(now - PISOpportunities.TTL)));
     const current = await Promise.all(candidates.map(async candidate => {
       const listing = await result(listings.get(listingKey(candidate)));
-      if (listing?.pricingRevision === ESTIMATE_REVISION && trackedLaunch(listing, now) && PISOpportunities.key(listing) === candidate.key &&
+      if (listing?.pricingRevision === revisionFor(listing) && trackedLaunch(listing, now) && PISOpportunities.key(listing) === candidate.key &&
           PISOpportunities.eligible(listing, now) && PISOpportunities.matches(listing, config)) {
         return { ...candidate, ...listing };
       }
@@ -313,10 +314,10 @@ const PISMarketStore = (() => {
     const tx = db.transaction(['opportunities', 'listings']);
     const entry = await result(tx.objectStore('opportunities').get(key));
     const listing = entry?.id === id ? await result(tx.objectStore('listings').get(listingKey(entry))) : null;
-    if (!entry || (!forReview && (entry.delivery !== 'pending' || entry.nextAttemptAt > now)) || listing?.pricingRevision !== ESTIMATE_REVISION ||
+    if (!entry || (!forReview && (entry.delivery !== 'pending' || entry.nextAttemptAt > now)) || listing?.pricingRevision !== revisionFor(listing) ||
         !trackedLaunch(listing, now) || listing.observedAt < now - PISOpportunities.TTL || PISOpportunities.key(listing) !== key ||
         !PISOpportunities.eligible(listing, now) || !PISOpportunities.matches(listing, config) ||
-        !PISOpportunities.notificationEligible(listing)) return null;
+        !PISOpportunities.notificationEligible(listing, config)) return null;
     return { ...entry, ...listing };
   }
 
@@ -324,7 +325,7 @@ const PISMarketStore = (() => {
     const db = await open();
     const listings = db.transaction('listings').objectStore('listings');
     const rows = await Promise.all(offers.map(offer => result(listings.get(listingKey(offer))).then(row =>
-      row?.pricingRevision === ESTIMATE_REVISION && row.price === offer.price &&
+      row?.pricingRevision === revisionFor(row) && row.price === offer.price &&
       row.observedAt >= now - PISOpportunities.TTL && PISOpportunities.approved(row, config, now) ? row : null)));
     return rows.filter(Boolean);
   }
@@ -510,20 +511,31 @@ const PISMarketStore = (() => {
       filters: 0, detailed: 0, matched: 0, held: 0, sent: 0, sentDesktop: 0, sentInGame: 0, sentWithoutChannelInfo: 0, failed: 0, pending: 0 };
     const byKey = new Map(opportunities.map(row => [row.key, row]));
     const coins = { observados: 0, novos_capturados: 0, retidos: 0, estimados: 0, confiáveis: 0,
-      sem_comparáveis: 0, preços_dispersos: 0, ofertas: 0, avisos_reais: 0 };
+      sem_comparáveis: 0, extras_sem_suporte: 0, preços_dispersos: 0,
+      bepi: 0, bepi_desligado: 0, abaixo_da_mediana: 0, fortes: 0,
+      estimados_sem_captura_nova: 0, sem_horário_publicação: 0, ofertas: 0, avisos_reais: 0 };
     totals.coins = coins;
     for (const row of listings) {
       if (row.currency === 'gold') {
         coins.observados++;
+        if (!Number.isFinite(row.postedAt)) coins.sem_horário_publicação++;
         if (trackedLaunch(row, now)) {
           coins.novos_capturados++;
           if (row.availableAt > now) coins.retidos++;
         }
         if (row.estimate?.alertReason === 'comparáveis_insuficientes') coins.sem_comparáveis++;
+        if (row.estimate?.alertReason === 'extras_sem_suporte') coins.extras_sem_suporte++;
         if (row.estimate?.alertReason === 'preços_dispersos') coins.preços_dispersos++;
-        if (row.pricingRevision === ESTIMATE_REVISION && row.estimate?.status === 'estimated') {
+        if (row.pricingRevision === revisionFor(row) && row.estimate?.status === 'estimated') {
           coins.estimados++;
-          if (PISOpportunities.notificationEligible(row)) coins.confiáveis++;
+          if (!trackedLaunch(row, now)) coins.estimados_sem_captura_nova++;
+          if (row.estimate.bepi) {
+            coins.bepi++;
+            if (!config.coinBepi) coins.bepi_desligado++;
+          }
+          if (row.price < row.estimate.median) coins.abaixo_da_mediana++;
+          if (row.price <= row.estimate.lower) coins.fortes++;
+          if (PISOpportunities.notificationEligible(row, config)) coins.confiáveis++;
           if (trackedLaunch(row, now) && PISOpportunities.approved(row, config, now)) {
             coins.ofertas++;
             if (byKey.get(PISOpportunities.key(row))?.delivery === 'sent') coins.avisos_reais++;
@@ -545,7 +557,7 @@ const PISMarketStore = (() => {
           if (entry.deliveryChannels?.desktop) totals.sentDesktop++;
           if (entry.deliveryChannels?.game) totals.sentInGame++;
         } else if (delivery === 'failed') totals.failed++;
-        else if (!PISOpportunities.notificationEligible(row)) totals.held++;
+        else if (!PISOpportunities.notificationEligible(row, config)) totals.held++;
         else if (delivery === 'pending') totals.pending++;
       }
     }
