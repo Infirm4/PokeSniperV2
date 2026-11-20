@@ -765,7 +765,7 @@ const mainCoinsHistory = (() => {
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.66'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.67'; // versão realmente injetada na página
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
   const K_AVISOS = 'pis_avisos_anuncios_v1'; // IDs já anunciados, independente da varredura

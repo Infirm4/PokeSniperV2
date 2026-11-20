@@ -132,7 +132,16 @@
     const meter = explicitMeter || [...preview.querySelectorAll('div, span')].find(node =>
       node.children.length >= 8 && [...node.children].every(segment => segment.childElementCount === 0));
     if (meter) {
-      if (meter.nextElementSibling !== sheetBadge) meter.after(sheetBadge);
+      let anchor = meter;
+      // Saia da linha que alinha a régua com os outros elementos da Nota.
+      while (anchor.parentElement !== preview) {
+        const { display, flexDirection } = getComputedStyle(anchor.parentElement);
+        const horizontal = display.includes('grid') ||
+          (display.includes('flex') && flexDirection.startsWith('row')) || display.startsWith('inline');
+        if (!horizontal) break;
+        anchor = anchor.parentElement;
+      }
+      if (anchor.nextElementSibling !== sheetBadge) anchor.after(sheetBadge);
     } else if (preview.lastElementChild !== sheetBadge) {
       preview.append(sheetBadge);
     }
@@ -142,6 +151,9 @@
     sheetBadge?.remove();
     sheetBadge = document.createElement('div');
     sheetBadge.dataset.pisInventoryQuote = '';
+    Object.assign(sheetBadge.style, {
+      display: 'block', width: '100%', minWidth: '0', gridColumn: '1 / -1',
+    });
     const panel = document.createElement('div');
     panel.setAttribute('aria-label', 'Preço justo no mercado');
     Object.assign(panel.style, {
@@ -150,6 +162,7 @@
     });
     const title = document.createElement('strong');
     title.textContent = 'Preço justo';
+    Object.assign(title.style, { flexBasis: '100%', textAlign: 'center' });
     panel.append(title);
     const labels = pending ? ['Consultando…'] : quotes ? priceLabels(profile, quotes) : ['Preço indisponível'];
     for (const label of labels) {
