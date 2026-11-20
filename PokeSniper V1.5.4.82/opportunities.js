@@ -210,11 +210,10 @@
     const hasFair = Number.isFinite(median) && median > 0;
     const quoted = hasFair ? 'Preço justo ' + icon + ' ' + money(median) : 'Preço justo indisponível';
     const prices = `Mercado ${icon} ${money(row.price)} · ${quoted}`;
-    const desktopPrices = `${icon} ${money(row.price)} · Preço justo ${hasFair ? money(median) : 'indisponível'}`;
     const liquidity = liquidityLabel(row);
     return { title,
       message: [profileSummary(row, false), prices, warning, liquidity, composition].filter(Boolean).join('\n'),
-      desktopMessage: [profileSummary(row), desktopPrices, warning, liquidity, composition].filter(Boolean).join('\n'),
+      desktopMessage: [profileSummary(row), prices, warning, liquidity, composition].filter(Boolean).join('\n'),
     };
   }
 
