@@ -24,10 +24,11 @@
     if (!quote) return { label: 'Sem estimativa em Coins', range: '', tone: 'neutral' };
     const { lower, median, upper, indicative } = quote;
     const delta = (actualPrice - median) / median;
-    const variation = percent.format(delta);
-    const amount = value => compact.format(value);
+    const variation = percent.format(delta).replace(/^-/, '−');
+    const amount = value => compact.format(value)
+      .replace(/\b(?:mi|bi)$/, unit => unit[0].toUpperCase() + unit.slice(1));
     return {
-      label: 'Ref. ' + amount(median) + ' · ' + variation,
+      label: '≈' + amount(median) + ' ~ ' + variation,
       range: 'Faixa ' + amount(lower) + '–' + amount(upper) + (indicative ? ' · Indicativa' : ''),
       tone: variation === '0%' || indicative ? 'neutral' : delta < 0 ? 'below' : 'above',
     };
@@ -76,7 +77,7 @@
       const colors = { below: '#a5f3da', above: '#ffb9b0', neutral: '#dce1ee' };
       Object.assign(badge.style, {
         display: 'grid', gap: '2px', padding: '4px 6px', margin: '3px 0', boxSizing: 'border-box',
-        color: colors[copy.tone], background: '#242435', borderInlineStart: '2px solid ' + colors[copy.tone],
+        color: '#fff', background: '#242435', borderInlineStart: '2px solid ' + colors[copy.tone],
         borderRadius: '3px', font: '600 10px/1.25 system-ui', fontVariantNumeric: 'tabular-nums',
       });
       const label = document.createElement('span');

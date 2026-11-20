@@ -8,8 +8,8 @@ test('a vitrine mostra referência, faixa e porcentagem com sinal nos dois senti
   const below = coinBadge({ quote, actualPrice: 400_000_000 });
   const above = coinBadge({ quote, actualPrice: 600_000_000 });
   assert.deepEqual([below.tone, above.tone], ['below', 'above']);
-  assert.match(below.label, /Ref\. 500\smi · -20%/i);
-  assert.match(above.label, /\+20%/);
+  assert.match(below.label, /^≈500\sMi ~ −20%$/);
+  assert.match(above.label, /^≈500\sMi ~ \+20%$/);
   assert.match(above.range, /450\smi–550\smi/i);
   assert.equal(coinBadge({ quote, actualPrice: 500_000_000 }).tone, 'neutral');
   assert.match(coinBadge({ quote: { ...quote, indicative: true }, actualPrice: 400_000_000 }).range, /Indicativa/);
