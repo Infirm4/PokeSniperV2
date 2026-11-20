@@ -47,7 +47,7 @@
       return;
     }
     if (msg?.source === 'PIS_MAIN' && ['MARKET_MONITOR', 'MARKET_UNAVAILABLE'].includes(msg.type)) {
-      chrome.runtime.sendMessage({ type: 'PIS_' + msg.type, state: msg.state, socket: msg.socket, wire: msg.wire, modules: msg.modules, ids: msg.ids, cutoff: msg.cutoff })
+      chrome.runtime.sendMessage({ type: 'PIS_' + msg.type, state: msg.state, socket: msg.socket, version: msg.version, wire: msg.wire, modules: msg.modules, ids: msg.ids, cutoff: msg.cutoff })
         .catch(error => console.warn('[PIS] Monitor de mercado:', error.message));
       return;
     }

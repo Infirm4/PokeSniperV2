@@ -150,6 +150,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     recordMarket('monitor', req.state);
     chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now(),
       socket: ['abertura', 'envio do jogo', 'consulta do jogo', 'tráfego', 'estado'].includes(req.socket) ? req.socket : null,
+      versão_na_aba: typeof req.version === 'string' && /^\d{1,4}(?:\.\d{1,4}){3}$/.test(req.version) ? req.version : null,
       módulos: { parser: req.modules?.parser === true, histórico: req.modules?.histórico === true },
       tráfego: {
         ...Object.fromEntries(['recebidos', 'estados', 'vitrine', 'histórico', 'outros', 'binários']

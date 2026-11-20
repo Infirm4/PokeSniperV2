@@ -1,4 +1,12 @@
-# PokeIdle Market Sniper (v1.5.4.33)
+# PokeIdle Market Sniper (v1.5.4.34)
+
+O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
+jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
+O relatório inclui **versão_na_aba** e a disponibilidade dos dois módulos.
+
+Para regenerar o arquivo do monitor depois de editar seus módulos ou
+`sniper.js`, use `node scripts/build-market-main.cjs`.
+
 
 O topo do painel mostra **Ligar avisos** ou **Desligar avisos**, com o estado
 atual ao lado. A mudança vale imediatamente. **Salvar filtros** grava apenas
