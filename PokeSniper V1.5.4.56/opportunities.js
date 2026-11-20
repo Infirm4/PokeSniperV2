@@ -147,11 +147,16 @@
   }
 
   function noticePresentation(row, now = Date.now()) {
-    const { hold, composition, warning } = presentation(row, now, { noticeIvsOnly: true });
+    const { composition, warning } = presentation(row, now, { noticeIvsOnly: true });
     const amount = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
     const discount = row.estimate.discount > 0 ? '−' + amount.format(row.estimate.discount * 100) + '%' : '0%';
-    const title = [discount, row.name || 'Pokémon #' + row.speciesId,
-      row.level > 0 ? 'Nvl ' + row.level : '', row.power > 0 ? 'P' + row.power : ''].filter(Boolean).join(' ');
+    const title = `${row.name || 'Pokémon #' + row.speciesId} · ${discount}`;
+    const grade = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+    const profile = [
+      row.level > 0 ? 'Nvl ' + row.level : '',
+      row.power > 0 ? 'P' + row.power : '',
+      Number.isFinite(row.grade) ? 'Nota ' + grade.format(row.grade) : '',
+    ].filter(Boolean).join(' · ');
     const coins = row.currency === 'gold';
     const median = row.estimate.median;
     const money = value => {
@@ -162,7 +167,7 @@
     };
     const quoted = Number.isFinite(median) && median > 0 ? 'Preço justo ' + money(median) : 'Preço justo indisponível';
     const prices = `Mercado ${money(row.price)} · ${quoted}`;
-    return { title, message: [prices, hold, composition, warning].filter(Boolean).join('\n') };
+    return { title, message: [profile, prices, composition, warning].filter(Boolean).join('\n') };
   }
 
   const core = { TTL, freshLaunch, settings, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, noticePresentation };
