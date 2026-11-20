@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.47)
+# PokeIdle Market Sniper (v1.5.4.48)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -132,7 +132,7 @@ na própria fila de mercado, conferindo a transação antes de completar. O
 relatório mostra `vendas_pendentes_ficha_completa` e a contagem por lote.
 O histórico já sincronizado no Sheets segue disponível na planilha.
 
-## Faixa estimada na vitrine de Coins
+## Faixa estimada na vitrine de Coins e Gemas
 
 O selo em Coins fica na mesma linha do preço do jogo. O texto branco mostra
 `≈500MI 20%` quando o anúncio custa 400 MI e `≈500MI 120%` quando custa
@@ -140,6 +140,12 @@ O selo em Coins fica na mesma linha do preço do jogo. O texto branco mostra
 cursor sobre o selo para ver a faixa e a marca indicativa quando aplicável.
 `Sem dados` indica que falta conferir o anúncio. `Sem estimativa` indica que
 o anúncio foi lido e ainda não tem um preço de referência. O selo usa o histórico local e não exige avisos habilitados.
+
+Em Gemas, o mesmo selo usa exclusivamente as estimativas do snapshot
+público do Briaoale (`precos.json`), já sincronizado pela extensão. O selo
+mostra `≈2,9K 20%` ou `≈2,9K 120%` e a faixa em Gemas ao passar o cursor.
+Sem uma referência desse snapshot, aparece `Sem estimativa`. Os alertas
+seguem suas próprias regras e preservam os fallbacks existentes.
 
 ## Monitoramento e precificação
 

@@ -110,20 +110,18 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
         priceTick <= 1e9 ? priceTick : 1,
     }));
     (async () => {
-      const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
-      const rows = await PISMarketStore.marketBadges(candidates, PISOpportunities.settings(opportunitySettings));
+      const rows = await PISMarketStore.marketBadges(candidates);
       return rows.map(({ offer, row }) => {
-        if (row.currency === 'gold') {
-          const estimate = row.estimate;
-          const quote = estimate?.status === 'estimated' && [estimate.lower, estimate.median, estimate.upper]
-            .every(value => Number.isSafeInteger(value) && value > 0) ? {
-              lower: estimate.lower, median: estimate.median, upper: estimate.upper,
-              indicative: estimate.alertSupported !== true || estimate.bepi === true,
-            } : null;
-          return { ...offer, actualPrice: row.price, quote };
-        }
-        const { discount, asking } = PISOpportunities.presentation(row);
-        return { ...offer, discount, asking, sprites: PISOpportunities.spriteCandidates(row) };
+        const estimate = row.estimate;
+        // A vitrine em Gemas cita só a referência da base pública, mesmo que o motor de alertas tenha fallback.
+        const publicSource = row.currency === 'orb' && estimate?.method === 'briaoale_public' &&
+          PISPublicGems.freshTimestamp(estimate.sourceAt);
+        const quote = (row.currency === 'gold' || publicSource) && estimate?.status === 'estimated' &&
+          [estimate.lower, estimate.median, estimate.upper].every(value => Number.isSafeInteger(value) && value > 0) ? {
+            lower: estimate.lower, median: estimate.median, upper: estimate.upper,
+            indicative: estimate.alertSupported !== true || estimate.bepi === true,
+          } : null;
+        return { ...offer, actualPrice: row.price, quote };
       });
     })().then(offers => reply({ offers }), () => reply({ offers: [] }));
     return true;

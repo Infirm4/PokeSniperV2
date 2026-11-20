@@ -1,7 +1,8 @@
-// Anota oportunidades validadas no banco da extensão sem alterar os filtros do jogo.
+// Mostra cotações validadas no banco da extensão sem alterar os filtros do jogo.
 (() => {
   const SCALES = { mil: 1000, k: 1000, mi: 1000000, m: 1000000, bi: 1000000000, b: 1000000000 };
   const millions = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 6 });
+  const gems = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
   const percent = new Intl.NumberFormat('pt-BR', { style: 'percent', maximumFractionDigits: 1 });
 
   function displayPrice(value, currency) {
@@ -20,7 +21,7 @@
 
   function readPrice(value, currency) { return displayPrice(value, currency)?.price ?? null; }
 
-  function coinBadge({ quote, actualPrice, unread }) {
+  function quoteBadge({ quote, actualPrice, unread, currency }) {
     if (unread) return { label: 'Sem dados', range: 'O Sniper ainda não conseguiu conferir este anúncio.', tone: 'neutral' };
     if (!quote) return { label: 'Sem estimativa', range: '', tone: 'neutral' };
     const { lower, median, upper, indicative } = quote;
@@ -29,18 +30,21 @@
     const variation = delta < 0 ? (formatted === '0%' ? '<0,1%' : formatted) :
       delta > 0 && formatted === '100%' ? '>100%' : formatted;
     const amount = value => {
+      if (currency === 'orb') return value < 1000 ? gems.format(value) : gems.format(value / 1000) + 'K';
       const valueInMillions = value / SCALES.mi;
       const decimals = valueInMillions >= 0.01 ? 2 : 6;
       return millions.format(Number(valueInMillions.toFixed(decimals))) + 'MI';
     };
     return {
       label: '≈' + amount(median) + ' ' + variation,
-      range: 'Faixa ' + amount(lower) + '–' + amount(upper) + (indicative ? ' · Indicativa' : ''),
+      range: 'Faixa ' + amount(lower) + '–' + amount(upper) +
+        (currency === 'orb' ? ' Gemas · Base pública do Briaoale' : '') +
+        (indicative ? ' · Indicativa' : ''),
       tone: delta === 0 ? 'neutral' : delta < 0 ? 'below' : 'above',
     };
   }
 
-  if (typeof module === 'object' && module.exports) { module.exports = { readPrice, displayPrice, coinBadge }; return; }
+  if (typeof module === 'object' && module.exports) { module.exports = { readPrice, displayPrice, quoteBadge }; return; }
   const key = offer => JSON.stringify([offer.currency, offer.id, offer.price]);
   let market;
   let current = new Map();
@@ -70,7 +74,7 @@
     const gems = /(?:\b(?:orb|gemas?|gems?|diamond)\b|💎)/iu.test(classifications);
     if (coins && gems) return null;
     const currency = coins ? 'gold' : gems ? 'orb' : seen ? hint.currency : null;
-    if (!currency || (currency === 'gold' && !pokemon && !(id && coins))) return null;
+    if (!currency || (!pokemon && !id)) return null;
     const shown = displayPrice(node.dataset.preco, currency) ?? displayPrice(node.textContent, currency);
     return { id, currency, pokemon: Boolean(pokemon), ...shown };
   }
@@ -82,53 +86,35 @@
     previous?.host.remove();
     badges.delete(card);
     if (!offer) return;
-    const footer = card.querySelector('.cm-rodape');
-    if (!footer) return;
-    if (offer.currency === 'gold') {
-      const price = card.querySelector(PRICE);
-      if (!price) return;
-      const host = document.createElement('span');
-      host.dataset.pisCoinQuote = '';
-      Object.assign(host.style, {
-        display: 'inline-flex', flex: '0 0 auto', alignSelf: 'center',
-        marginInlineStart: '4px', verticalAlign: 'middle',
-      });
-      const shadow = host.attachShadow({ mode: 'open' });
-      const copy = coinBadge(offer);
-      const badge = document.createElement('span');
-      const palettes = {
-        below: { fill: '#24533e', edge: '#4c8a6d' },
-        above: { fill: '#8f2535', edge: '#cf5866' },
-        neutral: { fill: '#3c3a53', edge: '#696481' },
-      };
-      const palette = palettes[copy.tone];
-      Object.assign(badge.style, {
-        display: 'inline-block', boxSizing: 'border-box', padding: '1px 4px', color: '#fff',
-        background: palette.fill, borderTop: '1px solid ' + palette.edge, borderRadius: '3px',
-        font: '700 9px/1.2 system-ui', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
-      });
-      badge.textContent = copy.label;
-      host.title = copy.range || 'Sem estimativa em Coins';
-      host.setAttribute('aria-label', copy.range ? copy.label + '. ' + copy.range : host.title);
-      shadow.append(badge);
-      // O Shadow DOM mantém o texto do selo fora da leitura do preço do jogo.
-      price.append(host);
-      badges.set(card, { host, signature });
-      return;
-    }
-    const host = document.createElement('div');
-    host.dataset.pisOpportunity = '';
+    const price = card.querySelector(PRICE);
+    if (!price) return;
+    const host = document.createElement('span');
+    host.dataset[offer.currency === 'gold' ? 'pisCoinQuote' : 'pisGemQuote'] = '';
+    Object.assign(host.style, {
+      display: 'inline-flex', flex: '0 0 auto', alignSelf: 'center',
+      marginInlineStart: '4px', verticalAlign: 'middle',
+    });
     const shadow = host.attachShadow({ mode: 'open' });
-    const line = document.createElement('div');
-    Object.assign(line.style, { display: 'flex', alignItems: 'center', gap: '4px', padding: '3px',
-      color: '#d2f4e4', background: '#273d3a', borderRadius: '4px', font: '600 10px system-ui' });
-    const sprite = document.createElement('img');
-    sprite.alt = '';
-    Object.assign(sprite.style, { width: '22px', height: '22px', objectFit: 'contain', imageRendering: 'pixelated' });
-    if (PISOpportunities.mountSprite(sprite, (offer.sprites ?? []).map(PISMarketCore.safeSprite).filter(Boolean))) line.append(sprite);
-    line.append(document.createTextNode(offer.discount + ' · ' + offer.asking));
-    shadow.append(line);
-    footer.append(host);
+    const copy = quoteBadge(offer);
+    const badge = document.createElement('span');
+    const palettes = {
+      below: { fill: '#24533e', edge: '#4c8a6d' },
+      above: { fill: '#8f2535', edge: '#cf5866' },
+      neutral: { fill: '#3c3a53', edge: '#696481' },
+    };
+    const palette = palettes[copy.tone];
+    Object.assign(badge.style, {
+      display: 'inline-block', boxSizing: 'border-box', padding: '1px 4px', color: '#fff',
+      background: palette.fill, borderTop: '1px solid ' + palette.edge, borderRadius: '3px',
+      font: '700 9px/1.2 system-ui', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+    });
+    badge.textContent = copy.label;
+    host.title = copy.range || (offer.currency === 'orb'
+      ? 'Sem estimativa na base pública de Gemas' : 'Sem estimativa em Coins');
+    host.setAttribute('aria-label', copy.range ? copy.label + '. ' + copy.range : host.title);
+    shadow.append(badge);
+    // O Shadow DOM mantém o texto do selo fora da leitura do preço do jogo.
+    price.append(host);
     badges.set(card, { host, signature });
   }
 
@@ -139,7 +125,7 @@
       const offer = identify(card);
       const identity = offer?.id && offer.price ? key(offer) : null;
       if (identity && offers.size < 100) offers.set(identity, offer);
-      const fallback = offer?.currency === 'gold' && offer.pokemon ? { currency: 'gold', unread: true } : null;
+      const fallback = offer?.pokemon ? { currency: offer.currency, unread: true } : null;
       render(card, (identity && current.get(identity)) || fallback);
     }
     return offers;

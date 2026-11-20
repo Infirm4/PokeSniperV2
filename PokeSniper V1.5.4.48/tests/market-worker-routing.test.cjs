@@ -55,3 +55,32 @@ test('atribui falhas e vendas repetidas à página certa e nunca dispara avisos 
   assert.equal((await dispatch({ type: 'PIS_MARKET_CORE_BATCH', kind: 'sale', rows: ['known'] })).ok, true);
   assert.deepEqual(trace.at(-1), ['legacy_batch', undefined, 'gravado', 1]);
 });
+
+test('a vitrine de Gemas só exibe estimativas frescas da fonte pública', async () => {
+  let listener;
+  const estimate = { status: 'estimated', lower: 2500, median: 2900, upper: 3500 };
+  const cases = {
+    public: { ...estimate, method: 'briaoale_public', sourceAt: Date.now() - 1000 },
+    expired: { ...estimate, method: 'briaoale_public', sourceAt: Date.now() - 73 * 3600000 },
+    fallback: { ...estimate, method: 'briaoale_pve' },
+    coins: { ...estimate, method: 'coins_comparables' },
+  };
+  const context = {
+    chrome: { runtime: { onMessage: { addListener(fn) { listener ??= fn; } } } },
+    importScripts() {}, console, PISPublicGems: require('../public-gems'),
+    PISMarketStore: {
+      async initialize() {},
+      async marketBadges(offers) {
+        return offers.map(offer => ({ offer, row: { ...offer, estimate: cases[offer.id] } }));
+      },
+    },
+  };
+  runInNewContext(source, context);
+  const offers = Object.keys(cases).map(id => ({ id, currency: id === 'coins' ? 'gold' : 'orb', price: 6000 }));
+  const reply = await new Promise(resolve =>
+    listener({ type: 'PIS_MARKET_BADGES', offers }, { url: 'https://pokeidle.io/', tab: { id: 1 } }, resolve));
+  assert.equal(reply.offers[0].quote.median, 2900);
+  assert.equal(reply.offers[1].quote, null);
+  assert.equal(reply.offers[2].quote, null);
+  assert.equal(reply.offers[3].quote.median, 2900);
+});

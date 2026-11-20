@@ -4,10 +4,14 @@
   const FIELDS = ['at', 'price', 'base', 'pve', 'family', 'speciesId', 'shiny', 'level', 'nota', 'name'];
   let cached;
 
+  function freshTimestamp(date, now = Date.now()) {
+    return Number.isFinite(date) && date <= now && now - date <= MAX_AGE;
+  }
+
   function valid(snapshot, now = Date.now()) {
     const date = Date.parse(snapshot?.geradoEm);
     const table = snapshot?.vendas;
-    return Number.isFinite(date) && date <= now && now - date <= MAX_AGE &&
+    return freshTimestamp(date, now) &&
       table?.formato === 2 && Number.isSafeInteger(table.n) && table.n > 0 && table.n <= 250000 &&
       Array.isArray(table.nomes) && table.campos && FIELDS.every(key => Array.isArray(table.campos[key])) &&
       Object.values(table.campos).every(col => Array.isArray(col) && col.length === table.n) &&
@@ -118,7 +122,7 @@
     return Number.isFinite(converted) && converted > 0 && converted <= Number.MAX_SAFE_INTEGER ? converted : null;
   }
 
-  const api = { prepare, valid, validateContent, convert };
+  const api = { prepare, valid, validateContent, convert, freshTimestamp };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else globalThis.PISPublicGems = api;
 })();
