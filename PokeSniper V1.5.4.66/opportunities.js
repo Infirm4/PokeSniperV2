@@ -110,16 +110,16 @@
 
   const IV_LABELS = { hp: 'HP', attack: 'Ataque', defense: 'Defesa', specialAttack: 'Atq. Esp.',
     specialDefense: 'Def. Esp.', speed: 'Velocidade' };
-  const ATTACK_LABELS = { attack: 'Ataque', specialAttack: 'Atq. Esp.', mixed: 'Ataque misto' };
-  const ivNumber = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
 
   function noticeIvs(row) {
     const rating = value => value < 15 ? 'crítico' : value < 25 ? 'média' : 'Pica';
     const speed = row.ivs?.speed;
     const entries = [validIv(speed) ? `Velocidade ${speed} (${rating(speed)})` : 'Velocidade indisponível'];
-    const attack = attackProfile(row);
-    if (Number.isFinite(attack?.value)) {
-      entries.push(`${ATTACK_LABELS[attack.style]} ${ivNumber.format(attack.value)}`);
+    const style = attackProfile(row)?.style;
+    const attacks = style === 'mixed' ? ['attack', 'specialAttack'] : style ? [style] : [];
+    for (const stat of attacks) {
+      const value = row.ivs?.[stat];
+      if (validIv(value)) entries.push(`${IV_LABELS[stat]} ${value}`);
     }
     return entries;
   }

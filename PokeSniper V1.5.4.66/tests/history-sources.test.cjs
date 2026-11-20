@@ -119,7 +119,10 @@ test('o aviso classifica a velocidade e exibe o ataque da mesma forma usada no m
   assert.match(noticePresentation(quote).message, /IVs: Velocidade 15 \(média\), Atq\. Esp\. 17$/);
   const dragonite = { ...quote, name: 'Dragonite', ivs: { ...quote.ivs, speed: 25 } };
   assert.match(noticePresentation(dragonite).message, /IVs: Velocidade 25 \(Pica\), Ataque 26$/);
-  assert.match(noticePresentation({ ...quote, name: 'Meganium' }).message, /Ataque misto 20$/);
+  const mixed = { ...quote, name: 'Meganium' };
+  assert.match(noticePresentation(mixed).message, /IVs: Velocidade 15 \(média\), Ataque 26, Atq\. Esp\. 17$/);
+  assert.match(noticePresentation({ ...mixed, ivs: { ...mixed.ivs, attack: 0, specialAttack: null } }).message,
+    /IVs: Velocidade 15 \(média\), Ataque 0$/);
   const haunter = { ...quote, name: 'Haunter', ivs: { ...quote.ivs, speed: 14 } };
   assert.match(noticePresentation(haunter).message, /IVs: Velocidade 14 \(crítico\), Atq\. Esp\. 17$/);
   assert.match(noticePresentation({ ...quote, ivs: { ...quote.ivs, speed: null } }).message, /Velocidade indisponível/);

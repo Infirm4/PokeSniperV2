@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.65)
+# PokeIdle Market Sniper (v1.5.4.66)
 
 O Chrome carrega o monitor, parser e coletor em um único arquivo na aba do
 jogo. Os módulos ficam dentro do monitor, sem depender de globais da página.
@@ -361,8 +361,8 @@ do BriaoAle, na mesma ficha e data da base. Nenhum aviso é gerado pelo teste.
 
 Nos avisos de Coins e Gemas, a Velocidade é sempre mostrada: crítico abaixo
 de 15, média de 15 a 24 e Pica a partir de 25. O aviso também mostra o IV
-do ataque dominante, ou o valor de ataque misto calculado pelo motor quando
-a espécie é equilibrada. A Velocidade não recebe um ajuste direto no preço.
+do ataque dominante. Em espécies equilibradas, mostra Ataque e
+Ataque Especial separadamente. A Velocidade não recebe um ajuste direto no preço.
 
 ## Oportunidades e diagnóstico
 
