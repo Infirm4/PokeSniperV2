@@ -63,5 +63,5 @@ test('o aviso de Gemas resume a ficha e identifica a moeda do preço justo', () 
     estimate: { discount: 1 - 30 / 71, median: 71 },
   }, now);
   assert.equal(result.title, 'Meganium · −57,7%');
-  assert.equal(result.message, 'Nvl 306 · P1 · Nota 3,620\nMercado 💎 30 · Preço justo 💎 71\nIV baixo: Velocidade 14 (crítico), Ataque 15 (baixo), Atq. Esp. 25 (baixo)');
+  assert.equal(result.message, 'Nvl 306 · P1 · Nota 3,620\nMercado 💎 30 · Preço justo 💎 71\nIVs: Velocidade 14 (crítico), Ataque 15 (baixo), Atq. Esp. 25 (Pica)');
 });

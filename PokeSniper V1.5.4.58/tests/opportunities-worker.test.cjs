@@ -49,7 +49,7 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
 test('tenta a sprite verificada nos dois canais e recupera o ícone fixo se o Chrome recusar a imagem', async () => {
   const sprite = 'https://pokeidle.io/assets/gengar.png';
   const row = { key: 'sale', name: 'Gengar', currency: 'gold', price: 78_500_000, sprite, level: 100, power: 4, grade: 4.123,
-    ivs: { speed: 0, attack: 4, specialAttack: 26, hp: 5, defense: 1, specialDefense: 2 },
+    ivs: { speed: 0, attack: 24, specialAttack: 32, hp: 5, defense: 1, specialDefense: 2 },
     estimate: { discount: 0.215, median: 100_000_000, lower: 90_000_000, upper: 120_000_000 }, delivery: 'pending', nextAttemptAt: 0 };
   const event = { addListener() {} };
   const notices = [];
@@ -77,7 +77,7 @@ test('tenta a sprite verificada nos dois canais e recupera o ícone fixo se o Ch
   assert.equal(notices[1].iconUrl, 'opportunity-placeholder.png');
   assert.equal(game[3], sprite);
   assert.equal(notices[0].title, 'Gengar · −21,5%');
-  assert.equal(notices[0].message, 'Nvl 100 · P4 · Nota 4,123\nMercado 💰 78,5 MI · Preço justo 💰 100 MI\nIV baixo: Velocidade 0 (crítico), Ataque 4 (crítico)');
+  assert.equal(notices[0].message, 'Nvl 100 · P4 · Nota 4,123\nMercado 💰 78,5 MI · Preço justo 💰 100 MI\nIVs: Velocidade 0 (crítico), Ataque 24 (baixo), Atq. Esp. 32 (Pica)');
   assert.equal(game[0], notices[0].title);
   assert.equal(game[1], notices[0].message);
 });

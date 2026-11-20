@@ -127,11 +127,15 @@
     const range = Number.isFinite(lower) && Number.isFinite(upper)
       ? `Faixa justa estimada · ${money(lower)}–${money(upper)} ${unit}` : '';
     const ivs = noticeIvsOnly
-      ? NOTICE_IVS.filter(key => Number.isInteger(row.ivs?.[key]) && row.ivs[key] >= 0 && row.ivs[key] <= 25)
-        .map(key => `${IV_LABELS[key]} ${row.ivs[key]} (${row.ivs[key] < 15 ? 'crítico' : 'baixo'})`)
+      ? NOTICE_IVS.filter(key => Number.isInteger(row.ivs?.[key]) && row.ivs[key] >= 0)
+        .map(key => {
+          const value = row.ivs[key];
+          const rating = value < 15 ? 'crítico' : value < 25 ? 'baixo' : 'Pica';
+          return `${IV_LABELS[key]} ${value} (${rating})`;
+        })
       : coins ? coinIvs(row, IV_LABELS) : Object.keys(IV_LABELS)
         .filter(key => isLowIv(row.ivs?.[key])).map(key => IV_LABELS[key]);
-    const warning = [ivs.length ? 'IV baixo: ' + ivs.join(', ') : '',
+    const warning = [ivs.length ? (noticeIvsOnly ? 'IVs: ' : 'IV baixo: ') + ivs.join(', ') : '',
       coins && row.estimate.qualityBelow ? 'Qualidade abaixo dos comparáveis' : ''].filter(Boolean).join(' · ');
     const { confidence, bepi, powerCounts } = row.estimate;
     const label = coins ? bepi ? 'BEPI' : ({ alta: 'Alta', média: 'Média' })[confidence] : '';
