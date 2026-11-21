@@ -10,6 +10,7 @@
   }
   const DEFAULTS = { currency: 'gold', discount: 20, minGrade: 0, notify: false };
   const MIN_ACTIVE_GRADE = 3.5;
+  const GEM_RESALE_NET_SHARE = 0.85;
 
   function minimumGrade(value) {
     const parts = /^([0-9]+)(?:[.,]([0-9]*))?$/.exec(String(value ?? '').trim());
@@ -212,8 +213,6 @@
     const { composition, warning } = presentation(row, now, { noticeIvsOnly: true });
     const amount = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
     const discount = row.estimate.discount > 0 ? '−' + amount.format(row.estimate.discount * 100) + '%' : '0%';
-    const title = [fallbackWarning(row), `${row.name || 'Pokémon #' + row.speciesId} · ${discount}`]
-      .filter(Boolean).join(' · ');
     const coins = row.currency === 'gold';
     const median = row.estimate.median;
     const icon = coins ? '💰' : '💎';
@@ -223,6 +222,10 @@
         .format(coins ? value / 1e6 : value);
       return price + (coins ? ' MI' : '');
     };
+    const resale = row.currency === 'orb' && Number.isSafeInteger(row.price) && row.price > 0
+      ? `Rev ${icon} ${money(Math.ceil(row.price / GEM_RESALE_NET_SHARE))}` : '';
+    const title = [fallbackWarning(row), row.name || 'Pokémon #' + row.speciesId, discount, resale]
+      .filter(Boolean).join(' · ');
     const hasFair = Number.isFinite(median) && median > 0;
     const quoted = hasFair ? 'Preço justo ' + icon + ' ' + money(median) : 'Preço justo indisponível';
     const prices = `Mercado ${icon} ${money(row.price)} · ${quoted}`;

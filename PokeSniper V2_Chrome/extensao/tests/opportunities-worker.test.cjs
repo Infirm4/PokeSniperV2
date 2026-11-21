@@ -18,13 +18,16 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
     key: String(index), queuedAt: index + 1, currency: 'gold', speciesId: '25', price: 70,
     estimate: { discount: 0.3 }, delivery: 'pending', nextAttemptAt: 0,
   }));
-  const attempts = [], results = [], gameAttempts = [];
+  Object.assign(rows[0], { name: 'Scizor', currency: 'orb', speciesId: '212', price: 6,
+    estimate: { discount: 1 - 6 / 14, median: 14 } });
+  const attempts = [], results = [], gameAttempts = [], desktopTitles = [];
   const event = { addListener() {} };
   const chrome = {
     storage: { local: { get: async () => ({ opportunitySettings: { notify } }) }, onChanged: event },
     alarms: { get: async () => true, onAlarm: event },
-    notifications: { onClicked: event, async create(id) {
+    notifications: { onClicked: event, async create(id, { title }) {
       attempts.push(id);
+      desktopTitles.push(title);
       if (id === 'pis:1') throw new Error('falha simulada');
     } },
     runtime: { getURL: file => file },
@@ -37,8 +40,8 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
       results.push([key, delivered, channels.desktop, channels.game]);
     },
   };
-  const PISGameTab = { show: async (_title, message) => {
-    gameAttempts.push(message);
+  const PISGameTab = { show: async title => {
+    gameAttempts.push(title);
     return gameAttempts.length === 2;
   } };
   const alerts = runInNewContext(worker + '\nPISOpportunityAlerts;', {
@@ -50,6 +53,8 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
   await Promise.all([alerts.wake(), alerts.wake()]);
   assert.deepEqual(attempts, ['pis:0', 'pis:1', 'pis:2', 'pis:3', 'pis:4']);
   assert.equal(gameAttempts.length, 5);
+  assert.equal(desktopTitles[0], 'Scizor · −57,1% · Rev 💎 8');
+  assert.equal(gameAttempts[0], desktopTitles[0]);
   assert.deepEqual(results, [['0', true, true, false], ['1', true, false, true],
     ['2', true, true, false], ['3', true, true, false], ['4', true, true, false]]);
 });
