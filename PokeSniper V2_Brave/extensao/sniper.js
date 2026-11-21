@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.88'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.89'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
@@ -603,13 +603,22 @@
     window.postMessage({ source: 'PIS_MAIN', type: 'INVENTORY_PROFILE', requestId, profile }, location.origin);
   }
 
-  function publishMarketPage(frame, request, live) {
+  const visibleRequests = new WeakMap();
+
+  function publishMarketPage(ws, frame, request, live) {
     const core = globalThis.PISMarketCore;
     if (!core || frame.aba !== 'vitrine') return;
-    const batch = request ? core.captureAutomatic(frame, request) : core.capture(frame);
+    let batch;
+    if (request) batch = core.captureAutomatic(frame, request);
+    else {
+      const traces = (visibleRequests.get(ws) ?? []).filter(entry => Date.now() - entry.at < 15000);
+      const visible = core.captureVisible(frame, traces.map(entry => entry.request));
+      visibleRequests.set(ws, traces.filter(entry => entry.request !== visible.request));
+      batch = visible.batch;
+    }
     if (batch || request) window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_CORE_BATCH',
       kind: 'listing', rows: batch?.rows ?? [], automatic: !!request,
-      live: live === true && !vitrineAberta(),
+      live: live === true || (!request && watchOpportunities && vitrineAberta()),
       page: request?.pagina, currency: request?.moeda, preparation: request?.preparation === true, totalRows: frame.linhas?.length }, location.origin);
   }
 
@@ -732,7 +741,7 @@
       }
     }
     if (ws === st.sock && j.t === 'market') {
-      try { publishMarketPage(j, censusRequest, live); }
+      try { publishMarketPage(ws, j, censusRequest, live); }
       catch (error) { dbg('Captura de mercado:', error.message); }
       try { if (!censusRequest) aprenderRespostaPokemon(j); }
       catch (error) { dbg('Aprendizado da vitrine:', error.message); }
@@ -784,6 +793,15 @@
       bindGameSocket(this, 'consulta do jogo');
     if (this === st.sock && typeof d === 'string' && /"t"\s*:\s*"market\./.test(d.slice(0, 120)))
       st.marketUltimoEnvio = Date.now();
+    if (this === st.sock && typeof d === 'string' && /"t"\s*:\s*"market\.listar"/.test(d)) {
+      try {
+        const request = JSON.parse(d);
+        if (request.t === 'market.listar' && ['gold', 'orb'].includes(request.moeda)) {
+          const traces = (visibleRequests.get(this) ?? []).filter(entry => Date.now() - entry.at < 15000);
+          visibleRequests.set(this, [...traces.slice(-15), { request, at: Date.now() }]);
+        }
+      } catch { /* A captura não interfere no envio do jogo. */ }
+    }
     aprenderConsultaPokemon(d);
     return osend.apply(this, arguments);
   };
@@ -3603,6 +3621,7 @@
   // Receber qualquer resposta de vitrine pode redesenhar a tela do jogo. Enquanto
   // ela está aberta, somente a navegação do jogador alimenta a captura de vitrines.
   const BADGE_SCAN_INTERVAL_MS = 12000;
+  const BADGE_SCAN_WHILE_WATCHING_MS = 60000;
   const badgeSweep = {
     gold: { page: 0, visits: 0, retryAt: 0 },
     orb: { page: 0, visits: 0, retryAt: 0 },
@@ -3633,7 +3652,8 @@
   }
 
   async function prepareBadgesIfDue(now) {
-    if (recentBusy || now - lastBadgeScan < BADGE_SCAN_INTERVAL_MS || vitrineAberta()) return false;
+    const interval = watchOpportunities ? BADGE_SCAN_WHILE_WATCHING_MS : BADGE_SCAN_INTERVAL_MS;
+    if (recentBusy || now - lastBadgeScan < interval || vitrineAberta()) return false;
     recentBusy = true;
     try { await prepareBadgePage(now); }
     finally { recentBusy = false; }
@@ -3656,11 +3676,12 @@
     if (now < st.marketPausaAte) { reportAutomatic('recuo'); return; }
     if (now - st.marketUltimoEnvio < intervaloMinMercadoAtualMs()) return;
     // Mantém a primeira página de anúncios novos como prioridade da fila.
-    if ((!watchOpportunities || recentTurn > 0) && await prepareBadgesIfDue(now)) return;
-    if (!watchOpportunities) return;
-    const turn = recentTurn++;
+    if (!watchOpportunities) { await prepareBadgesIfDue(now); return; }
+    const turn = recentTurn;
     const currency = watchCurrency === 'all' ? recentSchedule[turn % recentSchedule.length] : watchCurrency;
     const sweep = sweepByCurrency[currency];
+    if (recentTurn > 0 && !Object.values(sweepByCurrency).some(state => state.next) && await prepareBadgesIfDue(now)) return;
+    recentTurn++;
     if (now < sweep.retryAt) return;
     recentBusy = true;
     const order = now < sweep.fallbackUntil ? 'baratos' : 'recentes';

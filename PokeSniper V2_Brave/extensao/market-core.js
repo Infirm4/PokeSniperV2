@@ -264,6 +264,19 @@
     return hasCurrency || (request.moeda === 'gold' && request.ordem === 'baratos');
   }
 
+  function captureVisible(frame, requests) {
+    const candidates = requests.filter(request =>
+      money(request.moeda) && (frame.seq == null
+        ? frame.moeda == null || frame.moeda === request.moeda : String(frame.seq) === String(request.seq)) &&
+      (frame.pagina == null || Number(frame.pagina) === Number(request.pagina ?? 0)) &&
+      (frame.ordem == null || request.ordem == null || frame.ordem === request.ordem));
+    const request = candidates.length === 1 ? candidates[0] : null;
+    return {
+      request,
+      batch: capture(request && frame.moeda == null ? { ...frame, moeda: request.moeda } : frame),
+    };
+  }
+
   function captureAutomatic(frame, request) {
     if (!matchesMarketPage(frame, request)) return null;
     // Nunca atribui a moeda solicitada quando o servidor identificou outra moeda na linha.
@@ -655,7 +668,7 @@
       (!row.availableAt || row.availableAt <= now) && (!row.expiresAt || row.expiresAt > now));
   }
 
-  const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
+  const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, captureVisible, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
     WINDOW_MS, MAX_BATCH, estimateCoins, coinProfile, attackProfile, validIv, hasSaleSprite, incompleteSaleFields, matchesDisplayPrice, inventoryProfiles, findInventoryProfile };
   if (typeof window === 'undefined' && typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;

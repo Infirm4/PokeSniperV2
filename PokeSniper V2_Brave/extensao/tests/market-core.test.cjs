@@ -160,3 +160,14 @@ test('identifica Pokémon da mochila por ID e exige nome e nível únicos no fal
   assert.equal(findInventoryProfile(byId, { ids: ['99'], name: 'Gengar', level: 100 }), null);
   assert.equal(Object.hasOwn(results[0], 'nick'), false);
 });
+
+test('a vitrine filtrada recupera a moeda apenas de uma consulta compatível', () => {
+  const { captureVisible } = require('../market-core.js');
+  const response = { ...frame('vitrine', [{ ...listing, moeda: undefined }]), pagina: 0, seq: 4 };
+  const gems = { moeda: 'orb', pagina: 0, seq: 4, ordem: 'baratos', notaMin: 3.9 };
+  const coins = { moeda: 'gold', pagina: 0, seq: 3 };
+  assert.equal(captureVisible(response, [coins, gems]).batch.rows[0].currency, 'orb');
+  assert.equal(captureVisible({ ...response, seq: undefined }, [coins, gems]).batch, null);
+  assert.equal(captureVisible({ ...response, pagina: 1 }, [gems]).batch, null);
+  assert.equal(captureVisible({ ...response, moeda: 'gold' }, [gems]).batch.rows[0].currency, 'gold');
+});

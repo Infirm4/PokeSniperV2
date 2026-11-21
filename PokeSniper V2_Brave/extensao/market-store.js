@@ -318,8 +318,7 @@ const PISMarketStore = (() => {
       const required = (await Promise.all(gems.map(row => result(store.get(listingKey(row)))
         .then(saved => reusableQuote(saved, row, now) ? null : row)))).filter(Boolean);
       if (required.length) {
-        const snapshot = await result(db.transaction('publicPricing').objectStore('publicPricing').get('gems'));
-        external = evaluatePublic(snapshot, required, now);
+        external = await publicEstimatesFor(required, now);
       }
     }
     const tables = ['sales', 'listings', 'opportunities', 'exposures'];
@@ -415,9 +414,11 @@ const PISMarketStore = (() => {
         }
         // Recalcula apenas os grupos atingidos. Anúncios conservam a data observada.
         const index = listings.index('pricingGroup');
+        const pending = [];
         for (const group of affected.values()) {
-          await reprice(tx, await result(index.getAll(group)), now, true);
+          pending.push(result(index.getAll(group)));
         }
+        await reprice(tx, (await Promise.all(pending)).flat(), now, true);
       } else {
         const observed = [];
         for (const listing of new Map(rows.map(row => [JSON.stringify(listingKey(row)), row])).values()) {
@@ -565,9 +566,15 @@ const PISMarketStore = (() => {
       const row = await result(listings.get(listingKey(offer)));
       if (!row || row.pricingRevision !== revisionFor(row) || !PISMarketCore.matchesDisplayPrice(row.price, offer) ||
           row.observedAt < now - 60 * 60000 || row.closed || row.expiresAt && row.expiresAt <= now) return null;
-      return PISMarketCore.isOutland(row) ? null : { offer, row };
+      return { offer, row, excluded: PISMarketCore.isOutland(row) };
     }));
-    return rows.filter(Boolean);
+    const confirmed = rows.filter(Boolean);
+    const gems = confirmed.filter(({ row, excluded }) => row.currency === 'orb' && !excluded);
+    if (gems.length) {
+      const estimates = await publicEstimatesFor(gems.map(({ row }) => row), now);
+      for (const entry of gems) entry.row = { ...entry.row, estimate: estimates.get(entry.row.id) };
+    }
+    return confirmed;
   }
 
   // Remove da vitrine local, sem transformar a ausência em venda para precificação ou liquidez.
@@ -739,7 +746,7 @@ const PISMarketStore = (() => {
     const stamp = Date.parse(snapshot?.geradoEm);
     if (!PISPublicGems.freshTimestamp(stamp, now)) return null;
     if (!publicGemSource || publicGemSource.stamp < stamp) {
-      publicGemSource = { stamp, estimate: PISPublicGems.prepare(snapshot, now) };
+      publicGemSource = { stamp, estimate: PISPublicGems.prepare(snapshot, now), quotes: new Map() };
     }
     return publicGemSource.stamp === stamp ? publicGemSource.estimate : PISPublicGems.prepare(snapshot, now);
   }
@@ -791,6 +798,32 @@ const PISMarketStore = (() => {
       PISPricingModel.makeMarket(market, now, PISMarketCore.isOutland))(row) };
   }
 
+  async function publicEstimatesFor(rows, now) {
+    try {
+      const estimate = await warmInventoryPricing(now);
+      const source = publicGemSource;
+      const result = new Map();
+      if (!estimate || source?.estimate !== estimate) return result;
+      for (const row of rows) {
+        const previous = source.quotes.get(row.id);
+        const signature = JSON.stringify([
+          ...PRICING_FIELDS.map(field => row[field]), ...IV_FIELDS.map(field => row.ivs?.[field]),
+        ]);
+        const quote = previous?.signature === signature ? previous.quote :
+          row.estimate?.method === 'briaoale_public' && row.estimate.sourceAt === source.stamp
+            ? row.estimate : estimate(row);
+        source.quotes.delete(row.id);
+        source.quotes.set(row.id, { signature, quote });
+        result.set(row.id, quote);
+      }
+      while (source.quotes.size > 1200) source.quotes.delete(source.quotes.keys().next().value);
+      return result;
+    } catch (error) {
+      console.warn('[PIS] Preço público indisponível:', error.message);
+      return new Map();
+    }
+  }
+
   function evaluatePublic(snapshot, rows, now) {
     const estimates = new Map();
     if (!snapshot) return estimates;
@@ -828,10 +861,12 @@ const PISMarketStore = (() => {
     // O ajuste estatístico não ocupa nenhuma transação de escrita.
     const range = IDBKeyRange.lowerBound(now - PISOpportunities.TTL);
     const listings = await result(db.transaction('listings').objectStore('listings').index('observedAt').getAll(range));
-    const pending = listings.filter(row => row.currency === 'orb' && !row.closed && (row.pricingRevision !== ESTIMATE_REVISION || row.estimate?.sourceAt !== Date.parse(active.geradoEm)));
+    const pending = listings.filter(row => row.currency === 'orb' && !row.closed &&
+      (row.pricingRevision !== ESTIMATE_REVISION || row.estimate?.sourceAt !== Date.parse(active.geradoEm)))
+      .sort((a, b) => (b.alertObservedAt ?? 0) - (a.alertObservedAt ?? 0));
     for (let offset = 0; offset < pending.length; offset += 10) {
       const batch = pending.slice(offset, offset + 10);
-      const estimates = evaluatePublic(active, batch, now);
+      const estimates = await publicEstimatesFor(batch, now);
       const update = db.transaction(['listings', 'opportunities'], 'readwrite');
       const saved = new Promise((resolve, reject) => {
         update.oncomplete = resolve;

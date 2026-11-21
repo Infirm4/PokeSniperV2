@@ -23,6 +23,10 @@ test('a vitrine mostra referência, faixa e desconto e preço relativo ao valor 
   assert.match(indicative.range, /Indicativa/);
   assert.equal(indicative.tone, 'above');
   assert.equal(quoteBadge({ unread: true }).label, 'Sem dados');
+  const outlaw = quoteBadge({ excluded: true });
+  assert.equal(outlaw.label, '✕');
+  assert.equal(outlaw.tone, 'above');
+  assert.match(outlaw.range, /Outland/);
   assert.equal(quoteBadge({ quote: null }).label, 'Sem estimativa');
 });
 

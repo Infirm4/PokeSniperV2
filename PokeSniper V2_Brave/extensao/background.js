@@ -125,7 +125,8 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     }));
     (async () => {
       const rows = await PISMarketStore.marketBadges(candidates);
-      return rows.map(({ offer, row }) => {
+      return rows.map(({ offer, row, excluded }) => {
+        if (excluded) return { ...offer, actualPrice: row.price, excluded: true };
         const estimate = row.estimate;
         // A vitrine em Gemas cita só a referência da base pública, mesmo que o motor de alertas tenha fallback.
         const publicSource = row.currency === 'orb' && estimate?.method === 'briaoale_public' &&
@@ -242,12 +243,13 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   if (isSale) salePending++;
   else listingPending++;
-  PISMarketStore.ingest(kind, rows, undefined, { live: req.automatic === true && req.live === true })
+  PISMarketStore.ingest(kind, rows, undefined, { live: req.live === true })
     .then(
       stats => {
+        PISOpportunityAlerts.wake();
         recordMarket(route, stats.conflicts ? 'conflito_de_transação' : 'gravado', page);
         return Promise.all([track({ status: 'gravado', accepted: rows.length, ...stats }), pageReceipt('gravado', rows.length)])
-          .then(() => { reply({ ok: true }); PISOpportunityAlerts.wake(); });
+          .then(() => reply({ ok: true }));
       },
       error => {
         recordMarket(route, 'falha_na_gravação', page);

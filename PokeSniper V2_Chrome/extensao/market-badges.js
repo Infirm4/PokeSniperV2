@@ -21,7 +21,8 @@
 
   function readPrice(value, currency) { return displayPrice(value, currency)?.price ?? null; }
 
-  function quoteBadge({ quote, actualPrice, unread, currency }) {
+  function quoteBadge({ quote, actualPrice, unread, currency, excluded }) {
+    if (excluded) return { label: '✕', range: 'Pokémon de Outland excluído da precificação.', tone: 'above' };
     if (unread) return { label: 'Sem dados', range: 'O Sniper ainda não conseguiu conferir este anúncio.', tone: 'neutral' };
     if (!quote) return { label: 'Sem estimativa', range: '', tone: 'neutral' };
     const { lower, median, upper, indicative } = quote;
@@ -61,8 +62,8 @@
   const PRICE = '.cm-rodape .cm-preco';
 
   function identify(card) {
-    const rawId = card.querySelector('[data-fav]')?.dataset.fav ?? card.dataset.anuncioId ?? card.dataset.listingId;
-    const id = /^[A-Za-z0-9_-]{1,64}$/.test(rawId ?? '') ? rawId : null;
+    const id = [card.dataset.anuncioId, card.dataset.listingId, card.querySelector('[data-fav]')?.dataset.fav]
+      .find(value => /^[A-Za-z0-9_-]{1,64}$/.test(value ?? '')) ?? null;
     const node = card.querySelector(PRICE);
     if (!node) return null;
     const hint = visibleCurrencies.get(id);
@@ -139,9 +140,13 @@
       const offer = identify(card);
       const identity = offer?.id && offer.price ? key(offer) : null;
       if (identity && offers.size < 100) offers.set(identity, offer);
+      const observation = visibleCurrencies.get(offer?.id);
+      const excluded = identity && observation?.excluded && !observation.closed &&
+        observation.currency === offer.currency && now - observation.at < REUSE_MS &&
+        PISMarketCore.matchesDisplayPrice(observation.price, offer);
       const fallback = offer?.pokemon ? { currency: offer.currency, unread: true } : null;
       const cached = cachedQuote(offer, identity, now);
-      render(card, cached?.row ?? fallback);
+      render(card, excluded ? { currency: offer.currency, excluded: true } : cached?.row ?? fallback);
     }
     return offers;
   }
@@ -198,7 +203,7 @@
     const observed = new Map();
     for (const row of data.rows) {
       if (!['gold', 'orb'].includes(row?.currency) || !/^[A-Za-z0-9_-]{1,64}$/.test(row.id ?? '')) continue;
-      const observation = { currency: row.currency, price: row.price, closed: row.closed, at: now };
+      const observation = { currency: row.currency, price: row.price, closed: row.closed, excluded: PISMarketCore.isOutland(row), at: now };
       visibleCurrencies.delete(row.id);
       visibleCurrencies.set(row.id, observation);
       observed.set(row.id, observation);
@@ -210,6 +215,7 @@
         quotes.delete(identity);
     }
     while (visibleCurrencies.size > 500) visibleCurrencies.delete(visibleCurrencies.keys().next().value);
+    if (observed.size) lastKeys = '';
     if (market?.isConnected) schedule();
   });
 
