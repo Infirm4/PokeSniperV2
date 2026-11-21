@@ -71,3 +71,21 @@ test('só a resposta de uma consulta própria é ocultada da vitrine', () => {
   assert.equal(api.recentEchoVerified.has(ws), true);
   assert.equal(seen.length, 2);
 });
+
+test('a leitura de Mais baratos monitora reduções sem ser tratada como consulta de anúncios novos', () => {
+  const source = readFileSync(join(__dirname, '../sniper.js'), 'utf8');
+  const code = source.slice(source.indexOf('  function publishMarketPage'), source.indexOf('  let lastMonitorState'));
+  const reports = [];
+  const context = { watchOpportunities: true, vitrineAberta: () => false, location: { origin: 'https://pokeidle.io' },
+    PISMarketCore: { captureAutomatic: () => ({ rows: [{ price: 7 }] }) },
+    window: { postMessage: message => reports.push(message) } };
+  const publish = runInNewContext(code + '\n publishMarketPage', context);
+  const page = { aba: 'vitrine', linhas: [{}] };
+  const request = { moeda: 'orb', pagina: 3, ordem: 'baratos', preparation: true };
+  publish({}, page, request, false);
+  assert.equal(reports[0].live, false);
+  assert.equal(reports[0].priceWatch, true);
+  context.watchOpportunities = false;
+  publish({}, page, request, false);
+  assert.equal(reports[1].priceWatch, false);
+});

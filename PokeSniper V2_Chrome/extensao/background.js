@@ -243,7 +243,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   if (isSale) salePending++;
   else listingPending++;
-  PISMarketStore.ingest(kind, rows, undefined, { live: req.live === true })
+  PISMarketStore.ingest(kind, rows, undefined, { live: req.live === true, priceWatch: req.priceWatch === true })
     .then(
       stats => {
         PISOpportunityAlerts.wake();

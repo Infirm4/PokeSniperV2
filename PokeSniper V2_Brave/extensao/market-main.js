@@ -811,7 +811,7 @@ const mainCoinsHistory = (() => {
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.91'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.92'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
@@ -1409,9 +1409,11 @@ const mainCoinsHistory = (() => {
       visibleRequests.set(ws, traces.filter(entry => entry.request !== visible.request));
       batch = visible.batch;
     }
+    const viewing = !request && watchOpportunities && vitrineAberta();
     if (batch || request) window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_CORE_BATCH',
       kind: 'listing', rows: batch?.rows ?? [], automatic: !!request,
-      live: live === true || (!request && watchOpportunities && vitrineAberta()),
+      live: live === true || viewing,
+      priceWatch: watchOpportunities && (live === true || viewing || request?.preparation === true),
       page: request?.pagina, currency: request?.moeda, preparation: request?.preparation === true, totalRows: frame.linhas?.length }, location.origin);
   }
 

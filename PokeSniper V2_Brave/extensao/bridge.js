@@ -67,7 +67,8 @@
           (msg.rows.length === 0 && !msg.automatic) || msg.rows.length > 100) return;
       try {
         chrome.runtime.sendMessage({ type: 'PIS_MARKET_CORE_BATCH', kind: msg.kind, rows: msg.rows,
-          automatic: msg.automatic === true, live: msg.live === true, preparation: msg.preparation === true, page: msg.page, currency: msg.currency, totalRows: msg.totalRows }, reply => {
+          automatic: msg.automatic === true, live: msg.live === true, priceWatch: msg.priceWatch === true,
+          preparation: msg.preparation === true, page: msg.page, currency: msg.currency, totalRows: msg.totalRows }, reply => {
           const error = chrome.runtime.lastError;
           if (error || !reply?.ok) console.warn('[PIS] Observação de mercado não gravada:', error?.message || reply?.error);
           else if (msg.kind === 'listing' && msg.rows.length) window.postMessage({

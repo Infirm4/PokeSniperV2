@@ -213,7 +213,7 @@ const PISMarketStore = (() => {
     });
   }
 
-  // Só as consultas de anúncios novos armam a fila. Visitas manuais e censos atualizam a referência.
+  // A fila usa o instante em que o anúncio novo ou a redução de preço foi observado.
   const trackedLaunch = (row, now) => Number.isFinite(row.alertObservedAt) &&
     row.alertObservedAt >= now - PISOpportunities.TTL;
 
@@ -310,7 +310,7 @@ const PISMarketStore = (() => {
     return { saved, changed, conflict };
   }
 
-  async function ingest(kind, rows, now = Date.now(), { live = false, fromSheet = false } = {}) {
+  async function ingest(kind, rows, now = Date.now(), { live = false, priceWatch = live, fromSheet = false } = {}) {
     const db = await open();
     let external = null;
     if (kind === 'listing' && rows.some(row => row.currency === 'orb' && !row.closed)) {
@@ -424,6 +424,7 @@ const PISMarketStore = (() => {
         const observed = [];
         for (const listing of new Map(rows.map(row => [JSON.stringify(listingKey(row)), row])).values()) {
           const saved = await result(listings.get(listingKey(listing)));
+          if (saved?.observedAt > now) continue;
           const previous = saved?.exposureKey ? await result(exposures.get(saved.exposureKey)) : null;
           if (listing.closed) {
             if (saved) listings.put({ ...saved, closed: listing.closed, observedAt: now });
@@ -440,10 +441,7 @@ const PISMarketStore = (() => {
             saved.pokemonId === listing.pokemonId && saved.speciesId === listing.speciesId && saved.shiny === listing.shiny;
           const sprite = keepSprite && saved.form === listing.form && saved.mega === listing.mega ?
             { sprite: saved.sprite, spriteSource: saved.spriteSource, spriteFallback: saved.spriteFallback } : {};
-          const sameLaunch = saved && !saved.closed && saved.price === listing.price &&
-            saved.pokemonId === listing.pokemonId && (listing.postedAt == null || listing.postedAt === saved.postedAt);
-          const alertObservedAt = (sameLaunch ? saved.alertObservedAt : null) ??
-            (live && PISOpportunities.freshLaunch(listing, now) ? now : null);
+          const alertObservedAt = PISOpportunities.alertObservedAt(listing, saved, now, { live, priceWatch });
           const row = { ...listing, ...sprite, exposureKey: exposure.key, observedAt: now, alertObservedAt };
           if (reusableQuote(saved, row, now)) {
             const priced = { ...row, pricingRevision: saved.pricingRevision, estimatedAt: saved.estimatedAt, estimate: saved.estimate };

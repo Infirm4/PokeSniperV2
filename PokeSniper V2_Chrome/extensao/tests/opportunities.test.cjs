@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { settings, eligible, key, matches } = require('../opportunities.js');
+const { settings, eligible, key, matches, alertObservedAt } = require('../opportunities.js');
 
 const row = { id: '001', speciesId: '25', name: 'Pikachu', currency: 'gold',
   price: 70, estimate: { status: 'estimated', lower: 90, median: 100, discount: 0.3 } };
@@ -16,6 +16,21 @@ test('deduplica pela identidade e pelo preço, independentemente da idade da obs
   assert.equal(key(row), key({ ...row, observedAt: 1000 }));
   assert.notEqual(key(row), key({ ...row, price: 65 }));
   assert.notEqual(key(row), key({ ...row, currency: 'orb' }));
+});
+
+test('uma redução de anúncio antigo abre a janela de aviso quando observada pelo monitor', () => {
+  const now = Date.UTC(2026, 10, 21, 23);
+  const old = { ...row, pokemonId: '123', price: 100, postedAt: now - 86400000 };
+  const reduced = { ...old, price: 70 };
+  const read = { live: false, priceWatch: true };
+  assert.equal(alertObservedAt(reduced, old, now, read), now);
+  assert.equal(alertObservedAt(reduced, null, now, read), null);
+  assert.equal(alertObservedAt({ ...old, price: 110 }, old, now, { ...read, live: true }), null);
+  assert.equal(alertObservedAt(reduced, { ...old, pokemonId: '999' }, now, read), null);
+  assert.equal(alertObservedAt(reduced, { ...old, currency: 'orb' }, now, read), null);
+  assert.equal(alertObservedAt(reduced, { ...old, closed: 'vendido' }, now, read), null);
+  assert.equal(alertObservedAt(reduced, old, now, { live: false, priceWatch: false }), null);
+  assert.equal(alertObservedAt(reduced, { ...reduced, alertObservedAt: now }, now + 2000, read), now);
 });
 
 test('aplica moeda e desconto, ignorando filtros antigos de espécie', () => {

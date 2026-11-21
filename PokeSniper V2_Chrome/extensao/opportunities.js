@@ -8,6 +8,17 @@
   function freshLaunch(row, now = Date.now()) {
     return Number.isFinite(row.postedAt) && row.postedAt >= now - NEW_OFFER_AGE && row.postedAt <= now + 15000;
   }
+
+  function alertObservedAt(row, previous, now, { live, priceWatch }) {
+    const sameLaunch = previous && !previous.closed && previous.id === row.id &&
+      previous.currency === row.currency && previous.pokemonId === row.pokemonId &&
+      (row.postedAt == null || row.postedAt === previous.postedAt);
+    if (sameLaunch && row.price === previous.price && Number.isFinite(previous.alertObservedAt))
+      return previous.alertObservedAt;
+    if (priceWatch && sameLaunch && row.pokemonId && Number.isFinite(previous.price) && row.price < previous.price)
+      return now;
+    return live && freshLaunch(row, now) ? now : null;
+  }
   const DEFAULTS = { currency: 'gold', discount: 20, minGrade: 0, notify: false };
   const MIN_ACTIVE_GRADE = 3.5;
   const GEM_RESALE_NET_SHARE = 0.85;
@@ -236,7 +247,7 @@
     };
   }
 
-  const core = { TTL, freshLaunch, settings, minimumGrade, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, profileSummary, fallbackWarning, liquidityLabel, noticePresentation };
+  const core = { TTL, freshLaunch, alertObservedAt, settings, minimumGrade, eligible, key, matches, priceLimit, notificationEligible, approved, spriteCandidates, mountSprite, presentation, profileSummary, fallbackWarning, liquidityLabel, noticePresentation };
   if (typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISOpportunities = core;
 })();

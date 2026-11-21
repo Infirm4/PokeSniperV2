@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.91)
+# PokeIdle Market Sniper (v1.5.4.92)
 
 O [launcher para Windows](../README.md) cria um atalho na
 área de trabalho, atualiza a extensão e abre o PokéIdle no Chrome.
@@ -290,6 +290,11 @@ os filtros da vitrine. Com a vitrine aberta, a varredura segue depois que a
 conexão confirma que devolve o identificador da consulta. Até essa confirmação,
 o Sniper lê as páginas que o jogador visita. Os avisos prontos são entregues
 pela ordem de entrada na fila.
+
+Uma queda de preço detectada em anúncio já conhecido também pode gerar aviso
+pelos filtros de desconto e Nota mínima. O monitor aproveita a leitura de
+**Mais baratos** com o Mercado fechado e as páginas visitadas na vitrine.
+A redução só é conhecida quando o anúncio é lido de novo.
 
 Em **Testar revisão de compra**, o jogo confirma que abriu a janela simulada
 antes de a extensão trazer a aba à frente. **Simular confirmação** não envia
