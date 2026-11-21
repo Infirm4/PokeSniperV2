@@ -15,7 +15,7 @@ const worker = readFileSync(join(__dirname, '../opportunities-worker.js'), 'utf8
 test('a fila respeita o opt-in, limita a rajada e registra os resultados da entrega', async () => {
   let notify = false;
   const rows = Array.from({ length: 6 }, (_, index) => ({
-    key: String(index), currency: 'gold', speciesId: '25', price: 70,
+    key: String(index), queuedAt: index + 1, currency: 'gold', speciesId: '25', price: 70,
     estimate: { discount: 0.3 }, delivery: 'pending', nextAttemptAt: 0,
   }));
   const attempts = [], results = [], gameAttempts = [];
@@ -30,7 +30,7 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
     runtime: { getURL: file => file },
   };
   const PISMarketStore = {
-    recentOpportunities: async () => rows, currentOpportunity: async key => rows.find(row => row.key === key),
+    recentOpportunities: async () => rows.slice().reverse(), currentOpportunity: async key => rows.find(row => row.key === key),
     markDelivery: async (key, delivered, time, channels, offer) => {
       assert.equal(offer, rows.find(row => row.key === key));
       assert.ok(Number.isFinite(time));

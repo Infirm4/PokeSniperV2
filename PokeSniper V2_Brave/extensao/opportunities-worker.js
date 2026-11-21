@@ -65,7 +65,9 @@ const PISOpportunityAlerts = (() => {
 
     const recent = await PISMarketStore.recentOpportunities(config);
     const pending = recent.filter(row => row.delivery === 'pending' && row.nextAttemptAt <= Date.now() &&
-      PISOpportunities.notificationEligible(row, config));
+      PISOpportunities.notificationEligible(row, config))
+      .sort((a, b) => (a.queuedAt ?? a.alertObservedAt ?? a.observedAt ?? 0) -
+        (b.queuedAt ?? b.alertObservedAt ?? b.observedAt ?? 0) || (a.postedAt ?? 0) - (b.postedAt ?? 0));
     delivering = true;
     for (const candidate of pending.slice(0, 5)) {
       const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');

@@ -48,3 +48,26 @@ test('descobre conexão preexistente pelo envio do jogo e libera uma substituta 
   assert.equal(result.source(), 'abertura');
   assert.equal(result.ready(), false);
 });
+
+test('só a resposta de uma consulta própria é ocultada da vitrine', () => {
+  const source = readFileSync(join(__dirname, '../sniper.js'), 'utf8');
+  const code = source.slice(source.indexOf('  const recentQueries'), source.indexOf('  function publishMarketPage'));
+  const seen = [];
+  const api = runInNewContext(code + '\n({ recentQueries, recentEchoVerified, receiveGameMessage })', {
+    PISMarketCore: require('../market-core'), onMsg: (_socket, event) => seen.push(event),
+  });
+  const ws = {};
+  const request = { moeda: 'orb', pagina: 0, ordem: 'recentes', seq: 8000001 };
+  api.recentQueries.set(ws, new Map([[String(request.seq), request]]));
+  const send = seq => {
+    let stopped = false;
+    const data = JSON.stringify({ t: 'market', aba: 'vitrine', linhas: [], moeda: 'orb', pagina: 0, seq });
+    api.receiveGameMessage(ws, { data, stopImmediatePropagation() { stopped = true; } });
+    return stopped;
+  };
+  assert.equal(send(2), false);
+  assert.equal(api.recentEchoVerified.has(ws), false);
+  assert.equal(send(request.seq), true);
+  assert.equal(api.recentEchoVerified.has(ws), true);
+  assert.equal(seen.length, 2);
+});

@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.89'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.90'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
@@ -604,6 +604,21 @@
   }
 
   const visibleRequests = new WeakMap();
+  const recentQueries = new WeakMap();
+  const recentEchoVerified = new WeakSet();
+
+  function receiveGameMessage(ws, event) {
+    const queries = recentQueries.get(ws);
+    if (queries?.size && typeof event.data === 'string') {
+      const frame = globalThis.PISMarketCore.decodeGameFrame(event.data);
+      const request = queries.get(String(frame?.seq));
+      if (request && frame?.t === 'market' && frame.aba === 'vitrine') {
+        if (globalThis.PISMarketCore.matchesMarketPage(frame, request)) recentEchoVerified.add(ws);
+        event.stopImmediatePropagation();
+      }
+    }
+    onMsg(ws, event);
+  }
 
   function publishMarketPage(ws, frame, request, live) {
     const core = globalThis.PISMarketCore;
@@ -752,7 +767,7 @@
     if (!isPokeIdleSocket(ws) || observedGameSockets.has(ws)) return;
     observedGameSockets.add(ws);
     ws.addEventListener('open', () => bindGameSocket(ws, 'abertura'));
-    ws.addEventListener('message', e => onMsg(ws, e));
+    ws.addEventListener('message', e => receiveGameMessage(ws, e), true);
     ws.addEventListener('close', () => {
       for (let i = waiters.length - 1; i >= 0; i--) {
         if (waiters[i].ws !== ws) continue;
@@ -914,7 +929,16 @@
           rej(Object.assign(new Error('sem resposta a ' + msg.t), { queryStatus: 'sem_resposta' }));
         }, ms);
         waiters.push(w);
-        try { osend.call(s, JSON.stringify(msg)); reportQuery(msg, censusRequest, 'enviada'); }
+        try {
+          if (live && msg.ordem === 'recentes') {
+            const queries = recentQueries.get(s) ?? new Map();
+            queries.set(String(msg.seq), msg);
+            if (queries.size > 64) queries.delete(queries.keys().next().value);
+            recentQueries.set(s, queries);
+          }
+          osend.call(s, JSON.stringify(msg));
+          reportQuery(msg, censusRequest, 'enviada');
+        }
         catch(e) {
           clearTimeout(w.t);
           const i=waiters.indexOf(w);
@@ -2558,7 +2582,7 @@
   // Para rastrear todas as páginas usamos a consulta oficial da vitrine, sem filtros
   // da aba que o jogador deixou aberta (busca, espécie, nível, Shiny etc.).
   function pedidoPaginaRastreador(pagina, moeda, ordem) {
-    const tpl = pokeTemplate();
+    const tpl = ordem === 'recentes' ? null : pokeTemplate();
     const salvo = tpl && tpl.req && tpl.req.t === 'market.listar' ? tpl.req : {};
     const req = { ...salvo,
       t: 'market.listar', tipo: 'pokemon', moeda, ordem, pagina,
@@ -2575,7 +2599,8 @@
 
   async function consultarPaginaRastreador(pagina, moeda = 'gold', ordem = 'baratos', live = false, preparation = false) {
     const req = pedidoPaginaRastreador(pagina, moeda, ordem);
-    const permitido = () => !vitrineAberta() && Date.now() >= st.marketPausaAte &&
+    const permitido = () => Date.now() >= st.marketPausaAte &&
+      (!vitrineAberta() || live && ordem === 'recentes' && recentEchoVerified.has(st.sock)) &&
       (preparation ? monitorAtivo() :
         live ? watchOpportunities && (watchCurrency === moeda || watchCurrency === 'all') : censoAtivo());
     // Uma consulta POR VEZ, com filtro EXATO da página da resposta. A fila é liberada
@@ -3618,8 +3643,7 @@
       densidade,deslocamentoPct,duracaoMs:Math.max(0,nowSrv()-inicio)};
   }
 
-  // Receber qualquer resposta de vitrine pode redesenhar a tela do jogo. Enquanto
-  // ela está aberta, somente a navegação do jogador alimenta a captura de vitrines.
+  // A preparação de selos usa respostas comuns da vitrine e roda com a loja fechada.
   const BADGE_SCAN_INTERVAL_MS = 12000;
   const BADGE_SCAN_WHILE_WATCHING_MS = 60000;
   const badgeSweep = {
@@ -3662,11 +3686,15 @@
 
   let recentTurn = 0;
   let recentBusy = false;
-  const recentSchedule = ['gold', 'gold', 'orb'];
-  const sweepByCurrency = { gold: { retryAt: 0, fallbackUntil: 0 }, orb: { retryAt: 0, fallbackUntil: 0 } };
+  const recentSchedule = ['gold', 'orb'];
+  const recentPages = { gold: { next: 0, retryAt: 0 }, orb: { next: 0, retryAt: 0 } };
+  const RECENT_PAGES = 3;
   setInterval(async () => {
     if (recentBusy || !monitorAtivo()) return;
-    if (vitrineAberta()) { reportAutomatic('vitrine_aberta'); return; }
+    if (vitrineAberta() && (!watchOpportunities || !recentEchoVerified.has(st.sock))) {
+      reportAutomatic('vitrine_aberta');
+      return;
+    }
     if (!socketReadyForMarket()) {
       reportAutomatic(st.sock?.readyState === 1 ? 'aguardando_tráfego' : 'aguardando_socket');
       return;
@@ -3675,41 +3703,28 @@
     const now = Date.now();
     if (now < st.marketPausaAte) { reportAutomatic('recuo'); return; }
     if (now - st.marketUltimoEnvio < intervaloMinMercadoAtualMs()) return;
-    // Mantém a primeira página de anúncios novos como prioridade da fila.
     if (!watchOpportunities) { await prepareBadgesIfDue(now); return; }
-    const turn = recentTurn;
-    const currency = watchCurrency === 'all' ? recentSchedule[turn % recentSchedule.length] : watchCurrency;
-    const sweep = sweepByCurrency[currency];
-    if (recentTurn > 0 && !Object.values(sweepByCurrency).some(state => state.next) && await prepareBadgesIfDue(now)) return;
-    recentTurn++;
-    if (now < sweep.retryAt) return;
+
+    const currencies = watchCurrency === 'all'
+      ? recentSchedule.map((_, index) => recentSchedule[(recentTurn + index) % recentSchedule.length])
+      : [watchCurrency];
+    const currency = currencies.find(value => now >= recentPages[value].retryAt);
+    if (!currency) return;
+    if (recentTurn > 0 && recentPages[currency].next === 0 && await prepareBadgesIfDue(now)) return;
+    recentTurn = recentSchedule.indexOf(currency) + 1;
+    const state = recentPages[currency];
+    const pageNumber = state.next;
     recentBusy = true;
-    const order = now < sweep.fallbackUntil ? 'baratos' : 'recentes';
     reportAutomatic('varrendo');
     try {
-      const next = order === 'recentes' ? sweep.next : null;
-      if (next) sweep.next = null;
-      const page = await consultarPaginaRastreador(next ? 1 : 0, currency, order, true);
-      if (!next && order === 'recentes' && page.linhas.length) {
-        const times = page.linhas.map(row => normalizarTimer(row?.criadoEm)).filter(Number.isFinite);
-        const newest = Math.max(...times);
-        // Se uma página inteira entrou desde a resposta anterior, lê também a
-        // página 2. Volta logo à primeira para não atrasar anúncios seguintes.
-        const full = page.linhas.length >= (Number(page.porPagina) || 24);
-        sweep.next = full && times.length === page.linhas.length &&
-          page.temMais !== false && Number(page.total) > page.linhas.length &&
-          sweep.newest != null && newest > sweep.newest && Math.min(...times) >= sweep.newest;
-        if (times.length) sweep.newest = newest;
-      }
+      const page = await consultarPaginaRastreador(pageNumber, currency, 'recentes', true);
+      const size = Number(page.porPagina) || page.linhas.length;
+      const last = !page.linhas.length || page.temMais === false ||
+        (size > 0 && Number.isFinite(Number(page.total)) && (pageNumber + 1) * size >= Number(page.total));
+      state.next = last ? 0 : (pageNumber + 1) % RECENT_PAGES;
     } catch (error) {
       if (error.queryStatus === 'cancelada') return;
-      if (['sem_resposta', 'recusada'].includes(error.queryStatus)) {
-        sweep.retryAt = Date.now() + 10000;
-        if (order === 'recentes') {
-          sweep.fallbackUntil = Date.now() + 60000;
-          sweep.next = null;
-        }
-      }
+      state.retryAt = Date.now() + 10000;
       dbg('Ofertas do mercado:', error.message);
     } finally { recentBusy = false; }
   }, 250);
@@ -4675,7 +4690,7 @@
   }
 
   // Novo aviso identifica o código injetado; mensagens antigas ficam no histórico local.
-  logPk(`🧭 PokéIdle Sniper v${EXT_VERSION}: consultas ≥${intervaloMinMercadoAtualMs()/1000}s (2→3→4→5→6→7s com sobrecarga); o monitor de avisos prioriza anúncios recentes com a vitrine fechada. Falhas mantêm recuo.`);
+  logPk(`🧭 PokéIdle Sniper v${EXT_VERSION}: consultas ≥${intervaloMinMercadoAtualMs()/1000}s (2→3→4→5→6→7s com sobrecarga); o monitor de avisos percorre até três páginas de anúncios recentes. Falhas mantêm recuo.`);
   if (LEGACY_PANEL_ENABLED) {
     if (document.body) buildUI();
     else document.addEventListener('DOMContentLoaded', buildUI);

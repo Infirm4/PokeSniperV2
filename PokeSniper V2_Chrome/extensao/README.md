@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.89)
+# PokeIdle Market Sniper (v1.5.4.90)
 
 O [launcher para Windows](../README.md) cria um atalho na
 área de trabalho, atualiza a extensão e abre o PokéIdle no Chrome.
@@ -211,8 +211,8 @@ O anúncio é conferido em segundo plano, e mudanças de preço ou da fonte
 pública de Gemas invalidam as referências em cache.
 
 Com a vitrine fechada, o monitor intercala páginas de Coins e Gemas para
-preparar selos em segundo plano. A primeira página de lançamentos continua
-prioritária. Ao abrir a vitrine, as consultas auxiliares pausam. Os avisos
+preparar selos em segundo plano. Ao abrir a vitrine, as consultas auxiliares
+de preparação pausam. Os avisos
 mostram o nome e o desconto no título. Nível, Potência e Nota ficam na
 primeira linha do corpo. O preço anunciado e o preço justo aparecem abaixo. Nos avisos de Spe, Atk e Sp Atk,
 IVs de 0 a 14 são marcados como `(crítico)`, de 15 a 24 como `(baixo)` e a partir de 25 como `(Pica)`.
@@ -284,9 +284,12 @@ e ausência de resposta. A seção da última página confirma se houve gravaç�
 
 Ao salvar **Avisos dentro do jogo e no Chrome**, o monitor de oportunidades
 começa a coletar anúncios em Coins e Gemas com a aba do jogo conectada.
-O diagnóstico mostra o último recibo de cada moeda. A varredura de anúncios
-novos roda com a vitrine fechada. Enquanto ela está aberta, o Sniper lê as
-páginas que o jogador visita.
+O diagnóstico mostra o último recibo de cada moeda. O monitor percorre até três
+páginas de **Adicionados recentemente** por moeda, com uma consulta própria sem
+os filtros da vitrine. Com a vitrine aberta, a varredura segue depois que a
+conexão confirma que devolve o identificador da consulta. Até essa confirmação,
+o Sniper lê as páginas que o jogador visita. Os avisos prontos são entregues
+pela ordem de entrada na fila.
 
 Em **Testar revisão de compra**, o jogo confirma que abriu a janela simulada
 antes de a extensão trazer a aba à frente. **Simular confirmação** não envia

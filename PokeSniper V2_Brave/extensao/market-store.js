@@ -222,7 +222,8 @@ const PISMarketStore = (() => {
     const key = PISOpportunities.key(priced);
     const previous = await result(store.get(key));
     if (previous?.delivery === 'sent') return;
-    store.put({ ...priced, key, delivery: previous?.delivery ?? 'pending',
+    store.put({ ...priced, key, queuedAt: previous?.queuedAt ?? previous?.alertObservedAt ?? Date.now(),
+      delivery: previous?.delivery ?? 'pending',
       attempts: previous?.attempts ?? 0, nextAttemptAt: previous?.nextAttemptAt ?? 0, deliveryChannels: previous?.deliveryChannels });
   }
 
@@ -441,8 +442,8 @@ const PISMarketStore = (() => {
             { sprite: saved.sprite, spriteSource: saved.spriteSource, spriteFallback: saved.spriteFallback } : {};
           const sameLaunch = saved && !saved.closed && saved.price === listing.price &&
             saved.pokemonId === listing.pokemonId && (listing.postedAt == null || listing.postedAt === saved.postedAt);
-          const alertObservedAt = live && PISOpportunities.freshLaunch(listing, now) ? now :
-            sameLaunch ? saved.alertObservedAt : null;
+          const alertObservedAt = (sameLaunch ? saved.alertObservedAt : null) ??
+            (live && PISOpportunities.freshLaunch(listing, now) ? now : null);
           const row = { ...listing, ...sprite, exposureKey: exposure.key, observedAt: now, alertObservedAt };
           if (reusableQuote(saved, row, now)) {
             const priced = { ...row, pricingRevision: saved.pricingRevision, estimatedAt: saved.estimatedAt, estimate: saved.estimate };
@@ -863,7 +864,7 @@ const PISMarketStore = (() => {
     const listings = await result(db.transaction('listings').objectStore('listings').index('observedAt').getAll(range));
     const pending = listings.filter(row => row.currency === 'orb' && !row.closed &&
       (row.pricingRevision !== ESTIMATE_REVISION || row.estimate?.sourceAt !== Date.parse(active.geradoEm)))
-      .sort((a, b) => (b.alertObservedAt ?? 0) - (a.alertObservedAt ?? 0));
+      .sort((a, b) => (a.alertObservedAt ?? Infinity) - (b.alertObservedAt ?? Infinity) || a.postedAt - b.postedAt);
     for (let offset = 0; offset < pending.length; offset += 10) {
       const batch = pending.slice(offset, offset + 10);
       const estimates = await publicEstimatesFor(batch, now);
