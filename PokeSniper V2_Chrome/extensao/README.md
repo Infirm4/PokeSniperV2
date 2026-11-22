@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.95)
+# PokeIdle Market Sniper (v1.5.4.96)
 
 O [launcher para Windows](../README.md) cria um atalho na
 área de trabalho, atualiza a extensão e abre o PokéIdle no Chrome.
@@ -292,10 +292,12 @@ conexão confirma que devolve o identificador da consulta. Até essa confirmaç�
 o Sniper lê as páginas que o jogador visita. Os avisos prontos são entregues
 pela ordem de entrada na fila.
 
-Uma queda de preço detectada em anúncio já conhecido também pode gerar aviso
-pelos filtros de desconto e Nota mínima. O monitor aproveita a leitura de
-**Mais baratos** com o Mercado fechado e as páginas visitadas na vitrine.
-A redução só é conhecida quando o anúncio é lido de novo.
+Com o Mercado fechado, o monitor consulta aproximadamente uma página por
+minuto em **Mais baratos**, entre as rodadas prioritárias de Recentes. A
+consulta usa a moeda e a Nota mínima escolhidas nos Filtros. O desconto é
+aplicado ao preço justo de cada anúncio. Uma oferta antiga pode gerar aviso na
+primeira leitura quando passa pelos filtros. A fila dá prioridade aos avisos
+de Recentes e evita repetir um aviso entregue para o mesmo ID e preço.
 
 Em **Testar revisão de compra**, o jogo confirma que abriu a janela simulada
 antes de a extensão trazer a aba à frente. **Simular confirmação** não envia

@@ -20,6 +20,7 @@ test('a fila respeita o opt-in, limita a rajada e registra os resultados da entr
   }));
   Object.assign(rows[0], { name: 'Scizor', currency: 'orb', speciesId: '212', price: 6,
     estimate: { discount: 1 - 6 / 14, median: 14 } });
+  Object.assign(rows[5], { alertSource: 'older', queuedAt: 0 });
   const attempts = [], results = [], gameAttempts = [], desktopTitles = [];
   const event = { addListener() {} };
   const chrome = {

@@ -76,21 +76,41 @@ test('a leitura de Mais baratos monitora reduções sem ser tratada como consult
   const source = readFileSync(join(__dirname, '../sniper.js'), 'utf8');
   const code = source.slice(source.indexOf('  function publishMarketPage'), source.indexOf('  let lastMonitorState'));
   const reports = [];
-  const context = { watchOpportunities: true, vitrineAberta: () => false, location: { origin: 'https://pokeidle.io' },
+  const context = { watchOpportunities: true, watchMinGrade: 3.55, vitrineAberta: () => false, location: { origin: 'https://pokeidle.io' },
     watchesCurrency: currency => currency === 'orb',
     PISMarketCore: { captureAutomatic: () => ({ rows: [{ price: 7 }] }) },
     window: { postMessage: message => reports.push(message) } };
   const publish = runInNewContext(code + '\n publishMarketPage', context);
   const page = { aba: 'vitrine', linhas: [{}] };
-  const request = { moeda: 'orb', pagina: 3, ordem: 'baratos', preparation: true };
+  const request = { moeda: 'orb', pagina: 3, ordem: 'baratos', preparation: true, olderScan: true, notaMin: '3.55' };
   publish({}, page, request, false);
   assert.equal(reports[0].live, false);
   assert.equal(reports[0].priceWatch, true);
+  assert.equal(reports[0].olderScan, true);
   publish({}, page, { ...request, moeda: 'gold' }, false);
   assert.equal(reports[1].priceWatch, false);
   context.watchOpportunities = false;
   publish({}, page, request, false);
   assert.equal(reports[2].priceWatch, false);
+  assert.equal(reports[2].olderScan, false);
+});
+
+test('envia Nota mínima apenas nas consultas de anúncios antigos', async () => {
+  const source = readFileSync(join(__dirname, '../sniper.js'), 'utf8');
+  const code = source.slice(source.indexOf('  function pedidoPaginaRastreador'), source.indexOf('  function numeroInteiroNaoNegativo'));
+  const calls = [];
+  const query = runInNewContext(code + '\nconsultarPaginaRastreador', {
+    st: { marketPausaAte: 0, seq: 0 }, watchMinGrade: 3.55, watchOpportunities: true,
+    monitorAtivo: () => true, vitrineAberta: () => false, watchesCurrency: currency => currency === 'orb',
+    pokeTemplate: () => ({ req: { t: 'market.listar', notaMin: '9', precoMax: '1' } }),
+    naFilaItem: fn => fn(), ask: (request, _pred, _timeout, allowed, metadata) => {
+      assert.equal(allowed(), true);
+      calls.push([request.notaMin, request.precoMax, metadata.olderScan]);
+    },
+  });
+  await query(0, 'orb', 'recentes', true);
+  await query(0, 'orb', 'baratos', false, true);
+  assert.deepEqual(calls, [['', '', undefined], ['3.55', '', true]]);
 });
 
 test('prioriza as duas primeiras páginas por moeda e evita duas consultas secundárias seguidas', async () => {
@@ -103,7 +123,7 @@ test('prioriza as duas primeiras páginas por moeda e evita duas consultas secun
     const reads = [];
     const st = { marketPausaAte: 0, marketUltimoEnvio: 0 };
     runInNewContext(code, {
-      Date: { now: () => now }, st, watchCurrency, watchOpportunities: true,
+      Date: { now: () => now }, st, watchCurrency, watchOpportunities: true, watchMinGrade: 3.55,
       setInterval(fn) { tick = fn; },
       marketModules: () => ({ parser: true }), intervaloMinMercadoAtualMs: () => 2000,
       monitorAtivo: () => true, socketReadyForMarket: () => true, vitrineAberta: () => false,

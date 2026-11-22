@@ -66,10 +66,12 @@ const PISOpportunityAlerts = (() => {
     const recent = await PISMarketStore.recentOpportunities(config);
     const pending = recent.filter(row => row.delivery === 'pending' && row.nextAttemptAt <= Date.now() &&
       PISOpportunities.notificationEligible(row, config))
-      .sort((a, b) => (a.queuedAt ?? a.alertObservedAt ?? a.observedAt ?? 0) -
+      .sort((a, b) => Number(a.alertSource === 'older') - Number(b.alertSource === 'older') ||
+        (a.queuedAt ?? a.alertObservedAt ?? a.observedAt ?? 0) -
         (b.queuedAt ?? b.alertObservedAt ?? b.observedAt ?? 0) || (a.postedAt ?? 0) - (b.postedAt ?? 0));
     delivering = true;
     for (const candidate of pending.slice(0, 5)) {
+      if (candidate.alertSource === 'older' && refreshRequested) break;
       const { opportunitySettings } = await chrome.storage.local.get('opportunitySettings');
       const current = PISOpportunities.settings(opportunitySettings);
       if (!current.notify) break;
@@ -80,7 +82,8 @@ const PISOpportunityAlerts = (() => {
       const notice = liquidityHours ? { ...row, liquidityHours } : row;
       const { title, message, desktopMessage } = PISOpportunities.noticePresentation(notice);
       const sprites = PISOpportunities.spriteCandidates(row);
-      const inGame = PISGameTab.show(title, message, false, sprites[0], PISMarketCore.purchaseOffer(row), sprites[1]).catch(() => false);
+      const inGame = PISGameTab.show(title, message, false, sprites[0], PISMarketCore.purchaseOffer(row), sprites[1],
+        row.alertSource === 'older').catch(() => false);
       let desktop = false;
       try {
         await createDesktopNotice('pis:' + row.key, title, desktopMessage, sprites);

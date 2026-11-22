@@ -811,7 +811,7 @@ const mainCoinsHistory = (() => {
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.95'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.96'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
@@ -1415,12 +1415,15 @@ const mainCoinsHistory = (() => {
       live: live === true || viewing,
       priceWatch: watchOpportunities && (viewing || (request && watchesCurrency(request.moeda) &&
         (live === true || request.preparation === true))),
+      olderScan: watchOpportunities && request?.olderScan === true && watchesCurrency(request.moeda) &&
+        Number(request.notaMin) === watchMinGrade,
       page: request?.pagina, currency: request?.moeda, preparation: request?.preparation === true, totalRows: frame.linhas?.length }, location.origin);
   }
 
   let lastMonitorState;
   let watchOpportunities = false;
   let watchCurrency = 'gold';
+  let watchMinGrade = 0;
   const watchesCurrency = moeda => watchCurrency === 'all' || watchCurrency === moeda;
   const vitrineAberta = () => {
     const list = document.getElementById('cm-lista');
@@ -1437,6 +1440,8 @@ const mainCoinsHistory = (() => {
         event.data.type !== 'WATCH_OPPORTUNITIES' || typeof event.data.enabled !== 'boolean') return;
     watchOpportunities = event.data.enabled;
     watchCurrency = ['gold', 'orb', 'all'].includes(event.data.currency) ? event.data.currency : 'gold';
+    const grade = event.data.minGrade;
+    watchMinGrade = Number.isFinite(grade) && grade >= 3.5 && grade <= 10 ? grade : 0;
   });
   let lastMonitorReportAt = 0;
   function reportAutomatic(state) {
@@ -3362,9 +3367,8 @@ const mainCoinsHistory = (() => {
 
   const rawStr = l => { try { const j = JSON.stringify(l); return j.length <= 20000 ? j : null; } catch { return null; } };
 
-  // Para rastrear todas as páginas usamos a consulta oficial da vitrine, sem filtros
-  // da aba que o jogador deixou aberta (busca, espécie, nível, Shiny etc.).
-  function pedidoPaginaRastreador(pagina, moeda, ordem) {
+  // A consulta usa as preferências do monitor, independentes da página aberta no jogo.
+  function pedidoPaginaRastreador(pagina, moeda, ordem, minGrade = 0) {
     const tpl = ordem === 'recentes' ? null : pokeTemplate();
     const salvo = tpl && tpl.req && tpl.req.t === 'market.listar' ? tpl.req : {};
     const req = { ...salvo,
@@ -3374,22 +3378,25 @@ const mainCoinsHistory = (() => {
       soTmElemental: false, soTmAoe: false, semOutland: false,
       nivelMin: '', nivelMax: '', potenciaMin: '', potenciaMax: '',
       ivMin: '', ivMax: '', qualidadeMin: '', qualidadeMax: '',
-      notaMin: '', notaMax: '', precoMin: '', precoMax: ''
+      notaMin: minGrade > 0 ? String(minGrade) : '', notaMax: '', precoMin: '', precoMax: ''
     };
     if ('seq' in req || ordem === 'recentes') req.seq = ++st.seq;
     return req;
   }
 
   async function consultarPaginaRastreador(pagina, moeda = 'gold', ordem = 'baratos', live = false, preparation = false) {
-    const req = pedidoPaginaRastreador(pagina, moeda, ordem);
+    const olderScan = preparation && watchOpportunities;
+    const minGrade = olderScan ? watchMinGrade : 0;
+    const req = pedidoPaginaRastreador(pagina, moeda, ordem, minGrade);
     const permitido = () => Date.now() >= st.marketPausaAte &&
       (!vitrineAberta() || live && ordem === 'recentes' && recentEchoVerified.has(st.sock)) &&
-      (preparation ? monitorAtivo() && (!watchOpportunities || watchesCurrency(moeda)) :
+      (preparation ? monitorAtivo() && watchOpportunities === olderScan &&
+        (!olderScan || watchesCurrency(moeda) && watchMinGrade === minGrade) :
         live ? watchOpportunities && watchesCurrency(moeda) : censoAtivo());
     // Uma consulta POR VEZ, com filtro EXATO da página da resposta. A fila é liberada
     // a cada página para não bloquear as compras e as liberações dos retidos.
     return naFilaItem(() => ask(req, j => mainMarketCore.matchesMarketPage(j, req),
-      live || preparation ? 5000 : 15000, permitido, preparation ? { ...req, preparation } : req, live));
+      live || preparation ? 5000 : 15000, permitido, preparation ? { ...req, preparation, olderScan } : req, live));
   }
 
   function numeroInteiroNaoNegativo(v) {
@@ -4448,6 +4455,8 @@ const mainCoinsHistory = (() => {
       watchCurrency === 'all' ? recentSchedule[badgeTurn++ % recentSchedule.length] : watchCurrency;
     const state = badgeSweep[currency];
     lastBadgeScan = now;
+    const grade = watchOpportunities ? watchMinGrade : 0;
+    if (state.grade !== grade) Object.assign(state, { page: 0, visits: 0, grade });
     if (now < state.retryAt) return;
     const front = state.visits++ % 4 === 0;
     const pageNumber = front ? 0 : state.page;

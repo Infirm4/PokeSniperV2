@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { settings, eligible, key, matches, alertObservedAt } = require('../opportunities.js');
+const { settings, eligible, key, matches, alertObservation, TTL } = require('../opportunities.js');
 
 const row = { id: '001', speciesId: '25', name: 'Pikachu', currency: 'gold',
   price: 70, estimate: { status: 'estimated', lower: 90, median: 100, discount: 0.3 } };
@@ -23,7 +23,8 @@ test('uma redução de anúncio antigo abre a janela de aviso quando observada p
   const old = { ...row, pokemonId: '123', price: 100, postedAt: now - 86400000 };
   const reduced = { ...old, price: 70 };
   const read = { live: false, priceWatch: true };
-  assert.equal(alertObservedAt(reduced, old, now, read), now);
+  const alertObservedAt = (...args) => alertObservation(...args).alertObservedAt;
+  assert.deepEqual(alertObservation(reduced, old, now, read), { alertObservedAt: now, alertSource: 'older' });
   assert.equal(alertObservedAt(reduced, null, now, read), null);
   assert.equal(alertObservedAt({ ...old, price: 110 }, old, now, { ...read, live: true }), null);
   assert.equal(alertObservedAt(reduced, { ...old, pokemonId: '999' }, now, read), null);
@@ -31,6 +32,19 @@ test('uma redução de anúncio antigo abre a janela de aviso quando observada p
   assert.equal(alertObservedAt(reduced, { ...old, closed: 'vendido' }, now, read), null);
   assert.equal(alertObservedAt(reduced, old, now, { live: false, priceWatch: false }), null);
   assert.equal(alertObservedAt(reduced, { ...reduced, alertObservedAt: now }, now + 2000, read), now);
+});
+
+test('Mais baratos pode observar uma oferta antiga pela primeira vez e Recentes recebe prioridade', () => {
+  const now = Date.UTC(2026, 10, 22);
+  const old = { ...row, pokemonId: '123', postedAt: now - 86400000 };
+  const older = { live: false, priceWatch: true, olderScan: true };
+  const first = alertObservation(old, null, now, older);
+  assert.deepEqual(first, { alertObservedAt: now, alertSource: 'older' });
+  assert.deepEqual(alertObservation(old, { ...old, ...first }, now + 1000, older), first);
+  assert.deepEqual(alertObservation(old, { ...old, ...first }, now + TTL + 1, older),
+    { alertObservedAt: now + TTL + 1, alertSource: 'older' });
+  assert.deepEqual(alertObservation({ ...old, price: 60 }, old, now, { live: true, priceWatch: true }),
+    { alertObservedAt: now, alertSource: 'recent' });
 });
 
 test('aplica moeda e desconto, ignorando filtros antigos de espécie', () => {

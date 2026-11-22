@@ -30,11 +30,12 @@ const PISGameTab = {
       return true;
     } catch { return false; }
   },
-  async show(title, message, test = false, sprite = null, offer = null, spriteFallback = null) {
+  async show(title, message, test = false, sprite = null, offer = null, spriteFallback = null, secondary = false) {
     const tabId = lastGameTab ?? (await chrome.storage.session.get(gameTabKey))[gameTabKey];
     if (!Number.isSafeInteger(tabId)) return false;
     try {
-      const reply = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_TOAST', title, message, test, sprite: PISMarketCore.safeSprite(sprite), offer, spriteFallback: PISMarketCore.safeSprite(spriteFallback) }, { frameId: 0 });
+      const reply = await chrome.tabs.sendMessage(tabId, { type: 'PIS_MARKET_TOAST', title, message, test,
+        sprite: PISMarketCore.safeSprite(sprite), offer, spriteFallback: PISMarketCore.safeSprite(spriteFallback), secondary }, { frameId: 0 });
       return reply?.ok === true;
     } catch { return false; }
   }
@@ -245,7 +246,8 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   if (isSale) salePending++;
   else listingPending++;
-  PISMarketStore.ingest(kind, rows, undefined, { live: req.live === true, priceWatch: req.priceWatch === true })
+  PISMarketStore.ingest(kind, rows, undefined, { live: req.live === true, priceWatch: req.priceWatch === true,
+    olderScan: req.automatic === true && req.preparation === true && req.olderScan === true })
     .then(
       stats => {
         PISOpportunityAlerts.wake();

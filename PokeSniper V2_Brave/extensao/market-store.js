@@ -213,7 +213,7 @@ const PISMarketStore = (() => {
     });
   }
 
-  // A fila usa o instante em que o anúncio novo ou a redução de preço foi observado.
+  // A janela da fila começa na observação que tornou o anúncio um candidato.
   const trackedLaunch = (row, now) => Number.isFinite(row.alertObservedAt) &&
     row.alertObservedAt >= now - PISOpportunities.TTL;
 
@@ -310,7 +310,7 @@ const PISMarketStore = (() => {
     return { saved, changed, conflict };
   }
 
-  async function ingest(kind, rows, now = Date.now(), { live = false, priceWatch = live, fromSheet = false } = {}) {
+  async function ingest(kind, rows, now = Date.now(), { live = false, priceWatch = live, olderScan = false, fromSheet = false } = {}) {
     const db = await open();
     let external = null;
     if (kind === 'listing' && rows.some(row => row.currency === 'orb' && !row.closed)) {
@@ -441,8 +441,8 @@ const PISMarketStore = (() => {
             saved.pokemonId === listing.pokemonId && saved.speciesId === listing.speciesId && saved.shiny === listing.shiny;
           const sprite = keepSprite && saved.form === listing.form && saved.mega === listing.mega ?
             { sprite: saved.sprite, spriteSource: saved.spriteSource, spriteFallback: saved.spriteFallback } : {};
-          const alertObservedAt = PISOpportunities.alertObservedAt(listing, saved, now, { live, priceWatch });
-          const row = { ...listing, ...sprite, exposureKey: exposure.key, observedAt: now, alertObservedAt };
+          const alert = PISOpportunities.alertObservation(listing, saved, now, { live, priceWatch, olderScan });
+          const row = { ...listing, ...sprite, ...alert, exposureKey: exposure.key, observedAt: now };
           if (reusableQuote(saved, row, now)) {
             const priced = { ...row, pricingRevision: saved.pricingRevision, estimatedAt: saved.estimatedAt, estimate: saved.estimate };
             listings.put(priced);
