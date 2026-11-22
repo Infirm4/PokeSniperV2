@@ -52,6 +52,11 @@ test('atribui falhas e vendas repetidas à página certa e nunca dispara avisos 
   assert.equal(await dispatch({ type: 'PIS_TEST_GAME_TOAST' }, popup), undefined);
   assert.equal(await dispatch({ type: 'PIS_TEST_DESKTOP_TOAST' }, popup), undefined);
   assert.deepEqual(messages, []);
+  const query = { type: 'PIS_MARKET_QUERY', route: 'orb', page: 1, order: 'recentes', durationMs: 184 };
+  assert.equal((await dispatch({ ...query, status: 'resposta' })).ok, true);
+  assert.equal(session['pisMarketQuery:orb'].duração_ms, 184);
+  assert.equal((await dispatch({ ...query, status: 'enviada' })).ok, true);
+  assert.equal(session['pisMarketQuery:orb'].duração_ms, null);
   assert.equal((await dispatch({ type: 'PIS_MARKET_CORE_BATCH', kind: 'sale', rows: ['known'] })).ok, true);
   assert.deepEqual(trace.at(-1), ['legacy_batch', undefined, 'gravado', 1]);
 });

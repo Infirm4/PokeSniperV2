@@ -39,7 +39,7 @@
     }
     if (msg?.source === 'PIS_MAIN' && msg.type === 'MARKET_QUERY') {
       chrome.runtime.sendMessage({ type: 'PIS_MARKET_QUERY', route: msg.route, status: msg.status,
-        page: msg.page, order: msg.order }).catch(() => {});
+        page: msg.page, order: msg.order, durationMs: msg.durationMs }).catch(() => {});
       return;
     }
     if (msg?.source === 'PIS_MAIN' && msg.type === 'COINS_HISTORY_STATUS') {

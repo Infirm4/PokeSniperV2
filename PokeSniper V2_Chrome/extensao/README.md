@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.92)
+# PokeIdle Market Sniper (v1.5.4.93)
 
 O [launcher para Windows](../README.md) cria um atalho na
 área de trabalho, atualiza a extensão e abre o PokéIdle no Chrome.
@@ -57,11 +57,10 @@ minutos, selecione **Diagnóstico da versão → Gerar relatório do mercado**.
 Confira histórico gravado e **alertas → coins**. Abra a vitrine, pesquise uma
 espécie e confirme que a paginação permanece sob seu controle.
 
-Com o Mercado fechado, o monitor prioriza a primeira página de anúncios
-recentes na moeda selecionada. O intervalo normal entre consultas começa em
-2 segundos, com fila compartilhada e recuo do servidor. Com ambas as moedas,
-a rotina reserva dois turnos para Coins e um para Gemas. Com a vitrine
-aberta, o monitor pausa as consultas de anúncios que podem redesenhá-la.
+O monitor prioriza as duas primeiras páginas de anúncios recentes na moeda
+selecionada. O intervalo entre envios começa em 2 segundos, com fila
+compartilhada e recuo do servidor. Em **Todas**, alterna Coins e Gemas.
+Com a vitrine aberta, pausa as consultas que podem redesenhá-la.
 A leitura do histórico e dos anúncios visitados continua alimentando o banco.
 Anúncios retidos com desconto podem aparecer antes da liberação, com o horário
 de compra. A chegada de um aviso depende da resposta do jogo e dos comparáveis.
@@ -279,14 +278,16 @@ das consultas que o jogo fez pela mesma conexão.
 
 Em **Testar avisos e gerar relatório**, confira **últimas consultas** em
 Coins, Gemas e histórico. O estado distingue envio, resposta, recusa, recuo
-e ausência de resposta. A seção da última página confirma se houve gravação.
+e ausência de resposta. `duração_ms` mostra o tempo do envio até a resposta.
+A seção da última página confirma se houve gravação.
 
 
-Ao salvar **Avisos dentro do jogo e no Chrome**, o monitor de oportunidades
-começa a coletar anúncios em Coins e Gemas com a aba do jogo conectada.
-O diagnóstico mostra o último recibo de cada moeda. O monitor percorre até três
-páginas de **Adicionados recentemente** por moeda, com uma consulta própria sem
-os filtros da vitrine. Com a vitrine aberta, a varredura segue depois que a
+Com os avisos ligados e a aba do jogo conectada, a varredura automática de
+**Adicionados recentemente** e **Mais baratos** usa a moeda configurada em
+**Filtros**. As duas primeiras páginas de Recentes têm prioridade. A terceira
+fica elegível a cada 30 segundos, se existir, e é lida depois de uma rodada
+prioritária. Entre duas rodadas entra no máximo uma leitura secundária.
+Com a vitrine aberta, a varredura de Recentes segue depois que a
 conexão confirma que devolve o identificador da consulta. Até essa confirmação,
 o Sniper lê as páginas que o jogador visita. Os avisos prontos são entregues
 pela ordem de entrada na fila.

@@ -811,7 +811,7 @@ const mainCoinsHistory = (() => {
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.92'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.93'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
@@ -1413,13 +1413,15 @@ const mainCoinsHistory = (() => {
     if (batch || request) window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_CORE_BATCH',
       kind: 'listing', rows: batch?.rows ?? [], automatic: !!request,
       live: live === true || viewing,
-      priceWatch: watchOpportunities && (live === true || viewing || request?.preparation === true),
+      priceWatch: watchOpportunities && (viewing || (request && watchesCurrency(request.moeda) &&
+        (live === true || request.preparation === true))),
       page: request?.pagina, currency: request?.moeda, preparation: request?.preparation === true, totalRows: frame.linhas?.length }, location.origin);
   }
 
   let lastMonitorState;
   let watchOpportunities = false;
   let watchCurrency = 'gold';
+  const watchesCurrency = moeda => watchCurrency === 'all' || watchCurrency === moeda;
   const vitrineAberta = () => {
     const list = document.getElementById('cm-lista');
     return !!list?.getClientRects().length && getComputedStyle(list).visibility === 'visible';
@@ -1688,11 +1690,11 @@ const mainCoinsHistory = (() => {
   // O lock inclui a RESPOSTA, não apenas o envio. Isso impede duas consultas do
   // próprio bot em paralelo e evita confundir respostas de paginação ou mercado.
   // 'permitir' é reavaliado após qualquer espera: desligar rastreador/bot cancela a consulta.
-  function reportQuery(msg, censusRequest, status) {
+  function reportQuery(msg, censusRequest, status, durationMs) {
     const route = msg.t === 'market.historicoGlobal' ? 'history' : censusRequest?.moeda;
     if (!route) return;
     window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_QUERY', route, page: msg.pagina,
-      order: censusRequest?.ordem, status }, location.origin);
+      order: censusRequest?.ordem, status, durationMs }, location.origin);
   }
 
   function ask(msg, pred, ms = 12000, permitir = null, censusRequest = null, live = false) {
@@ -1701,6 +1703,7 @@ const mainCoinsHistory = (() => {
       const s = st.sock;
       if (!s || s.readyState !== 1) throw new Error('socket do jogo indisponível');
       st.marketUltimoEnvio = Date.now();
+      const sentAt = performance.now();
       const resposta = await new Promise((res, rej) => {
         const w = { p: pred, r: res, reject: rej, seq: msg.seq, t: null, ws: s, censusRequest, live };
         w.t = setTimeout(() => {
@@ -1728,7 +1731,7 @@ const mainCoinsHistory = (() => {
       });
       // Não remove a pausa explícita disparada por aviso de limite.
       if (Date.now() >= st.marketPausaAte) st.marketFalhas = 0;
-      reportQuery(msg, censusRequest, 'resposta');
+      reportQuery(msg, censusRequest, 'resposta', Math.round(performance.now() - sentAt));
       return resposta;
     };
     const tentativa = st.marketFila.then(executar, executar);
@@ -3381,8 +3384,8 @@ const mainCoinsHistory = (() => {
     const req = pedidoPaginaRastreador(pagina, moeda, ordem);
     const permitido = () => Date.now() >= st.marketPausaAte &&
       (!vitrineAberta() || live && ordem === 'recentes' && recentEchoVerified.has(st.sock)) &&
-      (preparation ? monitorAtivo() :
-        live ? watchOpportunities && (watchCurrency === moeda || watchCurrency === 'all') : censoAtivo());
+      (preparation ? monitorAtivo() && (!watchOpportunities || watchesCurrency(moeda)) :
+        live ? watchOpportunities && watchesCurrency(moeda) : censoAtivo());
     // Uma consulta POR VEZ, com filtro EXATO da página da resposta. A fila é liberada
     // a cada página para não bloquear as compras e as liberações dos retidos.
     return naFilaItem(() => ask(req, j => mainMarketCore.matchesMarketPage(j, req),
@@ -4433,9 +4436,16 @@ const mainCoinsHistory = (() => {
   let badgeTurn = 0;
   let lastBadgeScan = 0;
 
+  function lastListingPage(page, pageNumber) {
+    const size = Number(page.porPagina) || page.linhas.length;
+    const total = numeroInteiroNaoNegativo(page.total);
+    return !page.linhas.length || page.temMais === false ||
+      (size > 0 && total != null && (pageNumber + 1) * size >= total);
+  }
+
   async function prepareBadgePage(now) {
-    // Com os avisos desligados, o censo antigo já percorre Coins.
-    const currency = watchOpportunities && badgeTurn++ % 2 === 0 ? 'gold' : 'orb';
+    const currency = !watchOpportunities ? 'orb' :
+      watchCurrency === 'all' ? recentSchedule[badgeTurn++ % recentSchedule.length] : watchCurrency;
     const state = badgeSweep[currency];
     lastBadgeScan = now;
     if (now < state.retryAt) return;
@@ -4443,10 +4453,8 @@ const mainCoinsHistory = (() => {
     const pageNumber = front ? 0 : state.page;
     try {
       const page = await consultarPaginaRastreador(pageNumber, currency, 'baratos', false, true);
-      const size = Number(page.porPagina) || page.linhas.length;
-      const last = !page.linhas.length || page.temMais === false ||
-        (size > 0 && Number.isFinite(Number(page.total)) && (pageNumber + 1) * size >= Number(page.total));
-      if (!front || state.page === 0) state.page = last || pageNumber >= MAX_PAGINAS_RASTREADOR - 1 ? 0 : pageNumber + 1;
+      if (!front || state.page === 0)
+        state.page = lastListingPage(page, pageNumber) || pageNumber >= MAX_PAGINAS_RASTREADOR - 1 ? 0 : pageNumber + 1;
     } catch (error) {
       if (error.queryStatus !== 'cancelada') {
         state.retryAt = Date.now() + 30000;
@@ -4466,9 +4474,12 @@ const mainCoinsHistory = (() => {
 
   let recentTurn = 0;
   let recentBusy = false;
+  let secondarySincePriority = false;
   const recentSchedule = ['gold', 'orb'];
-  const recentPages = { gold: { next: 0, retryAt: 0 }, orb: { next: 0, retryAt: 0 } };
-  const RECENT_PAGES = 3;
+  const recentPages = Object.fromEntries(recentSchedule.map(currency =>
+    [currency, { next: 0, retryAt: 0, completedPriority: false, thirdDueAt: null }]));
+  const THIRD_RECENT_PAGE = 2;
+  const THIRD_RECENT_INTERVAL_MS = 30000;
   setInterval(async () => {
     if (recentBusy || !monitorAtivo()) return;
     if (vitrineAberta() && (!watchOpportunities || !recentEchoVerified.has(st.sock))) {
@@ -4490,21 +4501,36 @@ const mainCoinsHistory = (() => {
       : [watchCurrency];
     const currency = currencies.find(value => now >= recentPages[value].retryAt);
     if (!currency) return;
-    if (recentTurn > 0 && recentPages[currency].next === 0 && await prepareBadgesIfDue(now)) return;
-    recentTurn = recentSchedule.indexOf(currency) + 1;
-    const state = recentPages[currency];
-    const pageNumber = state.next;
+    const betweenPriorityRounds = !secondarySincePriority && currencies.every(value => {
+      const state = recentPages[value];
+      return state.completedPriority && state.next === 0 && now >= state.retryAt;
+    });
+    if (betweenPriorityRounds && await prepareBadgesIfDue(now)) {
+      secondarySincePriority = true;
+      return;
+    }
+    const thirdCurrency = betweenPriorityRounds ? currencies.find(value => {
+      const due = recentPages[value].thirdDueAt;
+      return due != null && now >= due;
+    }) : null;
+    const state = recentPages[thirdCurrency ?? currency];
+    const pageNumber = thirdCurrency ? THIRD_RECENT_PAGE : state.next;
+    secondarySincePriority = Boolean(thirdCurrency);
+    if (thirdCurrency) state.thirdDueAt = now + THIRD_RECENT_INTERVAL_MS;
+    else recentTurn = recentSchedule.indexOf(currency) + 1;
     recentBusy = true;
     reportAutomatic('varrendo');
     try {
-      const page = await consultarPaginaRastreador(pageNumber, currency, 'recentes', true);
-      const size = Number(page.porPagina) || page.linhas.length;
-      const last = !page.linhas.length || page.temMais === false ||
-        (size > 0 && Number.isFinite(Number(page.total)) && (pageNumber + 1) * size >= Number(page.total));
-      state.next = last ? 0 : (pageNumber + 1) % RECENT_PAGES;
+      const page = await consultarPaginaRastreador(pageNumber, thirdCurrency ?? currency, 'recentes', true);
+      if (thirdCurrency) return;
+      const last = lastListingPage(page, pageNumber);
+      state.next = !last && pageNumber === 0 ? 1 : 0;
+      if (state.next === 0) state.completedPriority = true;
+      if (last) state.thirdDueAt = null;
+      else if (pageNumber === 1) state.thirdDueAt ??= now + THIRD_RECENT_INTERVAL_MS;
     } catch (error) {
       if (error.queryStatus === 'cancelada') return;
-      state.retryAt = Date.now() + 10000;
+      if (!thirdCurrency) state.retryAt = Date.now() + 10000;
       dbg('Ofertas do mercado:', error.message);
     } finally { recentBusy = false; }
   }, 250);
@@ -5470,7 +5496,7 @@ const mainCoinsHistory = (() => {
   }
 
   // Novo aviso identifica o código injetado; mensagens antigas ficam no histórico local.
-  logPk(`🧭 PokéIdle Sniper v${EXT_VERSION}: consultas ≥${intervaloMinMercadoAtualMs()/1000}s (2→3→4→5→6→7s com sobrecarga); o monitor de avisos percorre até três páginas de anúncios recentes. Falhas mantêm recuo.`);
+  logPk(`🧭 PokéIdle Sniper v${EXT_VERSION}: consultas ≥${intervaloMinMercadoAtualMs()/1000}s (2→3→4→5→6→7s com sobrecarga). O monitor prioriza as duas primeiras páginas de Recentes. Falhas mantêm recuo.`);
   if (LEGACY_PANEL_ENABLED) {
     if (document.body) buildUI();
     else document.addEventListener('DOMContentLoaded', buildUI);

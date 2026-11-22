@@ -77,6 +77,7 @@ test('a leitura de Mais baratos monitora reduções sem ser tratada como consult
   const code = source.slice(source.indexOf('  function publishMarketPage'), source.indexOf('  let lastMonitorState'));
   const reports = [];
   const context = { watchOpportunities: true, vitrineAberta: () => false, location: { origin: 'https://pokeidle.io' },
+    watchesCurrency: currency => currency === 'orb',
     PISMarketCore: { captureAutomatic: () => ({ rows: [{ price: 7 }] }) },
     window: { postMessage: message => reports.push(message) } };
   const publish = runInNewContext(code + '\n publishMarketPage', context);
@@ -85,7 +86,49 @@ test('a leitura de Mais baratos monitora reduções sem ser tratada como consult
   publish({}, page, request, false);
   assert.equal(reports[0].live, false);
   assert.equal(reports[0].priceWatch, true);
+  publish({}, page, { ...request, moeda: 'gold' }, false);
+  assert.equal(reports[1].priceWatch, false);
   context.watchOpportunities = false;
   publish({}, page, request, false);
-  assert.equal(reports[1].priceWatch, false);
+  assert.equal(reports[2].priceWatch, false);
+});
+
+test('prioriza as duas primeiras páginas por moeda e evita duas consultas secundárias seguidas', async () => {
+  const source = readFileSync(join(__dirname, '../sniper.js'), 'utf8');
+  const code = source.slice(source.indexOf('  // A preparação de selos'),
+    source.indexOf('  if (LEGACY_PANEL_ENABLED) (async function coletaContinua'));
+  for (const watchCurrency of ['orb', 'gold', 'all']) {
+    const first = 60000;
+    let now = first, tick;
+    const reads = [];
+    const st = { marketPausaAte: 0, marketUltimoEnvio: 0 };
+    runInNewContext(code, {
+      Date: { now: () => now }, st, watchCurrency, watchOpportunities: true,
+      setInterval(fn) { tick = fn; },
+      marketModules: () => ({ parser: true }), intervaloMinMercadoAtualMs: () => 2000,
+      monitorAtivo: () => true, socketReadyForMarket: () => true, vitrineAberta: () => false,
+      MAX_PAGINAS_RASTREADOR: 500, reportAutomatic() {}, dbg() {},
+      numeroInteiroNaoNegativo: value => Number.isSafeInteger(value) ? value : null,
+      async consultarPaginaRastreador(page, currency, order) {
+        reads.push({ page, currency, order, now });
+        st.marketUltimoEnvio = now;
+        return { linhas: [{}], porPagina: 1, total: 50 };
+      },
+    });
+    for (; now <= first + 75000; now += 2000) await tick();
+
+    const currencies = watchCurrency === 'all' ? ['gold', 'orb'] : [watchCurrency];
+    const priority = [0, 1].flatMap(page => currencies.map(currency => [currency, page, 'recentes']));
+    const secondary = read => read.order === 'baratos' || read.page === 2;
+    assert.deepEqual(reads.slice(0, priority.length).map(r => [r.currency, r.page, r.order]), priority);
+    assert.equal(reads[priority.length].order, 'baratos');
+    assert.ok(reads.every(r => currencies.includes(r.currency)));
+    for (const currency of currencies) {
+      const third = reads.find(r => r.currency === currency && r.page === 2 && r.order === 'recentes');
+      const second = reads.find(r => r.currency === currency && r.page === 1 && r.order === 'recentes');
+      assert.ok(third.now - second.now >= 30000);
+      assert.ok(reads.filter(r => r.currency === currency && r.order === 'recentes' && r.page === 1).length > 4);
+    }
+    assert.equal(reads.some((read, index) => index > 0 && secondary(read) && secondary(reads[index - 1])), false);
+  }
 });

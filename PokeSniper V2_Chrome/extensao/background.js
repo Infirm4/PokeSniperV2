@@ -158,7 +158,9 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
       'cancelada', 'sem_resposta', 'falha_de_envio', 'desconectada'].includes(req.status)) return false;
     const query = { status: req.status, at: Date.now(),
       page: Number.isSafeInteger(req.page) && req.page >= 0 ? req.page : null,
-      order: ['recentes', 'baratos'].includes(req.order) ? req.order : null };
+      order: ['recentes', 'baratos'].includes(req.order) ? req.order : null,
+      duração_ms: req.status === 'resposta' && Number.isSafeInteger(req.durationMs) &&
+        req.durationMs >= 0 && req.durationMs <= 120000 ? req.durationMs : null };
     recordMarket(req.route, query.status, query.page);
     chrome.storage.session.set({ ['pisMarketQuery:' + req.route]: query })
       .then(() => reply({ ok: true }), () => reply({ ok: false }));
