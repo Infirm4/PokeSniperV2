@@ -8,7 +8,6 @@ importScripts('market-core.js', 'coin-market.js', 'pricing-model.js', 'liquidity
   'history-trace.js', 'public-gems.js', 'market-event-log.js');
 
 const gameTabKey = 'marketGameTab';
-const wireTabKey = 'pisMarketWireTab';
 let lastGameTab;
 const PISGameTab = {
   remember(tabId) {
@@ -56,32 +55,6 @@ function recordMarket(route, status, page) {
 let listingPending = 0;
 let salePending = 0;
 chrome.runtime.onMessage.addListener((req, sender, reply) => {
-  if (req?.type === 'PIS_TEST_MARKET_WIRE') {
-    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html') ||
-        !['start', 'finish', 'status'].includes(req.action)) return false;
-    (async () => {
-      const session = await chrome.storage.session.get([wireTabKey, gameTabKey]);
-      const started = session[wireTabKey];
-      if (req.action === 'status') return { ok: true, active: Number.isSafeInteger(started) };
-      let id = req.action === 'finish' ? started : sender.tab?.id ?? lastGameTab ?? session[gameTabKey];
-      if (req.action === 'start' && !Number.isSafeInteger(id)) {
-        const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (PIS_HOST.test(active?.url ?? '')) id = active.id;
-      }
-      if (!Number.isSafeInteger(id)) return { ok: false, reason: 'sem_aba' };
-      try {
-        const tab = await chrome.tabs.get(id);
-        if (!PIS_HOST.test(tab.url ?? '')) return { ok: false, reason: 'sem_aba' };
-        const result = await chrome.tabs.sendMessage(id, { type: 'PIS_MARKET_WIRE_TAB', action: req.action }, { frameId: 0 });
-        if (result?.ok !== true) return { ok: false, reason: 'sem_captura' };
-        if (req.action === 'start') await chrome.storage.session.set({ [wireTabKey]: id });
-        return result;
-      } finally {
-        if (req.action === 'finish') await chrome.storage.session.remove(wireTabKey);
-      }
-    })().then(reply, () => reply({ ok: false, reason: 'sem_captura' }));
-    return true;
-  }
   if (req?.type === 'PIS_TEST_PURCHASE_REVIEW') {
     if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
     PISGameTab.review({ id: 'demo', pokemonId: 'demo', speciesId: '94', currency: 'gold',

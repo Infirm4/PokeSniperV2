@@ -22,7 +22,6 @@ test('descobre conexão preexistente pelo envio do jogo e libera uma substituta 
   const window = { WebSocket: Socket, addEventListener() {} };
   const result = runInNewContext(pieces.join('\n') + '\n({ source: () => gameSocketSource, ready: socketReadyForMarket, bind: bindGameSocket })', {
     st, waiters, window, OWS: Socket, osend: Socket.prototype.send, URL, clearTimeout,
-    marketWire: { active: () => false },
     monitorAtivo: () => true, reportAutomatic: value => updates.push(value), onMsg() {},
     dbg() {}, aprenderConsultaPokemon() {},
   });

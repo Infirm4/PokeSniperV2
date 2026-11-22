@@ -28,32 +28,6 @@
     reply({ ok: true });
     return false;
   });
-  chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-    if (sender.id !== chrome.runtime.id || msg?.type !== 'PIS_MARKET_WIRE_TAB' ||
-        !['start', 'finish'].includes(msg.action)) return false;
-    const requestId = crypto.randomUUID();
-    const timeout = setTimeout(() => finish({ ok: false }), 2000);
-    function finish(result) {
-      clearTimeout(timeout);
-      window.removeEventListener('message', receive);
-      reply(result);
-    }
-    function receive(event) {
-      const data = event.data;
-      if (event.source !== window || event.origin !== location.origin || data?.source !== 'PIS_MAIN' ||
-          data.type !== 'MARKET_WIRE_TEST_RESULT' || data.requestId !== requestId) return;
-      const report = msg.action === 'finish' ? data.report : undefined;
-      let valid = msg.action === 'start';
-      try {
-        if (msg.action === 'finish') valid = Array.isArray(report?.eventos) &&
-          Array.isArray(report.diferenças_observadas) && JSON.stringify(report).length <= 250000;
-      } catch { /* A página não retornou um relatório JSON. */ }
-      finish(data.ok === true && valid ? { ok: true, report } : { ok: false });
-    }
-    window.addEventListener('message', receive);
-    window.postMessage({ source: 'PIS_BRIDGE', type: 'MARKET_WIRE_TEST', requestId, action: msg.action }, location.origin);
-    return true;
-  });
   window.addEventListener('message', event => {
     if (event.source !== window || event.origin !== location.origin) return;
     const msg = event.data;
