@@ -1,4 +1,4 @@
-# PokeIdle Market Sniper (v1.5.4.93)
+# PokeIdle Market Sniper (v1.5.4.94)
 
 O [launcher para Windows](../README.md) cria um atalho na
 área de trabalho, atualiza a extensão e abre o PokéIdle no Chrome.
@@ -280,6 +280,17 @@ Em **Testar avisos e gerar relatório**, confira **últimas consultas** em
 Coins, Gemas e histórico. O estado distingue envio, resposta, recusa, recuo
 e ausência de resposta. `duração_ms` mostra o tempo do envio até a resposta.
 A seção da última página confirma se houve gravação.
+
+Para investigar os comandos do jogo, abra **Filtros → Diagnóstico da versão
+→ Iniciar teste do Mercado**. Teste ordenações, filtros, páginas e **Ver
+ficha** no jogo. Se for editar um anúncio, veja-o antes e depois da edição.
+Volte ao painel e use **Encerrar teste e gerar relatório**. A captura
+voluntária dura até cinco minutos e usa apelidos por sessão para IDs do
+anúncio e do exemplar. O relatório resume frames da vitrine, parâmetros e
+diferenças observadas. Para Fetch/XHR, a captura registra rotas mascaradas e
+metadados do navegador. Novos fluxos EventSource observados durante o teste
+também aparecem. Ausência de um evento indica apenas que ele ficou fora da
+captura.
 
 
 Com os avisos ligados e a aba do jogo conectada, a varredura automática de

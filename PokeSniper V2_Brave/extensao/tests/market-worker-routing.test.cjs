@@ -89,3 +89,33 @@ test('a vitrine de Gemas só exibe estimativas frescas da fonte pública', async
   assert.equal(reply.offers[2].quote, null);
   assert.equal(reply.offers[3].quote.median, 2900);
 });
+
+test('o painel recupera a captura na aba original mesmo após reabrir', async () => {
+  let listener;
+  const session = { marketGameTab: 7 }, sent = [];
+  const report = { eventos: [], diferenças_observadas: [] };
+  runInNewContext(source, {
+    importScripts() {}, console, PISMarketStore: { async initialize() {} },
+    chrome: {
+      runtime: { id: 'own', getURL: page => 'chrome-extension://own/' + page,
+        onMessage: { addListener(fn) { listener ??= fn; } } },
+      storage: { session: { async get() { return { ...session }; }, async set(values) { Object.assign(session, values); },
+        async remove(key) { delete session[key]; } } },
+      tabs: { async get() { return { url: 'https://pokeidle.io/' }; },
+        async sendMessage(id, message) { sent.push([id, message.action]); return { ok: true, report }; } },
+    },
+  });
+  const request = action => ({ type: 'PIS_TEST_MARKET_WIRE', action });
+  const popup = { id: 'own', url: 'chrome-extension://own/opportunities.html' };
+  const dispatch = (action, sender = popup) => new Promise(resolve => {
+    if (!listener(request(action), sender, resolve)) resolve(undefined);
+  });
+  assert.equal(await dispatch('start', { id: 'other', url: popup.url }), undefined);
+  assert.equal((await dispatch('status')).active, false);
+  assert.equal((await dispatch('start')).ok, true);
+  session.marketGameTab = 8;
+  assert.equal((await dispatch('status')).active, true);
+  assert.equal((await dispatch('finish')).report, report);
+  assert.equal((await dispatch('status')).active, false);
+  assert.deepEqual(sent, [[7, 'start'], [7, 'finish']]);
+});

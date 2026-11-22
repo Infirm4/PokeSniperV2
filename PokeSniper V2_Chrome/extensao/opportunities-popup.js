@@ -331,7 +331,48 @@ const copyDiagnostics = document.querySelector('#copy-diagnostics');
 const downloadDiagnostics = document.querySelector('#download-diagnostics');
 const reportBox = document.querySelector('#diagnostic-report');
 const testStatus = document.querySelector('#test-status');
+const wireButton = document.querySelector('#test-market-wire');
+const wireGuide = document.querySelector('#market-wire-guide');
+let wireActive = false;
 
+function showWireTest(active) {
+  wireActive = active;
+  wireButton.textContent = active ? 'Encerrar teste e gerar relatório' : 'Iniciar teste do Mercado';
+  wireGuide.hidden = !active;
+  if (active) wireGuide.textContent = 'Captura de até 5 min nesta aba. Teste as ordenações e os filtros, vá à página 2 e clique em Ver ficha. Se for editar um anúncio, veja-o antes e depois da edição. Depois volte aqui para encerrar.';
+}
+
+wireButton.disabled = true;
+chrome.runtime.sendMessage({ type: 'PIS_TEST_MARKET_WIRE', action: 'status' })
+  .then(result => showWireTest(result?.active === true), () => showWireTest(false))
+  .finally(() => { wireButton.disabled = false; });
+
+wireButton.addEventListener('click', async () => {
+  const action = wireActive ? 'finish' : 'start';
+  wireButton.disabled = true;
+  testStatus.textContent = '';
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'PIS_TEST_MARKET_WIRE', action });
+    if (!result?.ok) {
+      showWireTest(false);
+      testStatus.textContent = result?.reason === 'sem_aba' ? 'Abra o PokéIdle para iniciar o teste.' :
+        'Captura indisponível. Recarregue o PokéIdle e inicie o teste de novo.';
+      return;
+    }
+    showWireTest(action === 'start');
+    if (action === 'start') return;
+    reportBox.value = JSON.stringify({ versão: chrome.runtime.getManifest().version,
+      teste: 'Tráfego observado no Mercado', ...result.report }, null, 2);
+    reportBox.hidden = false;
+    copyDiagnostics.disabled = downloadDiagnostics.disabled = false;
+    testStatus.textContent = result.report.eventos.length ? 'Teste encerrado. Copie ou baixe o relatório.' :
+      'O teste terminou sem atividade do Mercado registrada. O relatório está disponível.';
+  } catch {
+    testStatus.textContent = 'Falha ao consultar a captura do Mercado.';
+  } finally {
+    wireButton.disabled = false;
+  }
+});
 
 document.querySelector('#sample-sale').addEventListener('click', async () => {
   const button = document.querySelector('#sample-sale');

@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.93'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.94'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
@@ -499,6 +499,71 @@
   const OWS = window.WebSocket;
   const osend = OWS.prototype.send;
   const waiters = [];
+  const marketWire = globalThis.PISMarketWireDiagnostic.create();
+  let stopWireObservers;
+
+  function watchWireControls(event) {
+    const control = event.target?.closest?.('button, select, input, [role="button"], [role="option"]');
+    if (!control?.closest('[id^="cm-"], .cm-card')) return;
+    const label = control.textContent.trim().toLowerCase();
+    const action = ['editar', 'ver ficha'].includes(label) ? label === 'editar' ? 'abrir edição' : label :
+      control.id === 'cm-salvar' ? 'salvar edição' : event.type === 'change' ? 'alterar controle' : null;
+    marketWire.controls(action, [label, ...Array.from(control.options ?? [], option => option.textContent.trim())]);
+  }
+
+  function wireObservers() {
+    const nativeEventSource = window.EventSource;
+    let observedEventSource, resources;
+    if (typeof nativeEventSource === 'function') {
+      observedEventSource = new Proxy(nativeEventSource, {
+        construct(target, args, newTarget) {
+          const source = Reflect.construct(target, args, newTarget);
+          marketWire.network('eventsource', source.url, location.href);
+          return source;
+        },
+      });
+      window.EventSource = observedEventSource;
+    }
+    const recordResources = entries => {
+      for (const entry of entries) marketWire.network(entry.initiatorType, entry.name, location.href, entry.responseStatus);
+    };
+    if (typeof PerformanceObserver === 'function') {
+      try {
+        resources = new PerformanceObserver(list => recordResources(list.getEntries()));
+        resources.observe({ type: 'resource' });
+      } catch { resources = undefined; }
+    }
+    document.addEventListener('click', watchWireControls, true);
+    document.addEventListener('change', watchWireControls, true);
+    const timer = setTimeout(stop, globalThis.PISMarketWireDiagnostic.LIMIT_MS);
+    function stop() {
+      clearTimeout(timer);
+      if (resources) {
+        recordResources(resources.takeRecords());
+        resources.disconnect();
+      }
+      if (observedEventSource && window.EventSource === observedEventSource) window.EventSource = nativeEventSource;
+      document.removeEventListener('click', watchWireControls, true);
+      document.removeEventListener('change', watchWireControls, true);
+      stopWireObservers = undefined;
+    }
+    return stop;
+  }
+
+  window.addEventListener('message', event => {
+    const msg = event.data;
+    if (event.source !== window || event.origin !== location.origin || msg?.source !== 'PIS_BRIDGE' ||
+        msg.type !== 'MARKET_WIRE_TEST' || typeof msg.requestId !== 'string' || msg.requestId.length !== 36 ||
+        !['start', 'finish'].includes(msg.action)) return;
+    stopWireObservers?.();
+    let report;
+    if (msg.action === 'start') {
+      marketWire.start();
+      stopWireObservers = wireObservers();
+    } else report = marketWire.finish();
+    window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_WIRE_TEST_RESULT',
+      requestId: msg.requestId, ok: msg.action === 'start' || Boolean(report), report }, location.origin);
+  });
 
   function descricaoConfere(descricao, nome) {
     const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -689,6 +754,7 @@
     const marketCore = globalThis.PISMarketCore;
     const j = marketCore?.decodeGameFrame(d);
     if (!j) {
+      if (marketWire.active() && isPokeIdleSocket(ws)) marketWire.raw('recebida', d);
       wire.outros++;
       const format = marketCore?.otherFrameFormat(d);
       if (format) wire.formatos[format] = (wire.formatos[format] ?? 0) + 1;
@@ -750,15 +816,19 @@
     }
     let censusRequest;
     let live = false;
+    let extensionResponse = false;
     for (let i = waiters.length - 1; i >= 0; i--) {
       if (waiters[i].ws === ws && waiters[i].p(j)) {
         const w = waiters.splice(i, 1)[0];
         clearTimeout(w.t);
+        extensionResponse = true;
         censusRequest ||= w.censusRequest;
         live ||= w.live;
         w.r(j);
       }
     }
+    if (marketWire.active() && isPokeIdleSocket(ws) && !extensionResponse && !recentQueries.get(ws)?.has(String(j.seq)))
+      marketWire.socket('recebida', j);
     if (ws === st.sock && j.t === 'market') {
       try { publishMarketPage(ws, j, censusRequest, live); }
       catch (error) { dbg('Captura de mercado:', error.message); }
@@ -800,6 +870,7 @@
   OWS.prototype.send = function (d) {
     attach(this);
     bindGameSocket(this, 'envio do jogo');
+    if (marketWire.active() && isPokeIdleSocket(this)) marketWire.raw('enviada', d);
     // espião (só console): mostra o que o PRÓPRIO JOGO envia ao mercado. O bot envia pelo send original e não aparece aqui.
     if (typeof d === 'string' && d.slice(0, 40).includes('market')) dbg('jogo enviou:', d.slice(0, 400));
     if (typeof d === 'string' && globalThis.PISMarketCore?.historyRequest.test(d) && isPokeIdleSocket(this)) {

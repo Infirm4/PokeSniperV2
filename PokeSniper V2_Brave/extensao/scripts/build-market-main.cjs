@@ -19,13 +19,16 @@ function privateModule(file, binding, value, globalName) {
 function build() {
   const core = privateModule('market-core.js', 'mainMarketCore', 'core', 'PISMarketCore');
   const history = privateModule('coins-history.js', 'mainCoinsHistory', 'api', 'PISCoinsHistory');
+  const diagnostic = privateModule('market-wire-diagnostic.js', 'mainMarketWireDiagnostic', 'api', 'PISMarketWireDiagnostic');
   const monitor = read('sniper.js').replaceAll('globalThis.PISMarketCore', 'mainMarketCore')
-    .replaceAll('globalThis.PISCoinsHistory', 'mainCoinsHistory');
+    .replaceAll('globalThis.PISCoinsHistory', 'mainCoinsHistory')
+    .replaceAll('globalThis.PISMarketWireDiagnostic', 'mainMarketWireDiagnostic');
   return [
     '// Gerado por node scripts/build-market-main.cjs.',
     '(() => {',
     core,
     history,
+    diagnostic,
     monitor.trimEnd(),
     '})();',
     '',
