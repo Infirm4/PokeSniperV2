@@ -172,11 +172,11 @@ test('outbox do MAIN recupera a mensagem após reload e só remove com ACK posit
   beforeReload.api.publishMarketBatch({ rows: [{ id: 'gem1' }], kind: 'listing' });
   await flush();
   assert.equal(indexedDB.contents.size, 1);
-  assert.equal(beforeReload.messages.length, 1);
-  const batchId = beforeReload.messages[0].batchId;
+  assert.equal(beforeReload.messages.filter(m => m.type === 'MARKET_CORE_BATCH').length, 1);
+  const batchId = beforeReload.messages.find(m => m.type === 'MARKET_CORE_BATCH').batchId;
   const afterReload = loadMainOutbox(indexedDB);
   await flush();
-  assert.equal(afterReload.messages[0].batchId, batchId);
+  assert.equal(afterReload.messages.find(m => m.type === 'MARKET_CORE_BATCH').batchId, batchId);
   afterReload.receive({ source: 'PIS_BRIDGE', type: 'MARKET_BATCH_RECEIPT', batchId, ok: true });
   await flush();
   assert.equal(indexedDB.contents.size, 0);

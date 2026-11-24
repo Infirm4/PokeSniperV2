@@ -95,7 +95,7 @@ test('tenta a sprite verificada nos dois canais e recupera o ícone fixo se o Ch
   assert.equal(notices[0].title, 'Gengar · −21,5%');
   assert.equal(notices[0].message, 'Nvl 100 · P4 · N 4,12\nMercado 💰 78,5 MI · Preço justo 💰 100 MI\n0 Spe (crítico) · 32 Sp Atk (Pica)\nLiquidez média');
   assert.equal(game[0], notices[0].title);
-  assert.equal(game[1], notices[0].message.replace('N 4,12', 'Nota 4,123'));
+  assert.equal(game[1], notices[0].message.replace('N 4,12', 'Nota 4,12'));
 });
 
 test('revalida a oferta seguinte e processa novas chegadas durante o envio', async () => {

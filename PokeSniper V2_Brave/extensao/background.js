@@ -4,7 +4,7 @@ const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwPXSeG3xL5PUwDwsuCp
 const PIS_HOST = /^https:\/\/(?:[a-z0-9-]+\.)?pokeidle\.io(?:\/|$)/i;
 
 importScripts('vendor/briaoale/especies.js', 'vendor/briaoale/pve-power.js', 'vendor/briaoale/market-bonuses.js', 'vendor/briaoale/central.js', 'vendor/briaoale/nota.js', 'vendor/briaoale/pve-pricing.js');
-importScripts('market-core.js', 'coin-market.js', 'pricing-model.js', 'liquidity.js', 'opportunities.js', 'market-store.js',
+importScripts('market-core.js', 'coin-market.js', 'pricing-model.js', 'liquidity.js', 'opportunities.js', 'market-priority.js', 'market-store.js',
   'history-trace.js', 'public-gems.js', 'market-event-log.js');
 
 const gameTabKey = 'marketGameTab';
@@ -85,7 +85,11 @@ function wakeMarketQueue() {
   marketQueueRequested = false;
   void (async () => {
     for (let i = 0; i < 10000; i++) {
-      const job = await PISMarketStore.nextBatch();
+      const job = await PISMarketStore.nextBatch(Date.now(), {
+        // A vitrine permanece em primeiro lugar. Recentes só cede um turno
+        // a trabalhos normais a cada 12 lotes concluídos.
+        backgroundTurn: completedMarketBatches > 0 && completedMarketBatches % 12 === 0,
+      });
       if (!job) break;
       const route = job.history ? 'history' : job.currency;
       const page = job.history ? job.trace?.page : job.page;
@@ -113,7 +117,9 @@ function wakeMarketQueue() {
         console.warn('[PIS] Lote preservado para nova tentativa:', String(error?.message ?? error));
         try { await PISMarketStore.deferBatch(job.id, (job.attempts || 0) + 1); }
         catch (failure) { console.warn('[PIS] Falha ao atualizar tentativa:', failure?.message); }
-        break; // aguarda próximo alarm; não faz loop agressivo em falha.
+        // Um lote defeituoso não deve bloquear todos os outros: o job
+        // permanece durável com backoff e a fila avança para os demais.
+        continue;
       }
     }
   })().catch(error => console.warn('[PIS] Fila de mercado:', error?.message))
@@ -134,6 +140,15 @@ Promise.resolve(PISMarketStore.initialize()).then(() => {
 
 chrome.runtime.onMessage.addListener((req, sender, reply) => {
   try {
+  // Health check leve para recuperar após suspensão/reinício do MV3.
+  if (req?.type === 'PIS_BRIDGE_HEALTH') {
+    if (sender.id !== chrome.runtime.id || !sender.tab || !PIS_HOST.test(String(sender.url || sender.tab.url || ''))) {
+      reply({ ok: false, error: 'origem inválida' });
+      return false;
+    }
+    reply({ ok: true, ready: true, version: chrome.runtime.getManifest?.().version ?? null });
+    return false;
+  }
   if (req?.type === 'PIS_TEST_PURCHASE_REVIEW') {
     if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) { reply({ ok: false, error: 'origem inválida' }); return false; }
     PISGameTab.review({ id: 'demo', pokemonId: 'demo', speciesId: '94', currency: 'gold',
@@ -203,7 +218,10 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
         priceTick <= 1e9 ? priceTick : 1,
     }));
     (async () => {
-      const rows = await PISMarketStore.marketBadges(candidates);
+      // Apenas observações normalizadas do jogo, nunca um preço vindo do DOM.
+      const observations = Array.isArray(req.observations) && req.observations.length <= 100
+        ? PISMarketCore.validate('listing', req.observations).filter(row => !row.closed) : [];
+      const rows = await PISMarketStore.marketBadges(candidates, Date.now(), observations);
       return rows.map(({ offer, row, excluded }) => {
         if (excluded) return { ...offer, actualPrice: row.price, excluded: true };
         const estimate = row.estimate;
@@ -324,10 +342,13 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     ? req.batchId : 'legacy:' + Date.now().toString(36) + ':' + Math.random().toString(36).slice(2, 12);
   const job = { id, kind, rows, history, traceEvent: history ? req.event : kind === 'sale' ? 'legacy_batch' : null,
     trace: history ? req.trace ?? {} : {},
-    automatic: req.automatic === true, page: req.page, currency: req.currency, preparation: req.preparation === true,
+    automatic: req.automatic === true, viewing: req.viewing === true && req.automatic !== true,
+    order: ['recentes', 'baratos'].includes(req.order) ? req.order : null,
+    page: req.page, currency: req.currency, preparation: req.preparation === true,
     totalRows: req.totalRows, tabId: sender.tab.id,
     options: { live: req.live === true, priceWatch: req.priceWatch === true,
       olderScan: req.automatic === true && req.preparation === true && req.olderScan === true } };
+  job.priority = globalThis.PISMarketPriority?.forJob(job) ?? 2;
   PISMarketStore.enqueueBatch(job).then(
     async receipt => {
       recordMarket(route, 'enfileirado', page);

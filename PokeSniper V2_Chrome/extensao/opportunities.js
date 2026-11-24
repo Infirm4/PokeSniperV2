@@ -1,6 +1,6 @@
 // Regras puras para o painel e as notificações. Nenhum comando é enviado ao jogo.
 (() => {
-  const { isOutland, attackProfile, validIv } = typeof module === 'object' && module.exports
+  const { isOutland, attackProfile, validIv, truncateGrade } = typeof module === 'object' && module.exports
     ? require('./market-core.js') : globalThis.PISMarketCore;
   const TTL = 10 * 60 * 1000;
   // Uma postagem recente recebe prioridade na fila de avisos.
@@ -77,7 +77,8 @@
   }
 
   function matches(row, config) {
-    if (config.minGrade > 0 && (!Number.isFinite(row.grade) || row.grade < config.minGrade)) return false;
+    const grade = truncateGrade(row.grade);
+    if (config.minGrade > 0 && (grade === null || grade < config.minGrade)) return false;
     const limit = priceLimit(row, config);
     return (config.currency === 'all' || config.currency === row.currency) &&
       limit != null && row.price <= limit;
@@ -196,16 +197,17 @@
       message: [`${discount} · ${asking}`, coins ? tier : range, composition, hold, warning].filter(Boolean).join('\n') };
   }
 
-  const grades = [2, 3].map(digits => new Intl.NumberFormat('pt-BR', {
-    minimumFractionDigits: digits, maximumFractionDigits: digits,
-  }));
+  const gradeDisplay = new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
 
   function profileSummary(row, compact = true) {
-    const [label, grade] = compact ? ['N', grades[0]] : ['Nota', grades[1]];
+    const label = compact ? 'N' : 'Nota';
+    const grade = truncateGrade(row.grade);
     return [
       row.level > 0 ? 'Nvl ' + row.level : '',
       row.power > 0 ? 'P' + row.power : '',
-      Number.isFinite(row.grade) ? label + ' ' + grade.format(row.grade) : '',
+      grade !== null ? label + ' ' + gradeDisplay.format(grade) : '',
     ].filter(Boolean).join(' · ');
   }
 

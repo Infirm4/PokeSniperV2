@@ -2,7 +2,7 @@
 const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
-  const DB_VERSION = 18;
+  const DB_VERSION = 20;
   const ESTIMATE_REVISION = 8;
   const revisionFor = row => row?.currency === 'gold' ? 11 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
@@ -19,6 +19,7 @@ const PISMarketStore = (() => {
   function createListings(db) {
     const store = db.createObjectStore('listings', { keyPath: ['currency', 'id'] });
     store.createIndex('pricingGroup', ['currency', 'speciesId', 'shiny']);
+    store.createIndex('pricingGroupRecent', ['currency', 'speciesId', 'shiny', 'observedAt']);
     store.createIndex('observedAt', 'observedAt');
     store.createIndex('listingId', 'id');
     return store;
@@ -44,6 +45,25 @@ const PISMarketStore = (() => {
           queue.createIndex('completedAt', 'completedAt');
           queue.createIndex('status', 'status');
         }
+        // Índice aditivo para recalcular somente anúncios ainda relevantes;
+        // NÃO exclui nem limita vendas históricas.
+        if (event.oldVersion < 20) {
+          const queue = tx.objectStore('marketQueue');
+          queue.createIndex('readyPriority', ['status', 'priority', 'dueAt', 'createdAt']);
+          // Lotes da versão anterior não têm prioridade: migração aditiva.
+          const cursor = queue.openCursor();
+          cursor.onsuccess = () => {
+            const current = cursor.result;
+            if (!current) return;
+            const row = current.value;
+            if (row.status === 'pending' && !Number.isInteger(row.priority))
+              current.update({ ...row, priority: 2, createdAt: row.createdAt || Date.now() });
+            current.continue();
+          };
+        }
+        if (event.oldVersion >= 11 && event.oldVersion < 19)
+          tx.objectStore('listings').createIndex('pricingGroupRecent',
+            ['currency', 'speciesId', 'shiny', 'observedAt']);
         if (event.oldVersion < 1) {
           createListings(db);
           const sales = db.createObjectStore('sales', { keyPath: ['currency', 'id'] });
@@ -165,6 +185,14 @@ const PISMarketStore = (() => {
     return opening;
   }
 
+  // Normaliza notas antigas só EM MEMÓRIA: não altera nem regrava as vendas
+  // históricas no IndexedDB. Os comparáveis locais usam as mesmas 2 casas
+  // que a leitura da ficha, a UI e o filtro de nota mínima.
+  const withTruncatedGrade = row => {
+    if (!row) return row;
+    const grade = PISMarketCore.truncateGrade(row.grade);
+    return grade === row.grade ? row : { ...row, grade };
+  };
   // Só cache de LEITURA, nunca reduz a janela histórica nem altera o modelo.
   let coinSalesCache = null;
   let coinSalesRevision = 0;
@@ -178,7 +206,7 @@ const PISMarketStore = (() => {
     const end = now + 5000;
     const groups = await Promise.all([0, 1].map(shiny =>
       result(index.getAll(IDBKeyRange.bound(['gold', shiny, 0], ['gold', shiny, end], false, true)))));
-    const rows = groups.flat();
+    const rows = groups.flat().map(withTruncatedGrade);
     if (revision === coinSalesRevision) coinSalesCache = { at: now, rows, revision };
     return rows.filter(row => row.soldAt < now);
   }
@@ -195,7 +223,7 @@ const PISMarketStore = (() => {
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor || rows.length === MAX_COMPARABLES) return resolve(rows);
-        if (!PISMarketCore.isOutland(cursor.value)) rows.push(cursor.value);
+        if (!PISMarketCore.isOutland(cursor.value)) rows.push(withTruncatedGrade(cursor.value));
         cursor.continue();
       };
     });
@@ -216,7 +244,7 @@ const PISMarketStore = (() => {
         const sale = cursor.value;
         if (sale.name && sale.power && Number.isFinite(sale.quality) &&
             Object.values(sale.ivs || {}).filter(Number.isInteger).length === 6 &&
-            !PISMarketCore.isOutland(sale)) rows.push(sale);
+            !PISMarketCore.isOutland(sale)) rows.push(withTruncatedGrade(sale));
         cursor.continue();
       };
     });
@@ -431,12 +459,17 @@ const PISMarketStore = (() => {
             }
           }
         }
-        // Recalcula apenas os grupos atingidos. Anúncios conservam a data observada.
-        const index = listings.index('pricingGroup');
+        // Recálculo por evento de venda somente para anúncios observados na
+        // última hora (janela dos selos). Vendas e anúncios antigos continuam
+        // armazenados, e os estimadores mantêm o histórico e os pesos originais.
+        const index = listings.index('pricingGroupRecent');
         const pending = [];
         for (const group of affected.values()) {
-          pending.push(result(index.getAll(group)));
+          const range = IDBKeyRange.bound([...group, now - 60 * 60000], [...group, now]);
+          pending.push(result(index.getAll(range)));
         }
+        // Não reutilizar cache de vendas anterior ao próprio lote recém-inserido.
+        coinSalesCache = null;
         await reprice(tx, (await Promise.all(pending)).flat(), now, true);
       } else {
         const observed = [];
@@ -577,20 +610,45 @@ const PISMarketStore = (() => {
 
   // Uma leitura recente da ficha basta para exibir a cotação da vitrine.
   // A janela menor dos alertas continua aplicada na fila de oportunidades.
-  async function marketBadges(offers, now = Date.now()) {
-    const db = await open();
-    const listings = db.transaction('listings').objectStore('listings');
+  // Cotação de vitrine: observações REAIS do MAIN são suficientes para
+  // calcular uma prévia sem aguardar a transação de escrita em listings.
+  // A ausência de observação recorre ao registro já persistido; nenhum preço
+  // é inferido somente da identificação do card no HTML.
+  async function marketBadges(offers, now = Date.now(), observations = []) {
+    const live = new Map(observations.filter(row => row && !row.closed &&
+      ['gold', 'orb'].includes(row.currency) && typeof row.id === 'string')
+      .map(row => [JSON.stringify(listingKey(row)), row]));
+    const liveQuote = offer => {
+      const row = live.get(JSON.stringify(listingKey(offer)));
+      return row && PISMarketCore.matchesDisplayPrice(row.price, offer) &&
+        (!row.expiresAt || row.expiresAt > now) ? row : null;
+    };
+    const needsStore = offers.some(offer => !liveQuote(offer));
+    const db = needsStore ? await open() : null;
+    const listings = db ? db.transaction('listings').objectStore('listings') : null;
     const rows = await Promise.all(offers.map(async offer => {
-      const row = await result(listings.get(listingKey(offer)));
-      if (!row || row.pricingRevision !== revisionFor(row) || !PISMarketCore.matchesDisplayPrice(row.price, offer) ||
-          row.observedAt < now - 60 * 60000 || row.closed || row.expiresAt && row.expiresAt <= now) return null;
-      return { offer, row, excluded: PISMarketCore.isOutland(row) };
+      const incoming = liveQuote(offer);
+      if (incoming) return { offer, row: incoming, preview: true, excluded: PISMarketCore.isOutland(incoming) };
+      if (!listings) return null;
+      const saved = await result(listings.get(listingKey(offer)));
+      if (!saved || saved.pricingRevision !== revisionFor(saved) ||
+          !PISMarketCore.matchesDisplayPrice(saved.price, offer) ||
+          saved.observedAt < now - 60 * 60000 || saved.closed ||
+          saved.expiresAt && saved.expiresAt <= now) return null;
+      return { offer, row: withTruncatedGrade(saved), excluded: PISMarketCore.isOutland(saved) };
     }));
     const confirmed = rows.filter(Boolean);
     const gems = confirmed.filter(({ row, excluded }) => row.currency === 'orb' && !excluded);
     if (gems.length) {
       const estimates = await publicEstimatesFor(gems.map(({ row }) => row), now);
       for (const entry of gems) entry.row = { ...entry.row, estimate: estimates.get(entry.row.id) };
+    }
+    const coins = confirmed.filter(({ row, preview, excluded }) =>
+      preview && row.currency === 'gold' && !excluded);
+    if (coins.length && globalThis.PISCoinMarket) {
+      const prices = (db ?? await open()).transaction('sales').objectStore('sales');
+      const model = PISCoinMarket.prepare(await allCoinSales(prices, now), now);
+      for (const entry of coins) entry.row = { ...entry.row, estimate: model.estimate(entry.row) };
     }
     return confirmed;
   }
@@ -646,7 +704,7 @@ const PISMarketStore = (() => {
     const range = IDBKeyRange.bound(now - PISCoinMarket.OPTIONS.listingFreshHours * 3600000, now);
     const store = tx.objectStore('sales');
     const [sales, listings, session] = await Promise.all([
-      auditSales ? result(store.getAll()) : allCoinSales(store, now),
+      auditSales ? result(store.getAll()).then(rows => rows.map(withTruncatedGrade)) : allCoinSales(store, now),
       result(tx.objectStore('listings').index('observedAt').getAll(range)),
       chrome.storage.session.get(null).catch(() => ({})),
     ]);
@@ -1053,19 +1111,26 @@ const PISMarketStore = (() => {
     done.catch(() => {});
     const store = tx.objectStore('marketQueue');
     const old = await result(store.get(job.id));
-    if (!old) store.put({ ...job, status: 'pending', createdAt: Date.now(), dueAt: 0, attempts: 0 });
+    if (!old) store.put({ ...job, status: 'pending', priority: Number.isInteger(job.priority) &&
+      job.priority >= 0 && job.priority <= 3 ? job.priority : 2,
+      createdAt: Date.now(), dueAt: 0, attempts: 0 });
     await done;
     return { queued: true, duplicate: !!old };
   }
 
-  async function nextBatch(now = Date.now()) {
+  async function nextBatch(now = Date.now(), { backgroundTurn = false } = {}) {
     const db = await open();
-    const index = db.transaction('marketQueue').objectStore('marketQueue').index('dueAt');
-    return new Promise((resolve, reject) => {
-      const request = index.openCursor(IDBKeyRange.upperBound(now));
-      request.onsuccess = () => resolve(request.result?.value ?? null);
-      request.onerror = () => reject(request.error);
-    });
+    const order = globalThis.PISMarketPriority?.order(backgroundTurn) ?? [0, 1, 2, 3];
+    for (const priority of order) {
+      // Cada await encerra potencialmente a transação anterior de leitura.
+      // Abra outra transação por faixa, evitando TransactionInactiveError.
+      const index = db.transaction('marketQueue').objectStore('marketQueue').index('readyPriority');
+      const range = IDBKeyRange.bound(['pending', priority, 0, 0],
+        ['pending', priority, now, Number.MAX_SAFE_INTEGER]);
+      const cursor = await result(index.openCursor(range));
+      if (cursor) return cursor.value;
+    }
+    return null;
   }
 
   async function finishBatch(id) {

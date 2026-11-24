@@ -121,6 +121,6 @@ test('o aviso de Gemas mantém a velocidade quando a espécie não está no cat�
     estimate: { discount: 1 - 30 / 71, median: 71 },
   }, now);
   assert.equal(result.title, 'Espécie fora do catálogo · −57,7% · Rev 💎 36');
-  assert.equal(result.message, 'Nvl 306 · P1 · Nota 3,620\nMercado 💎 30 · Preço justo 💎 71\n14 Spe (crítico)');
-  assert.equal(result.desktopMessage, result.message.replace('Nota 3,620', 'N 3,62'));
+  assert.equal(result.message, 'Nvl 306 · P1 · Nota 3,62\nMercado 💎 30 · Preço justo 💎 71\n14 Spe (crítico)');
+  assert.equal(result.desktopMessage, result.message.replace('Nota 3,62', 'N 3,62'));
 });

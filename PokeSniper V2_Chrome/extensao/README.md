@@ -2,7 +2,7 @@
 
 **Novidade v1.5.4.99:** caveira, lua e estrela ficam no canto superior esquerdo de cada anúncio, sem cobrir favoritos. Consulte [ALTERACOES_v1.5.4.99.md](./ALTERACOES_v1.5.4.99.md).
 
-**Correção MV3:** consulte [ALTERACOES_v1.5.4.97.md](./ALTERACOES_v1.5.4.97.md) para migração não destrutiva, validação e instalação sem perder o banco.
+**Atualização v1.5.4.101:** as cotações da página atual têm prioridade sobre a fila; Recentes (páginas 1–3) vêm em seguida. A nota exibida/filtrada é truncada em 2 casas. O upgrade de IndexedDB para versão 20 preserva vendas e anúncios históricos. Consulte o `RELEASE_NOTES_v1.5.4.101.md` na raiz do projeto.
 
 
 O [launcher para Windows](../README.md) cria um atalho na

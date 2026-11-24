@@ -7,8 +7,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 const { listingKey } = require('../markers/src/listing-id.js');
 const { create, KEY } = require('../markers/src/storage.js');
 
-test('manifest 1.5.4.99 incorpora marcadores após o Sniper e mantém scripts essenciais', () => {
-  assert.equal(manifest.version, '1.5.4.99');
+test('manifest 1.5.4.101 incorpora marcadores após o Sniper e mantém scripts essenciais', () => {
+  assert.equal(manifest.version, '1.5.4.101');
   assert.equal(manifest.background.service_worker, 'background.js');
   assert.ok(manifest.content_scripts.some(c => c.world === 'MAIN' && c.js.includes('market-main.js')));
   const blocks = manifest.content_scripts.filter(c => c.js.some(x => x.includes('markers/src/')));

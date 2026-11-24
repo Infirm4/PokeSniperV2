@@ -9,6 +9,15 @@
   const number = value => (typeof value === 'number' ||
     (typeof value === 'string' && value.trim() !== '')) && Number.isFinite(Number(value))
     ? Number(value) : null;
+  // Notas não sofrem arredondamento. O corte textual das casas decimais
+  // evita tanto 3.978 -> 3.98 quanto imprecisões de multiplicação binária.
+  const truncateGrade = value => {
+    const raw = typeof value === 'number' && Number.isFinite(value) ? String(value) :
+      typeof value === 'string' ? value.trim().replace(',', '.') : '';
+    if (!/^[0-9]+(?:\.[0-9]+)?$/.test(raw)) return null;
+    const [whole, fractional = ''] = raw.split('.');
+    return Number(`${whole}.${fractional.slice(0, 2).padEnd(2, '0')}`);
+  };
   const positiveInteger = value => Number.isSafeInteger(number(value)) && number(value) > 0;
   const shiny = value => value === true || value === 1 || value === '1' || value === 'true' ? 1 :
     value === false || value === 0 || value === '0' || value === 'false' ? 0 : null;
@@ -160,7 +169,7 @@
       currency: denomination,
       shiny: shiny(row.ficha.shiny),
       level: number(row.ficha.level ?? row.ficha.nivel),
-      grade: number(row.ficha.nota ?? row.ficha.grade),
+      grade: truncateGrade(row.ficha.nota ?? row.ficha.grade),
       price: Number(price),
       outland: isOutland(row) ? true : null,
       ...attributes(row.ficha),
@@ -669,7 +678,7 @@
   }
 
   const core = { decodeGameFrame, otherFrameFormat, matchesMarketPage, purchaseOffer, matchesPurchase, capture, captureAutomatic, captureVisible, validate, estimate, sameMarket, isOutland, safeSprite, historyReply, historyRequest, historyTrace, linkageFields,
-    WINDOW_MS, MAX_BATCH, estimateCoins, coinProfile, attackProfile, validIv, hasSaleSprite, incompleteSaleFields, matchesDisplayPrice, inventoryProfiles, findInventoryProfile };
+    WINDOW_MS, MAX_BATCH, truncateGrade, estimateCoins, coinProfile, attackProfile, validIv, hasSaleSprite, incompleteSaleFields, matchesDisplayPrice, inventoryProfiles, findInventoryProfile };
   if (typeof window === 'undefined' && typeof module === 'object' && module.exports) module.exports = core;
   else globalThis.PISMarketCore = core;
 })();

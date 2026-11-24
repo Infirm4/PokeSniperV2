@@ -51,16 +51,21 @@
   const quotes = new Map();
   const REUSE_MS = 10 * 60000;
   const REFRESH_MS = 5000;
+  const MIN_QUERY_INTERVAL_MS = 1800;
+  const OBSERVATION_TTL_MS = 10 * 60000;
   const MAX_QUOTES = 1200;
   let lastQuery = 0;
   let lastKeys = '';
-  let pending = false;
+  let pending = 0;
   let scheduled = false;
   let revision = 0;
   let retryTimer = null;
   let contextInvalidated = false;
   const badges = new WeakMap();
   const visibleCurrencies = new Map();
+  // Observações reais do MAIN: a precificação pode ser exibida antes do
+  // processamento da fila, sem depender de um anúncio já gravado no banco.
+  const observedListings = new Map();
   const PRICE = '.cm-rodape .cm-preco';
 
   function identify(card) {
@@ -157,13 +162,35 @@
     if (contextInvalidated) return;
     const offers = visible();
     const keys = [...offers.keys()].sort().join('\n');
-    if (!offers.size || pending || (keys === lastKeys && Date.now() - lastQuery < REFRESH_MS)) return;
+    const elapsed = Date.now() - lastQuery;
+    // Mensagens de vitrine podem chegar dezenas de vezes por segundo. Mesmo
+    // com chaves novas, não sobrecarregar o worker com consultas concorrentes.
+    const changedPage = keys !== lastKeys;
+    // Uma cotação antiga pode estar lenta: a página que acabou de ser aberta
+    // pode iniciar imediatamente outra consulta, com até duas simultâneas.
+    // Não envia consultas ao WebSocket (apenas ao service worker/IndexedDB).
+    if (!offers.size || pending >= 2 ||
+        (!changedPage && (pending > 0 || elapsed < REFRESH_MS ||
+          elapsed < MIN_QUERY_INTERVAL_MS))) return;
     const token = revision;
-    pending = true;
+    pending++;
     lastQuery = Date.now();
     lastKeys = keys;
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'PIS_MARKET_BADGES', offers: [...offers.values()] });
+      const now = Date.now();
+      const observations = [...offers].map(([identity]) => observedListings.get(identity))
+        .filter(entry => entry && now - entry.at < OBSERVATION_TTL_MS)
+        .map(entry => entry.row);
+      // Não permitir que uma Promise de mensagem pendurada congele o painel.
+      let timeoutId;
+      const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('consulta de cotações expirou')), 12000);
+      });
+      let response;
+      try {
+        response = await Promise.race([chrome.runtime.sendMessage({ type: 'PIS_MARKET_BADGES',
+          offers: [...offers.values()], observations }), timeout]);
+      } finally { clearTimeout(timeoutId); }
       if (response?.ok === false || !Array.isArray(response?.offers)) throw new Error(response?.error || 'cotações indisponíveis');
       if (token === revision && Array.isArray(response?.offers)) {
         const rows = new Map(response.offers.map(row => [key(row), row]));
@@ -189,7 +216,7 @@
         if (market?.isConnected) schedule();
       }, 5000);
     } finally {
-      pending = false;
+      pending = Math.max(0, pending - 1);
       if (lastKeys !== keys || [...visible().keys()].sort().join('\n') !== keys) schedule();
     }
   }
@@ -203,10 +230,24 @@
   window.addEventListener('message', event => {
     const data = event.data;
     if (event.source !== window || event.origin !== location.origin) return;
-    if (data?.source === 'PIS_BRIDGE' && data.type === 'EXTENSION_CONTEXT_INVALIDATED') {
+    if (data?.source === 'PIS_BRIDGE' &&
+        (data.type === 'EXTENSION_CONTEXT_INVALIDATED' ||
+         data.type === 'BRIDGE_STATUS' && data.state === 'invalid')) {
       contextInvalidated = true;
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = null;
+      return;
+    }
+    if (data?.source === 'PIS_BRIDGE' && data.type === 'BRIDGE_STATUS') {
+      if (data.state === 'ready') {
+        contextInvalidated = false;
+        lastKeys = '';
+        lastQuery = 0;
+        pending = 0;
+        revision++;
+        if (market?.isConnected) schedule();
+      }
+      // 'reconnecting' é transitório: mantém os retries e as observações.
       return;
     }
     if (data?.source === 'PIS_BRIDGE' && data.type === 'MARKET_LISTINGS_SAVED') {
@@ -225,6 +266,11 @@
       visibleCurrencies.delete(row.id);
       visibleCurrencies.set(row.id, observation);
       observed.set(row.id, observation);
+      if (Number.isSafeInteger(row.price) && row.price > 0 && row.closed !== true && !row.closed) {
+        const identity = key(row);
+        observedListings.delete(identity);
+        observedListings.set(identity, { row, at: now });
+      }
     }
     for (const [identity, entry] of quotes) {
       const update = observed.get(entry.row.id);
@@ -233,6 +279,10 @@
         quotes.delete(identity);
     }
     while (visibleCurrencies.size > 500) visibleCurrencies.delete(visibleCurrencies.keys().next().value);
+    for (const [identity, entry] of observedListings) {
+      if (now - entry.at > OBSERVATION_TTL_MS) observedListings.delete(identity);
+    }
+    while (observedListings.size > 500) observedListings.delete(observedListings.keys().next().value);
     if (observed.size) lastKeys = '';
     if (market?.isConnected) schedule();
   });

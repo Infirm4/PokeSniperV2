@@ -33,7 +33,7 @@
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.97'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.101'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
@@ -585,13 +585,24 @@
       else tx.objectStore(MARKET_OUTBOX_STORE).put(row);
     });
   }
+  function outboxPriority(message) {
+    if (message?.kind === 'listing' && !message.automatic && message.viewing === true) return 0;
+    if (message?.kind === 'listing' && message.automatic && message.order === 'recentes' &&
+        Number.isInteger(message.page) && message.page >= 0 && message.page <= 2) return 1;
+    if (message?.olderScan || message?.preparation) return 3;
+    return 2;
+  }
   function dispatchMarketOutbox() {
     if (marketDeliveryPaused) return;
     let sent = 0;
     const now = Date.now();
-    for (const entry of marketDeliveries.values()) {
+    // Quatro faixas FIFO em O(n); evita ordenar todo o backlog a cada 3 s.
+    // A vitrine nova passa à frente de milhares de lotes históricos.
+    const waiting = [[], [], [], []];
+    for (const entry of marketDeliveries.values())
+      if (entry.persisted === true) waiting[outboxPriority(entry.message)].push(entry);
+    for (const bucket of waiting) for (const entry of bucket) {
       if (sent >= 6) break;
-      if (entry.persisted !== true) continue;
       const elapsed = now - (entry.sentAt ?? 0);
       const delay = Math.min(60000, 3000 * 2 ** Math.min(entry.attempts ?? 0, 4));
       if (elapsed < delay) continue;
@@ -619,8 +630,26 @@
   window.addEventListener('message', event => {
     if (event.source !== window || event.origin !== location.origin || event.data?.source !== 'PIS_BRIDGE') return;
     const { type, batchId, ok } = event.data;
-    if (type === 'EXTENSION_CONTEXT_INVALIDATED') {
-      marketDeliveryPaused = true; // Não tenta usar bridge obsoleta. Aguarda F5 manual.
+    if (type === 'EXTENSION_CONTEXT_INVALIDATED' ||
+        type === 'BRIDGE_STATUS' && event.data.state === 'invalid') {
+      // Só o contexto REALMENTE invalidado exige F5; não perde o outbox persistido.
+      marketDeliveryPaused = true;
+      return;
+    }
+    if (type === 'BRIDGE_STATUS') {
+      if (event.data.state === 'reconnecting') {
+        // Backoff normal; continua preservando lotes e tentando até a ponte se recuperar.
+        return;
+      }
+      if (event.data.state === 'ready') {
+        marketDeliveryPaused = false;
+        // O worker voltou: reenvia lotes sem ACK com o mesmo identificador.
+        for (const pending of marketDeliveries.values()) {
+          pending.sentAt = 0;
+          pending.attempts = 0;
+        }
+        dispatchMarketOutbox();
+      }
       return;
     }
     if (type !== 'MARKET_BATCH_RECEIPT' || typeof batchId !== 'string' || !marketDeliveries.has(batchId)) return;
@@ -640,6 +669,8 @@
         marketDeliveries.set(message.batchId, { message, persisted: true });
       dispatchMarketOutbox();
     }).catch(error => console.warn('[PIS] Falha ao recuperar outbox:', error.message));
+  // Solicita estado ao bridge para evitar perder um HELLO emitido antes de o MAIN inicializar.
+  window.postMessage({ source: 'PIS_MAIN', type: 'BRIDGE_STATUS_REQUEST' }, location.origin);
   setInterval(dispatchMarketOutbox, 3000);
 
 
@@ -695,6 +726,10 @@
   const visibleRequests = new WeakMap();
   const recentQueries = new WeakMap();
   const recentEchoVerified = new WeakSet();
+  // O envio nativo do jogo tem precedência sobre qualquer varredura.
+  // Os envios do Sniper usam osend.call() e não passam pelo wrapper abaixo.
+  let lastUserMarketRequestAt = 0;
+  let lastUserMarketResponseAt = 0;
 
   function receiveGameMessage(ws, event) {
     const queries = recentQueries.get(ws);
@@ -720,9 +755,11 @@
       visibleRequests.set(ws, traces.filter(entry => entry.request !== visible.request));
       batch = visible.batch;
     }
-    const viewing = !request && watchOpportunities && vitrineAberta();
+    const viewing = !request && vitrineAberta();
+    if (viewing) lastUserMarketResponseAt = Date.now();
     if (batch || request) publishMarketBatch({
       kind: 'listing', rows: batch?.rows ?? [], automatic: !!request,
+      viewing, order: request?.ordem ?? null,
       live: live === true || viewing,
       priceWatch: watchOpportunities && (viewing || (request && watchesCurrency(request.moeda) &&
         (live === true || request.preparation === true))),
@@ -911,7 +948,9 @@
         const request = JSON.parse(d);
         if (request.t === 'market.listar' && ['gold', 'orb'].includes(request.moeda)) {
           const traces = (visibleRequests.get(this) ?? []).filter(entry => Date.now() - entry.at < 15000);
-          visibleRequests.set(this, [...traces.slice(-15), { request, at: Date.now() }]);
+          const requestedAt = Date.now();
+          lastUserMarketRequestAt = requestedAt;
+          visibleRequests.set(this, [...traces.slice(-15), { request, at: requestedAt }]);
         }
       } catch { /* A captura não interfere no envio do jogo. */ }
     }
@@ -3802,7 +3841,10 @@
   const THIRD_RECENT_INTERVAL_MS = 30000;
   setInterval(async () => {
     if (recentBusy || !monitorAtivo()) return;
-    if (vitrineAberta() && (!watchOpportunities || !recentEchoVerified.has(st.sock))) {
+    const userActive = vitrineAberta() &&
+      Date.now() - Math.max(lastUserMarketRequestAt, lastUserMarketResponseAt) <
+        Math.max(5000, intervaloMinMercadoAtualMs());
+    if (vitrineAberta() && (userActive || !watchOpportunities || !recentEchoVerified.has(st.sock))) {
       reportAutomatic('vitrine_aberta');
       return;
     }
@@ -4816,7 +4858,7 @@
   }
 
   // Novo aviso identifica o código injetado; mensagens antigas ficam no histórico local.
-  logPk(`🧭 PokéIdle Sniper v${EXT_VERSION}: consultas ≥${intervaloMinMercadoAtualMs()/1000}s (2→3→4→5→6→7s com sobrecarga). O monitor prioriza as duas primeiras páginas de Recentes. Falhas mantêm recuo.`);
+  logPk(`🧭 PokéIdle Sniper v${EXT_VERSION}: consultas ≥${intervaloMinMercadoAtualMs()/1000}s (2→3→4→5→6→7s com sobrecarga). A fila prioriza a vitrine e as páginas 1–3 de Recentes. Falhas mantêm recuo.`);
   if (LEGACY_PANEL_ENABLED) {
     if (document.body) buildUI();
     else document.addEventListener('DOMContentLoaded', buildUI);

@@ -1,4 +1,4 @@
-> Versão do pacote **1.5.4.99**: marcadores no canto superior esquerdo, sem sobreposição com os favoritos. Os dados locais continuam no perfil do navegador.
+> Versão do pacote **1.5.4.101**: precificação prioritária da vitrine, captura de Recentes e notas truncadas em duas casas. Marcadores permanecem à esquerda; o histórico local é preservado.
 
 # PokeSniper para Chrome no Windows
 

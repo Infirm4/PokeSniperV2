@@ -18,6 +18,10 @@ const fallbackToggle = document.querySelector('#filter-fallback');
 const fallbackStatus = document.querySelector('#fallback-status');
 const format = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 const gradeFormat = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const displayGrade = grade => {
+  const value = PISMarketCore.truncateGrade(grade);
+  return value === null ? '?' : gradeFormat.format(value);
+};
 let config;
 let generation = 0;
 let rendered = '';
@@ -56,7 +60,7 @@ function detailsFor(row, unit) {
   details.append(text('p', `IVs HP ${ivs.hp ?? '?'} · Atk ${ivs.attack ?? '?'} · Def ${ivs.defense ?? '?'} · Sp Atk ${ivs.specialAttack ?? '?'} · Def Esp ${ivs.specialDefense ?? '?'}`, 'pis-v2-meta'));
   const estimate = row.estimate;
   for (const sale of estimate?.comparables || []) {
-    details.append(text('div', `${format.format(sale.price)} ${unit} · Nv. ${sale.level} · Nota ${format.format(sale.grade)} · P${sale.power ?? '?'} · Speed ${sale.speed ?? '?'} · ${new Date(sale.soldAt).toLocaleDateString('pt-BR')}`, 'pis-v2-meta'));
+    details.append(text('div', `${format.format(sale.price)} ${unit} · Nv. ${sale.level} · Nota ${displayGrade(sale.grade)} · P${sale.power ?? '?'} · Speed ${sale.speed ?? '?'} · ${new Date(sale.soldAt).toLocaleDateString('pt-BR')}`, 'pis-v2-meta'));
   }
 
   const simulator = document.createElement('form');
@@ -110,7 +114,7 @@ function card(row, showLiquidity = false) {
     text('strong', format.format(row.price) + ' ' + unit));
   const estimate = row.estimate;
   const minutes = Math.max(0, Math.floor((Date.now() - row.observedAt) / 60000));
-  item.append(title, text('div', `Anúncio #${row.id} · Nv. ${row.level ?? '?'} · Nota ${row.grade ?? '?'} · observado há ${minutes} min`, 'pis-v2-meta'));
+  item.append(title, text('div', `Anúncio #${row.id} · Nv. ${row.level ?? '?'} · Nota ${displayGrade(row.grade)} · observado há ${minutes} min`, 'pis-v2-meta'));
   if (estimate?.status === 'estimated') {
     const method = estimate.method === 'briaoale_public' ? 'histórico público · Briaoale' :
       estimate.method === 'coins_comparables' ? 'comparáveis em Coins' : estimate.method === 'briaoale_pve' ? 'motor de PvE · histórico local' : 'referência básica';
