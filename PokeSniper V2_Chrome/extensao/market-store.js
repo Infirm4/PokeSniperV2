@@ -2,7 +2,7 @@
 const PISMarketStore = (() => {
   const DB_NAME = 'pis_market_core';
   const MAX_COMPARABLES = 1000;
-  const DB_VERSION = 17;
+  const DB_VERSION = 18;
   const ESTIMATE_REVISION = 8;
   const revisionFor = row => row?.currency === 'gold' ? 11 : ESTIMATE_REVISION;
   const listingKey = row => [row.currency, row.id];
@@ -37,6 +37,13 @@ const PISMarketStore = (() => {
         const db = request.result;
         const tx = request.transaction;
         if (abandoned) { tx.abort(); return; }
+        // Outbox de ingestão durável: migração aditiva, preserva todos os stores existentes.
+        if (event.oldVersion < 18) {
+          const queue = db.createObjectStore('marketQueue', { keyPath: 'id' });
+          queue.createIndex('dueAt', 'dueAt');
+          queue.createIndex('completedAt', 'completedAt');
+          queue.createIndex('status', 'status');
+        }
         if (event.oldVersion < 1) {
           createListings(db);
           const sales = db.createObjectStore('sales', { keyPath: ['currency', 'id'] });
@@ -158,11 +165,22 @@ const PISMarketStore = (() => {
     return opening;
   }
 
+  // Só cache de LEITURA, nunca reduz a janela histórica nem altera o modelo.
+  let coinSalesCache = null;
+  let coinSalesRevision = 0;
   async function allCoinSales(store, now) {
+    if (coinSalesCache && coinSalesCache.revision === coinSalesRevision &&
+        now >= coinSalesCache.at && now - coinSalesCache.at < 5000) return coinSalesCache.rows.filter(row => row.soldAt < now);
+    const revision = coinSalesRevision;
     const index = store.index('priceMarket');
+    // Busca também o pequeno horizonte do cache; filtra por 'now' antes de precificar.
+    // Assim, vendas que se tornam elegíveis nos próximos segundos não desaparecem.
+    const end = now + 5000;
     const groups = await Promise.all([0, 1].map(shiny =>
-      result(index.getAll(IDBKeyRange.bound(['gold', shiny, 0], ['gold', shiny, now], false, true)))));
-    return groups.flat();
+      result(index.getAll(IDBKeyRange.bound(['gold', shiny, 0], ['gold', shiny, end], false, true)))));
+    const rows = groups.flat();
+    if (revision === coinSalesRevision) coinSalesCache = { at: now, rows, revision };
+    return rows.filter(row => row.soldAt < now);
   }
 
   // Leitura indexada por grupo, limitada às vendas mais recentes da janela.
@@ -452,6 +470,7 @@ const PISMarketStore = (() => {
         await reprice(tx, observed, now, true, external);
       }
       await done;
+      if (kind === 'sale') { coinSalesRevision++; coinSalesCache = null; }
       return savedRows;
     } catch (error) {
       try { tx.abort(); } catch { /* já encerrada */ }
@@ -1016,5 +1035,87 @@ const PISMarketStore = (() => {
     return totals;
   }
 
-  return { ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, deliveredOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, noticeLiquidity, coinReport, compareGemAttackIv, backtest, diagnosticSnapshot, liquidity, diagnostics };
+  // A confirmação de envio é dada SOMENTE após o commit no IndexedDB.
+  // A remoção é posterior ao commit do ingest: um crash repete o lote (upsert idempotente).
+  const QUEUE_RETRY_MAX = 5 * 60000;
+
+  async function enqueueBatch(job) {
+    if (typeof job?.id !== 'string' || !/^[a-zA-Z0-9:_-]{8,130}$/.test(job.id) ||
+        !['sale', 'listing'].includes(job.kind) || !Array.isArray(job.rows) ||
+        job.rows.length < 1 || job.rows.length > 100) throw new Error('lote não aceito');
+    const db = await open();
+    const tx = db.transaction('marketQueue', 'readwrite');
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error ?? new Error('Fila: gravação interrompida'));
+      tx.onerror = () => {}; // erro de transação é informado no abort
+    });
+    done.catch(() => {});
+    const store = tx.objectStore('marketQueue');
+    const old = await result(store.get(job.id));
+    if (!old) store.put({ ...job, status: 'pending', createdAt: Date.now(), dueAt: 0, attempts: 0 });
+    await done;
+    return { queued: true, duplicate: !!old };
+  }
+
+  async function nextBatch(now = Date.now()) {
+    const db = await open();
+    const index = db.transaction('marketQueue').objectStore('marketQueue').index('dueAt');
+    return new Promise((resolve, reject) => {
+      const request = index.openCursor(IDBKeyRange.upperBound(now));
+      request.onsuccess = () => resolve(request.result?.value ?? null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function finishBatch(id) {
+    const db = await open();
+    const tx = db.transaction('marketQueue', 'readwrite');
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error ?? new Error('Fila: confirmação interrompida'));
+    });
+    done.catch(() => {});
+    const store = tx.objectStore('marketQueue');
+    const current = await result(store.get(id));
+    if (current) store.put({ id, status: 'done', dueAt: Number.MAX_SAFE_INTEGER,
+      completedAt: Date.now() }); // Tombstone: retry após ACK perdido não reprocessa.
+    await done;
+  }
+
+  async function trimDoneBatches(now = Date.now()) {
+    const db = await open();
+    const tx = db.transaction('marketQueue', 'readwrite');
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error ?? new Error('Fila: limpeza interrompida'));
+    });
+    done.catch(() => {});
+    const cursor = tx.objectStore('marketQueue').index('completedAt')
+      .openCursor(IDBKeyRange.upperBound(now - 7 * 86400000));
+    cursor.onsuccess = () => { if (cursor.result) { cursor.result.delete(); cursor.result.continue(); } };
+    await done;
+  }
+
+  async function deferBatch(id, attempts, now = Date.now()) {
+    const db = await open();
+    const tx = db.transaction('marketQueue', 'readwrite');
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error ?? new Error('Fila: falha no adiamento'));
+    });
+    done.catch(() => {});
+    const store = tx.objectStore('marketQueue');
+    const current = await result(store.get(id));
+    if (current) store.put({ ...current, attempts,
+      dueAt: now + Math.min(QUEUE_RETRY_MAX, 1000 * 2 ** Math.min(attempts, 9)) });
+    await done;
+  }
+
+  async function marketQueueSize() {
+    const db = await open();
+    return result(db.transaction('marketQueue').objectStore('marketQueue').index('status').count('pending'));
+  }
+
+  return { enqueueBatch, nextBatch, finishBatch, deferBatch, trimDoneBatches, marketQueueSize, ingest, pendingSalesBackup, acknowledgeSalesBackup, pendingSalesBackupCount, claimIncompleteSale, recentSaleSample, initialize: open, savePublicGems, recentOpportunities, deliveredOpportunities, currentOpportunity, markDelivery, markUnavailable, marketBadges, findListings, inventoryQuote, warmInventoryPricing, analyzeListing, noticeLiquidity, coinReport, compareGemAttackIv, backtest, diagnosticSnapshot, liquidity, diagnostics };
 })();

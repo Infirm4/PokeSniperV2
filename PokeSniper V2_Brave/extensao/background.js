@@ -1,4 +1,4 @@
-// PokeIdle Market Sniper v1.5.4.1 - envio de eventos pelo service worker da extensão.
+// PokeIdle Market Sniper v1.5.4.97 - envio de eventos pelo service worker da extensão.
 // Domínio de destino fixo. Nunca usa um endereço fornecido pela própria página do jogo.
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwPXSeG3xL5PUwDwsuCp-XWJ8s8w3qmlGxECTJo_haREmZbeKOOnr_5qTfVZtH5xmDS/exec';
 const PIS_HOST = /^https:\/\/(?:[a-z0-9-]+\.)?pokeidle\.io(?:\/|$)/i;
@@ -53,11 +53,89 @@ function recordMarket(route, status, page) {
   globalThis.PISMarketEventLog?.record(chrome.storage.local, route, status, page);
 }
 
-let listingPending = 0;
-let salePending = 0;
+// Consumidor único para não saturar transações IndexedDB. Os lotes ficam no disco
+// enquanto não houver commit; o service worker pode encerrar/reiniciar sem perdê-los.
+const MARKET_QUEUE_ALARM = 'pisMarketQueueDrain';
+let drainingMarketQueue = false;
+let marketQueueRequested = false;
+let completedMarketBatches = 0;
+const marketQueueAvailable = () => typeof PISMarketStore.enqueueBatch === 'function';
+
+function recordPageReceipt(job, status, accepted) {
+  if (job.kind !== 'listing' || job.automatic !== true) return Promise.resolve();
+  const currency = ['gold', 'orb'].includes(job.currency) ? job.currency : null;
+  const page = { status, accepted, page: Number.isSafeInteger(job.page) ? job.page : null, currency,
+    preparação_de_selos: job.preparation === true,
+    totalRows: Number.isSafeInteger(job.totalRows) ? job.totalRows : null, at: Date.now() };
+  const receipts = { pisMarketAutomaticPage: page };
+  if (currency) {
+    receipts['pisMarketPage:' + currency] = page;
+    if (job.preparation === true) receipts['pisMarketPrepared:' + currency] = page;
+    if (status === 'gravado' && page.page != null && page.page >= 0 && page.page <= 999) {
+      receipts[(currency === 'gold' ? 'pisCoinSeenPage:' : 'pisGemSeenPage:') + page.page] = page.at;
+    }
+  }
+  return chrome.storage.session.set(receipts).catch(() => {});
+}
+
+function wakeMarketQueue() {
+  if (!marketQueueAvailable()) return;
+  if (drainingMarketQueue) { marketQueueRequested = true; return; }
+  drainingMarketQueue = true;
+  marketQueueRequested = false;
+  void (async () => {
+    for (let i = 0; i < 10000; i++) {
+      const job = await PISMarketStore.nextBatch();
+      if (!job) break;
+      const route = job.history ? 'history' : job.currency;
+      const page = job.history ? job.trace?.page : job.page;
+      try {
+        const stats = await PISMarketStore.ingest(job.kind, job.rows, undefined, job.options ?? {});
+        // Remove APÓS ingest ter confirmado o commit. Duplicatas são seguras (upsert).
+        await PISMarketStore.finishBatch(job.id);
+        if (++completedMarketBatches % 100 === 0)
+          void PISMarketStore.trimDoneBatches?.().catch(() => {});
+        recordMarket(route, stats.conflicts ? 'conflito_de_transação' : 'gravado', page);
+        await Promise.allSettled([
+          recordPageReceipt(job, 'gravado', job.rows.length),
+          job.traceEvent ? PISHistoryTrace.record(job.traceEvent, job.trace ?? {},
+            { status: 'gravado', accepted: job.rows.length, ...stats }) : Promise.resolve(),
+        ]);
+        try { PISOpportunityAlerts.wake(); } catch { /* alertas têm recuperação própria */ }
+        if (job.kind === 'listing' && Number.isSafeInteger(job.tabId) && chrome.tabs?.sendMessage) {
+          chrome.tabs.sendMessage(job.tabId, { type: 'PIS_MARKET_LISTINGS_COMMITTED' }, { frameId: 0 })
+            .catch(() => {});
+        }
+      } catch (error) {
+        recordMarket(route, 'falha_na_gravação', page);
+        if (job.traceEvent) void PISHistoryTrace.record(job.traceEvent, job.trace ?? {},
+          { status: 'falha_na_gravação', accepted: job.rows.length }).catch(() => {});
+        console.warn('[PIS] Lote preservado para nova tentativa:', String(error?.message ?? error));
+        try { await PISMarketStore.deferBatch(job.id, (job.attempts || 0) + 1); }
+        catch (failure) { console.warn('[PIS] Falha ao atualizar tentativa:', failure?.message); }
+        break; // aguarda próximo alarm; não faz loop agressivo em falha.
+      }
+    }
+  })().catch(error => console.warn('[PIS] Fila de mercado:', error?.message))
+    .finally(() => {
+      drainingMarketQueue = false;
+      if (marketQueueRequested) wakeMarketQueue();
+    });
+}
+
+if (chrome.alarms?.onAlarm) chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === MARKET_QUEUE_ALARM) wakeMarketQueue();
+});
+if (chrome.alarms?.create) chrome.alarms.create(MARKET_QUEUE_ALARM, { periodInMinutes: 1 }).catch(() => {});
+Promise.resolve(PISMarketStore.initialize()).then(() => {
+  void PISMarketStore.trimDoneBatches?.().catch(() => {});
+  wakeMarketQueue();
+}).catch(() => {});
+
 chrome.runtime.onMessage.addListener((req, sender, reply) => {
+  try {
   if (req?.type === 'PIS_TEST_PURCHASE_REVIEW') {
-    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
+    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) { reply({ ok: false, error: 'origem inválida' }); return false; }
     PISGameTab.review({ id: 'demo', pokemonId: 'demo', speciesId: '94', currency: 'gold',
       name: 'Gengar', observedAt: Date.now(), price: 1000000 }, true)
       .then(ok => reply({ ok }), () => reply({ ok: false }));
@@ -65,12 +143,12 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   if (req?.type === 'PIS_REVIEW_OFFER') {
     if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html') ||
-        typeof req.key !== 'string' || req.key.length > 200) return false;
+        typeof req.key !== 'string' || req.key.length > 200) { reply({ ok: false, error: 'requisição inválida' }); return false; }
     PISOpportunityAlerts.review(req.key).then(ok => reply({ ok }), () => reply({ ok: false }));
     return true;
   }
   if (req?.type === 'PIS_COPY_SMART_COINS') {
-    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) return false;
+    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html')) { reply({ ok: false, error: 'origem inválida' }); return false; }
     (async () => {
       const tabId = lastGameTab ?? (await chrome.storage.session.get(gameTabKey))[gameTabKey];
       if (!Number.isSafeInteger(tabId)) return { ok: false, reason: 'no_tab' };
@@ -96,7 +174,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   if (req?.type === 'PIS_LOOKUP_COINS') {
     if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('opportunities.html') ||
-        typeof req.name !== 'string' || req.name.length > 80) return false;
+        typeof req.name !== 'string' || req.name.length > 80) { reply({ ok: false, error: 'requisição inválida' }); return false; }
     (async () => {
       const tabId = lastGameTab ?? (await chrome.storage.session.get(gameTabKey))[gameTabKey];
       if (!Number.isSafeInteger(tabId)) return { ok: false };
@@ -106,18 +184,18 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   if (req?.type === 'PIS_INVENTORY_QUOTE') {
     if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !sender.tab ||
-        !PIS_HOST.test(String(sender.url || sender.tab.url || ''))) return false;
+        !PIS_HOST.test(String(sender.url || sender.tab.url || ''))) { reply({ ok: false, error: 'origem inválida' }); return false; }
     const profile = req.profile;
     const [target] = PISMarketCore.validate('listing', [{
       ...profile, id: profile?.pokemonId, currency: 'gold', price: 1,
     }]);
-    if (!target || !target.name || !(target.level > 0)) return false;
+    if (!target || !target.name || !(target.level > 0)) { reply({ ok: false, error: 'perfil inválido' }); return false; }
     PISMarketStore.inventoryQuote(target).then(quotes => reply({ quotes }), () => reply({ quotes: null }));
     return true;
   }
   if (req?.type === 'PIS_MARKET_BADGES') {
     if (!sender.tab || !PIS_HOST.test(String(sender.url || sender.tab.url || '')) ||
-        !Array.isArray(req.offers) || req.offers.length > 100) return false;
+        !Array.isArray(req.offers) || req.offers.length > 100) { reply({ ok: false, error: 'ofertas inválidas', offers: [] }); return false; }
     const candidates = req.offers.filter(row => ['gold', 'orb'].includes(row?.currency) &&
       typeof row.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(row.id) &&
       Number.isSafeInteger(row.price) && row.price > 0).map(({ id, currency, price, priceTick }) => ({
@@ -140,7 +218,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
         return { ...offer, actualPrice: row.price, quote,
           ...(publicSource ? { validUntil: estimate.sourceAt + PISPublicGems.MAX_AGE } : {}) };
       });
-    })().then(offers => reply({ offers }), () => reply({ offers: [] }));
+    })().then(offers => reply({ ok: true, offers }), error => reply({ ok: false, error: String(error?.message ?? error), offers: [] }));
     return true;
   }
   const history = req?.type === 'PIS_MARKET_HISTORY_EVENT';
@@ -156,7 +234,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   }
   if (req.type === 'PIS_MARKET_QUERY') {
     if (!['gold', 'orb', 'history'].includes(req.route) || !['enviada', 'resposta', 'recuo', 'recusada',
-      'cancelada', 'sem_resposta', 'falha_de_envio', 'desconectada'].includes(req.status)) return false;
+      'cancelada', 'sem_resposta', 'falha_de_envio', 'desconectada'].includes(req.status)) { reply({ ok: false, error: 'consulta inválida' }); return false; }
     const query = { status: req.status, at: Date.now(),
       page: Number.isSafeInteger(req.page) && req.page >= 0 ? req.page : null,
       order: ['recentes', 'baratos'].includes(req.order) ? req.order : null,
@@ -168,7 +246,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     return true;
   }
   if (req.type === 'PIS_COINS_HISTORY_STATUS') {
-    if (!['global', 'espécie', 'backfill'].includes(req.scope) || typeof req.state !== 'string' || req.state.length > 40) return false;
+    if (!['global', 'espécie', 'backfill'].includes(req.scope) || typeof req.state !== 'string' || req.state.length > 40) { reply({ ok: false, error: 'estado inválido' }); return false; }
     chrome.storage.session.set({ ['pisCoinsHistory:' + req.scope]: { state: req.state, at: Date.now(),
       reason: ['schema_incompatível', 'sem_resposta', 'falha_na_gravação', 'recusada', 'desconectada', 'recuo',
         'cancelada', 'falha_de_envio'].includes(req.reason) ? req.reason : null,
@@ -178,7 +256,7 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
     return true;
   }
   if (req.type === 'PIS_MARKET_MONITOR') {
-    if (!['aguardando_socket', 'rastreador_desligado', 'aguardando_tráfego', 'parser_indisponível', 'recuo', 'varrendo', 'vitrine_aberta', 'falha_ou_recuo'].includes(req.state)) return false;
+    if (!['aguardando_socket', 'rastreador_desligado', 'aguardando_tráfego', 'parser_indisponível', 'recuo', 'varrendo', 'vitrine_aberta', 'falha_ou_recuo'].includes(req.state)) { reply({ ok: false, error: 'monitor inválido' }); return false; }
     recordMarket('monitor', req.state);
     chrome.storage.session.set({ pisMarketMonitor: { state: req.state, at: Date.now(),
       socket: ['abertura', 'envio do jogo', 'consulta do jogo', 'tráfego', 'estado'].includes(req.socket) ? req.socket : null,
@@ -198,71 +276,81 @@ chrome.runtime.onMessage.addListener((req, sender, reply) => {
   if (req.type === 'PIS_MARKET_UNAVAILABLE') {
     const now = Date.now();
     if (!Array.isArray(req.ids) || req.ids.length > 100 || !Number.isSafeInteger(req.cutoff) ||
-        req.cutoff > now || now - req.cutoff > 2 * 3600000) return false;
+        req.cutoff > now || now - req.cutoff > 2 * 3600000) { reply({ ok: false, error: 'indisponibilidade inválida' }); return false; }
     const ids = req.ids.filter(id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id));
     PISMarketStore.markUnavailable(ids, req.cutoff)
       .then(() => reply({ ok: true }), () => reply({ ok: false }));
     return true;
   }
-  function pageReceipt(status, accepted) {
-    if (req.kind !== 'listing' || req.automatic !== true) return Promise.resolve();
-    const currency = ['gold', 'orb'].includes(req.currency) ? req.currency : null;
-    const page = { status, accepted, page: Number.isSafeInteger(req.page) ? req.page : null, currency,
-      preparação_de_selos: req.preparation === true,
-      totalRows: Number.isSafeInteger(req.totalRows) ? req.totalRows : null, at: Date.now() };
-    const receipts = { pisMarketAutomaticPage: page };
-    if (currency) {
-      receipts['pisMarketPage:' + currency] = page;
-      if (req.preparation === true) receipts['pisMarketPrepared:' + currency] = page;
-      if (page.status === 'gravado' && page.page != null && page.page >= 0 && page.page <= 999) {
-        const prefix = currency === 'gold' ? 'pisCoinSeenPage:' : 'pisGemSeenPage:';
-        receipts[prefix + page.page] = page.at;
-      }
-    }
-    return chrome.storage.session.set(receipts).catch(() => {});
+  // Eventos de rastreamento sem lote respondem mesmo se a gravação do trace falhar.
+  const historyEvent = history ? req.event : null;
+  if (history && !['request', 'response', 'invalid_json', 'ignored_socket'].includes(historyEvent)) {
+    reply({ ok: false, error: 'evento de histórico inválido' });
+    return false;
   }
-  const traceEvent = history ? req.event : req.kind === 'sale' ? 'legacy_batch' : null;
-  const track = receipt => traceEvent ? PISHistoryTrace.record(traceEvent, history ? req.trace || {} : {}, receipt)
-    .catch(() => console.warn('[PIS] Falha ao guardar o diagnóstico do histórico.')) : Promise.resolve();
-  if (history && req.event !== 'response') {
-    track().then(() => reply({ ok: true }));
+  if (history && historyEvent !== 'response') {
+    Promise.resolve().then(() => PISHistoryTrace.record(historyEvent, req.trace ?? {}, undefined))
+      .then(() => reply({ ok: true }), error => reply({ ok: false, error: String(error?.message ?? error) }));
     return true;
   }
   const kind = history ? 'sale' : req.kind;
-  const rows = PISMarketCore.validate(kind, req.rows);
-  const isSale = kind === 'sale';
-  // Reserva vagas para páginas de histórico durante um censo da vitrine.
-  const full = isSale ? salePending >= 4 : listingPending >= 16;
+  if (!['sale', 'listing'].includes(kind) || !Array.isArray(req.rows) || req.rows.length > 100) {
+    reply({ ok: false, error: 'lote inválido' });
+    return false;
+  }
+  let rows;
+  try { rows = PISMarketCore.validate(kind, req.rows); }
+  catch (error) { reply({ ok: false, error: String(error?.message ?? error) }); return false; }
   const route = history ? 'history' : req.currency;
   const page = history ? req.trace?.page : req.page;
-  const invalidHistory = history && Array.isArray(req.rows) && req.rows.length !== rows.length;
-  if (!rows.length || full || invalidHistory) {
-    const status = invalidHistory ? 'lote_inválido' : rows.length ? 'fila_cheia' : 'sem_registros_validos';
-    recordMarket(route, status, page);
-    Promise.all([track({ status, accepted: rows.length }), pageReceipt(status, rows.length)])
-      .then(() => reply({ ok: !invalidHistory && (history || req.automatic === true) && !rows.length,
-        error: rows.length ? 'fila local cheia' : 'lote inválido' }));
+  const invalidHistory = history && req.rows.length !== rows.length;
+  if (invalidHistory || (req.rows.length > 0 && !rows.length) ||
+      (!rows.length && req.automatic !== true && !history)) {
+    recordMarket(route, 'lote_inválido', page);
+    reply({ ok: false, error: 'lote inválido' });
+    return false;
+  }
+  if (!rows.length) {
+    Promise.resolve().then(() => Promise.all([
+      recordPageReceipt({ ...req, kind }, 'sem_registros_validos', 0),
+      history ? PISHistoryTrace.record(req.event, req.trace ?? {},
+        { status: 'sem_registros_validos', accepted: 0 }) : Promise.resolve(),
+    ])).then(() => reply({ ok: true, accepted: 0 }),
+      error => reply({ ok: false, error: String(error?.message ?? error) }));
     return true;
   }
-  if (isSale) salePending++;
-  else listingPending++;
-  PISMarketStore.ingest(kind, rows, undefined, { live: req.live === true, priceWatch: req.priceWatch === true,
-    olderScan: req.automatic === true && req.preparation === true && req.olderScan === true })
-    .then(
-      stats => {
-        PISOpportunityAlerts.wake();
-        recordMarket(route, stats.conflicts ? 'conflito_de_transação' : 'gravado', page);
-        return Promise.all([track({ status: 'gravado', accepted: rows.length, ...stats }), pageReceipt('gravado', rows.length)])
-          .then(() => reply({ ok: true }));
-      },
-      error => {
-        recordMarket(route, 'falha_na_gravação', page);
-        return Promise.all([track({ status: 'falha_na_gravação', accepted: rows.length }), pageReceipt('falha_na_gravação', rows.length)])
-          .then(() => reply({ ok: false, error: String(error.message).slice(0, 300) }));
-      },
-    )
-    .finally(() => { if (isSale) salePending--; else listingPending--; });
+  if (!marketQueueAvailable()) { reply({ ok: false, error: 'fila persistente indisponível' }); return false; }
+  const id = typeof req.batchId === 'string' && /^[A-Za-z0-9:_-]{8,130}$/.test(req.batchId)
+    ? req.batchId : 'legacy:' + Date.now().toString(36) + ':' + Math.random().toString(36).slice(2, 12);
+  const job = { id, kind, rows, history, traceEvent: history ? req.event : kind === 'sale' ? 'legacy_batch' : null,
+    trace: history ? req.trace ?? {} : {},
+    automatic: req.automatic === true, page: req.page, currency: req.currency, preparation: req.preparation === true,
+    totalRows: req.totalRows, tabId: sender.tab.id,
+    options: { live: req.live === true, priceWatch: req.priceWatch === true,
+      olderScan: req.automatic === true && req.preparation === true && req.olderScan === true } };
+  PISMarketStore.enqueueBatch(job).then(
+    async receipt => {
+      recordMarket(route, 'enfileirado', page);
+      await recordPageReceipt(job, 'enfileirado', rows.length);
+      // ACK significa PERSISTIDO na fila, não estimado ou processado.
+      reply({ ok: true, queued: true, duplicate: receipt.duplicate === true, batchId: id });
+      wakeMarketQueue();
+    },
+    error => {
+      recordMarket(route, 'falha_na_gravação', page);
+      reply({ ok: false, error: String(error?.message ?? error).slice(0, 300) });
+    },
+  ).catch(error => {
+    // Falhas de telemetria nunca deixam o canal sem resposta nem apagam o lote já persistido.
+    reply({ ok: true, queued: true, batchId: id, warning: String(error?.message ?? error) });
+    wakeMarketQueue();
+  });
   return true;
+  } catch (error) {
+    // Nenhuma validação inesperada deixa a requisição reconhecida sem resposta.
+    try { reply({ ok: false, error: String(error?.message ?? error).slice(0, 300) }); } catch {}
+    return false;
+  }
 });
 
 chrome.runtime.onMessage.addListener((req, sender, responder) => {

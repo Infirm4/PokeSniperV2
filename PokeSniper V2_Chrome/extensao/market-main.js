@@ -811,7 +811,7 @@ const mainCoinsHistory = (() => {
   if (window.__pis) return;
   window.__pis = true;
 
-  const EXT_VERSION = '1.5.4.96'; // versão realmente injetada na página
+  const EXT_VERSION = '1.5.4.97'; // versão realmente injetada na página
   const LEGACY_PANEL_ENABLED = false; // Pausa o painel de compras e a auditoria anterior.
   const K_CFG = 'pis_cfg_v2';
   const K_LOG = 'pis_relatorio_v1';
@@ -1333,6 +1333,95 @@ const mainCoinsHistory = (() => {
     window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_HISTORY_EVENT', event, trace, rows }, location.origin);
   }
 
+  // Outbox do MAIN no domínio do jogo: nenhuma observação se perde se o bridge
+  // ficar momentaneamente sem runtime. O ACK confirma commit na fila MV3.
+  const MARKET_OUTBOX_DB = 'pis_market_delivery_v1';
+  const MARKET_OUTBOX_STORE = 'batches';
+  const marketDeliveries = new Map();
+  let marketDeliveryPaused = false;
+  let marketOutboxOpening;
+  const marketRequest = request => new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  function marketOutboxOpen() {
+    return marketOutboxOpening ??= new Promise((resolve, reject) => {
+      const request = indexedDB.open(MARKET_OUTBOX_DB, 1);
+      request.onupgradeneeded = () => request.result.createObjectStore(MARKET_OUTBOX_STORE, { keyPath: 'batchId' });
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('outbox bloqueado'));
+    }).catch(error => { marketOutboxOpening = null; throw error; });
+  }
+  async function marketOutboxWrite(row, remove = false) {
+    const db = await marketOutboxOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(MARKET_OUTBOX_STORE, 'readwrite');
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error || new Error('outbox não confirmado'));
+      if (remove) tx.objectStore(MARKET_OUTBOX_STORE).delete(row.batchId);
+      else tx.objectStore(MARKET_OUTBOX_STORE).put(row);
+    });
+  }
+  function dispatchMarketOutbox() {
+    if (marketDeliveryPaused) return;
+    let sent = 0;
+    const now = Date.now();
+    for (const entry of marketDeliveries.values()) {
+      if (sent >= 6) break;
+      if (entry.persisted !== true) continue;
+      const elapsed = now - (entry.sentAt ?? 0);
+      const delay = Math.min(60000, 3000 * 2 ** Math.min(entry.attempts ?? 0, 4));
+      if (elapsed < delay) continue;
+      entry.sentAt = now;
+      entry.attempts = (entry.attempts ?? 0) + 1;
+      window.postMessage(entry.message, location.origin);
+      sent++;
+    }
+  }
+  function publishMarketBatch(message) {
+    const batchId = 'main:' + Date.now().toString(36) + ':' + Math.random().toString(36).slice(2, 12);
+    const entry = { ...message, source: 'PIS_MAIN', type: 'MARKET_CORE_BATCH', batchId };
+    const pending = { message: entry, persisted: false };
+    marketDeliveries.set(batchId, pending);
+    // Persistir ANTES de publicar; se IndexedDB falhar, continua tentando em memória.
+    marketOutboxWrite(entry).then(() => {
+      pending.persisted = true;
+      dispatchMarketOutbox();
+    }, error => {
+      console.warn('[PIS] Sem persistência do outbox da página:', error.message);
+      pending.persisted = true; // Degradação explícita: apenas em memória.
+      dispatchMarketOutbox();
+    });
+  }
+  window.addEventListener('message', event => {
+    if (event.source !== window || event.origin !== location.origin || event.data?.source !== 'PIS_BRIDGE') return;
+    const { type, batchId, ok } = event.data;
+    if (type === 'EXTENSION_CONTEXT_INVALIDATED') {
+      marketDeliveryPaused = true; // Não tenta usar bridge obsoleta. Aguarda F5 manual.
+      return;
+    }
+    if (type !== 'MARKET_BATCH_RECEIPT' || typeof batchId !== 'string' || !marketDeliveries.has(batchId)) return;
+    if (ok === true) {
+      marketOutboxWrite({ batchId }, true).then(() => {
+        marketDeliveries.delete(batchId);
+        dispatchMarketOutbox();
+      }).catch(error => console.warn('[PIS] Confirmação pendente no outbox:', error.message));
+    } else {
+      const pending = marketDeliveries.get(batchId);
+      pending.sentAt = 0; // Falha explícita: permite reenvio (mesmo identificador).
+    }
+  });
+  void marketOutboxOpen().then(db => marketRequest(db.transaction(MARKET_OUTBOX_STORE).objectStore(MARKET_OUTBOX_STORE).getAll()))
+    .then(rows => {
+      for (const message of rows) if (message?.batchId && !marketDeliveries.has(message.batchId))
+        marketDeliveries.set(message.batchId, { message, persisted: true });
+      dispatchMarketOutbox();
+    }).catch(error => console.warn('[PIS] Falha ao recuperar outbox:', error.message));
+  setInterval(dispatchMarketOutbox, 3000);
+
+
+
   const observedGameSockets = new WeakSet();
   const inventoryProfiles = new Map();
   let inventorySheetRequest;
@@ -1410,14 +1499,14 @@ const mainCoinsHistory = (() => {
       batch = visible.batch;
     }
     const viewing = !request && watchOpportunities && vitrineAberta();
-    if (batch || request) window.postMessage({ source: 'PIS_MAIN', type: 'MARKET_CORE_BATCH',
+    if (batch || request) publishMarketBatch({
       kind: 'listing', rows: batch?.rows ?? [], automatic: !!request,
       live: live === true || viewing,
       priceWatch: watchOpportunities && (viewing || (request && watchesCurrency(request.moeda) &&
         (live === true || request.preparation === true))),
       olderScan: watchOpportunities && request?.olderScan === true && watchesCurrency(request.moeda) &&
         Number(request.notaMin) === watchMinGrade,
-      page: request?.pagina, currency: request?.moeda, preparation: request?.preparation === true, totalRows: frame.linhas?.length }, location.origin);
+      page: request?.pagina, currency: request?.moeda, preparation: request?.preparation === true, totalRows: frame.linhas?.length });
   }
 
   let lastMonitorState;

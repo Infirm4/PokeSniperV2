@@ -79,7 +79,7 @@ test('a leitura de Mais baratos monitora reduções sem ser tratada como consult
   const context = { watchOpportunities: true, watchMinGrade: 3.55, vitrineAberta: () => false, location: { origin: 'https://pokeidle.io' },
     watchesCurrency: currency => currency === 'orb',
     PISMarketCore: { captureAutomatic: () => ({ rows: [{ price: 7 }] }) },
-    window: { postMessage: message => reports.push(message) } };
+    window: { postMessage: message => reports.push(message) }, publishMarketBatch: message => reports.push(message) };
   const publish = runInNewContext(code + '\n publishMarketPage', context);
   const page = { aba: 'vitrine', linhas: [{}] };
   const request = { moeda: 'orb', pagina: 3, ordem: 'baratos', preparation: true, olderScan: true, notaMin: '3.55' };

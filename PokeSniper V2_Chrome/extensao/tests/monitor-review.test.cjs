@@ -62,7 +62,7 @@ test('a ponte solicita o backup ao abrir a aba principal e ao voltar do cache do
     window, location: { origin: 'https://pokeidle.io' },
     chrome: {
       storage: { local: { async get() { return {}; } }, onChanged: { addListener() {} } },
-      runtime: { onMessage: { addListener() {} }, async sendMessage(req) { messages.push(req.type); } },
+      runtime: { id: 'own', onMessage: { addListener() {} }, sendMessage(req, reply) { messages.push(req.type); reply?.({ ok: true }); } },
     },
   });
   events.get('pageshow')({ persisted: false });

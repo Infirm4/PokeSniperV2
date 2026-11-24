@@ -1,0 +1,8 @@
+{
+  "name": "pokeidle-marcadores",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Extensão com três marcadores (caveira, lua e estrela) para anúncios do PokeIdle.",
+  "scripts": { "test": "node --test" },
+  "devDependencies": { "jsdom": "^26.0.0" }
+}

@@ -166,13 +166,24 @@
 
   function prepare(allSales, now, options = OPTIONS) {
     const core = globalThis.PISMarketCore;
+    // Cache local de metadados de perfis durante uma preparação. Não altera
+    // janelas, pesos temporais, estatísticas nem a abrangência do histórico.
+    const profiles = new WeakMap();
+    function info(row) {
+      let data = profiles.get(row);
+      if (!data) {
+        data = { name: formOf(row), variant: variants(row), extra: specials(row) };
+        profiles.set(row, data);
+      }
+      return data;
+    }
     const sales = allSales.filter(row => row.currency === 'gold' && !core.isOutland(row) &&
       correctTime(row.soldAt) && row.soldAt < now && !core.incompleteSaleFields(row, { requireSprite: false }).length);
     const bySpecies = new Map();
     const familyIds = families();
     const byFamily = new Map();
     for (const sale of sales) {
-      const species = formOf(sale);
+      const species = info(sale).name;
       if (!bySpecies.has(species)) bySpecies.set(species, []);
       bySpecies.get(species).push(sale);
       const family = familyIds.get(species);
@@ -184,8 +195,8 @@
     let models;
     function calibrate() {
       if (models) return models;
-      const signature = JSON.stringify(sales.map(row => [row.id, row.pokemonId, row.speciesId, formOf(row), row.source,
-        row.price, row.soldAt, row.level, row.grade, row.power, variants(row), specials(row), row.nature, row.natureId]));
+      const signature = JSON.stringify(sales.map(row => [row.id, row.pokemonId, row.speciesId, info(row).name, row.source,
+        row.price, row.soldAt, row.level, row.grade, row.power, info(row).variant, info(row).extra, row.nature, row.natureId]));
       if (lastCalibration?.signature === signature && lastCalibration.familyIds === familyIds) return models = lastCalibration.models;
       const samples = new Map(), levelPairs = [], powerPairs = new Map(), familyPairs = new Map();
       function add(map, key, pair) {
@@ -196,7 +207,7 @@
         return { a, b, x, y: Math.log(b.price / a.price), at: Math.max(a.soldAt, b.soldAt),
           distance: Math.abs(Math.log(a.level / b.level)) + Math.abs(a.grade - b.grade) };
       }
-      const compatible = (a, b) => variants(a) === variants(b) && specials(a) === specials(b) &&
+      const compatible = (a, b) => info(a).variant === info(b).variant && info(a).extra === info(b).extra &&
         Math.abs(a.grade - b.grade) <= OPTIONS.calibrationGradeGap && a.pokemonId !== b.pokemonId && a.id !== b.id &&
         Math.abs(a.soldAt - b.soldAt) <= 14 * 24 * HOUR &&
         core.coinProfile(a, b, false, true) !== null;
@@ -238,7 +249,7 @@
     }
 
     function relation(a, b, row) {
-      return JSON.stringify([a, b, variants(row), row.power, specials(row)]);
+      return JSON.stringify([a, b, info(row).variant, row.power, info(row).extra]);
     }
 
     // A mesma seleção é usada para estimar preços e identificar vendas/anúncios da fila.
@@ -253,20 +264,20 @@
       for (const row of rows) {
         const distance = Math.log(target.level / row.level);
         const grade = Math.abs(target.grade - row.grade);
-        const sameSpecies = formOf(row) === species && row.speciesId === target.speciesId;
+        const sameSpecies = info(row).name === species && row.speciesId === target.speciesId;
         if (row.currency !== 'gold' || !row.pokemonId || row.pokemonId === target.pokemonId || row.price <= 0 ||
-            core.isOutland(row) || variants(row) !== variants(target) ||
+            core.isOutland(row) || info(row).variant !== info(target).variant ||
             !Number.isFinite(distance) || Math.abs(distance) > levelLimit || !Number.isFinite(grade) || grade > gradeLimit ||
             !isListing && (row.soldAt < now - window * HOUR || row.soldAt >= now)) continue;
         const profile = core.coinProfile(target, row, false, stage >= 2);
         if (!profile || profile.extraPremium) continue;
         let powerFactor = 1, levelFactor = 1, speciesFactor = 1;
         if (stage === 4) {
-          if (sameSpecies || family == null || familyIds.get(formOf(row)) !== family || !profile.samePower) continue;
-          const names = [species, formOf(row)].sort();
+          if (sameSpecies || family == null || familyIds.get(info(row).name) !== family || !profile.samePower) continue;
+          const names = [species, info(row).name].sort();
           const coefficient = calibration.lineage.get(relation(...names, target))?.valor;
           if (coefficient == null) continue;
-          speciesFactor = Math.exp(formOf(row) === names[0] ? coefficient : -coefficient);
+          speciesFactor = Math.exp(info(row).name === names[0] ? coefficient : -coefficient);
         } else {
           if (!sameSpecies) continue;
           if (!profile.samePower) {

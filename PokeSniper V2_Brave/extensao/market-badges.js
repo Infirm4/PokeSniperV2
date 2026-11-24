@@ -57,6 +57,8 @@
   let pending = false;
   let scheduled = false;
   let revision = 0;
+  let retryTimer = null;
+  let contextInvalidated = false;
   const badges = new WeakMap();
   const visibleCurrencies = new Map();
   const PRICE = '.cm-rodape .cm-preco';
@@ -152,6 +154,7 @@
   }
 
   async function refresh() {
+    if (contextInvalidated) return;
     const offers = visible();
     const keys = [...offers.keys()].sort().join('\n');
     if (!offers.size || pending || (keys === lastKeys && Date.now() - lastQuery < REFRESH_MS)) return;
@@ -161,6 +164,7 @@
     lastKeys = keys;
     try {
       const response = await chrome.runtime.sendMessage({ type: 'PIS_MARKET_BADGES', offers: [...offers.values()] });
+      if (response?.ok === false || !Array.isArray(response?.offers)) throw new Error(response?.error || 'cotações indisponíveis');
       if (token === revision && Array.isArray(response?.offers)) {
         const rows = new Map(response.offers.map(row => [key(row), row]));
         const now = Date.now();
@@ -175,8 +179,16 @@
         }
         while (quotes.size > MAX_QUOTES) quotes.delete(quotes.keys().next().value);
       }
-    } catch { /* Mantém a última referência válida enquanto o banco é consultado. */ }
-    finally {
+    } catch {
+      // Não memorizar uma consulta que falhou: a próxima tentativa deve ocorrer
+      // mesmo que os mesmos 24 cards ainda estejam na tela.
+      lastKeys = '';
+      lastQuery = 0;
+      if (!retryTimer && !contextInvalidated) retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (market?.isConnected) schedule();
+      }, 5000);
+    } finally {
       pending = false;
       if (lastKeys !== keys || [...visible().keys()].sort().join('\n') !== keys) schedule();
     }
@@ -191,6 +203,12 @@
   window.addEventListener('message', event => {
     const data = event.data;
     if (event.source !== window || event.origin !== location.origin) return;
+    if (data?.source === 'PIS_BRIDGE' && data.type === 'EXTENSION_CONTEXT_INVALIDATED') {
+      contextInvalidated = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+      return;
+    }
     if (data?.source === 'PIS_BRIDGE' && data.type === 'MARKET_LISTINGS_SAVED') {
       lastKeys = '';
       if (market?.isConnected) schedule();

@@ -1,19 +1,9 @@
 # PokeSniper para Brave no Windows
 
-Baixe e execute [**PokeSniper-Brave.exe**](./PokeSniper-Brave.exe) no Windows
-x64. Ele cria o atalho **PokeSniper Brave** na Área de Trabalho, verifica a
-versão da extensão e abre **pokeidle.io** no Brave.
+Baixe e execute **PokeSniper-Brave.exe**. Ele usa o navegador Brave e a mesma extensão PokeIdle Market Sniper 1.5.4.99.
 
-Na primeira abertura, escolha **Sim** se já usa a extensão no Brave.
-Selecione o `manifest.json` da pasta que o Brave já usa para manter o
-histórico e os filtros do perfil. Se for sua primeira instalação, escolha
-**Não**. Em `brave://extensions`, ative **Modo do desenvolvedor**, clique em
-**Carregar sem compactação** e selecione a pasta que o aplicativo indicar.
-Depois, recarregue a aba do jogo.
+Se já usa a extensão no Brave, atualize os arquivos **na mesma pasta** para manter seu ID e os dados do perfil. Abra `brave://extensions`, recarregue a extensão e atualize `https://pokeidle.io/app` com F5.
 
-O Brave possui um perfil próprio. Para levar o histórico de vendas do
-Chrome ao Brave, conecte o histórico compartilhado pela aba **Planilhas**.
+Os marcadores (caveira, lua, estrela) agora aparecem no **canto superior esquerdo** de cada card, sem cobrir o botão de favoritos. Não instale a extensão autônoma de marcadores ao mesmo tempo.
 
-A [pasta da extensão](./extensao) também pode ser carregada diretamente pelo
-Brave. O [código do launcher](../PokeSniper%20V2_Chrome/launcher-windows) é
-compartilhado pelas duas edições.
+**Launcher:** código-fonte compartilhado em `../PokeSniper V2_Chrome/launcher-windows`. O executável Brave deste pacote foi gerado a partir dele para Windows amd64.

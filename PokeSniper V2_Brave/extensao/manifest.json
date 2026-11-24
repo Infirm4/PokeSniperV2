@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PokeIdle Market Sniper",
-  "version": "1.5.4.96",
+  "version": "1.5.4.99",
   "description": "Monitor de anúncios recentes de Pokémon com alertas de desconto em Coins e Gemas.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -49,6 +49,21 @@
       ],
       "run_at": "document_start",
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://pokeidle.io/*",
+        "https://*.pokeidle.io/*"
+      ],
+      "js": [
+        "markers/src/icons.js",
+        "markers/src/listing-id.js",
+        "markers/src/storage.js",
+        "markers/src/ui.js",
+        "markers/src/main.js"
+      ],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
     }
   ],
   "permissions": [
@@ -56,10 +71,17 @@
     "notifications",
     "alarms"
   ],
-  "web_accessible_resources": [{
-    "resources": ["opportunities.html"],
-    "matches": ["https://pokeidle.io/*", "https://*.pokeidle.io/*"]
-  }],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "opportunities.html"
+      ],
+      "matches": [
+        "https://pokeidle.io/*",
+        "https://*.pokeidle.io/*"
+      ]
+    }
+  ],
   "action": {
     "default_title": "Poke Sniper V2",
     "default_popup": "opportunities.html",

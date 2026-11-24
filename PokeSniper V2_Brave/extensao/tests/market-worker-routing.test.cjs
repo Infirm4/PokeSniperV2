@@ -11,6 +11,8 @@ test('atribui falhas e vendas repetidas à página certa e nunca dispara avisos 
   const trace = [];
   const messages = [];
   const session = {}, savedNotices = {};
+  const durableQueue = new Map();
+  const failedJobs = [];
   const chrome = {
     runtime: {
       id: 'own', getURL: file => 'chrome-extension://own/' + file,
@@ -30,6 +32,21 @@ test('atribui falhas e vendas repetidas à página certa e nunca dispara avisos 
     PISOpportunityAlerts: { wake() {} },
     PISMarketStore: {
       async initialize() {},
+      async enqueueBatch(job) {
+        const old = durableQueue.get(job.id);
+        if (!old) durableQueue.set(job.id, { ...job, dueAt: 0, attempts: 0 });
+        return { duplicate: !!old };
+      },
+      async nextBatch() {
+        return [...durableQueue.values()].find(job => job.dueAt <= Date.now()) ?? null;
+      },
+      async finishBatch(id) { durableQueue.delete(id); },
+      async deferBatch(id, attempts) {
+        const job = durableQueue.get(id);
+        failedJobs.push(id);
+        durableQueue.set(id, { ...job, dueAt: Number.MAX_SAFE_INTEGER, attempts });
+      },
+      async trimDoneBatches() {},
       async ingest(_kind, rows) {
         if (rows[0] === 'failure') throw new Error('fake');
         return { new: 0, existing: rows.length, gainedFullIvs: 0 };
@@ -44,9 +61,14 @@ test('atribui falhas e vendas repetidas à página certa e nunca dispara avisos 
   const event = (page, rows) => ({ type: 'PIS_MARKET_HISTORY_EVENT', event: 'response', trace: { page }, rows });
   assert.equal((await dispatch(event(1, ['known']))).ok, true);
   assert.equal((await dispatch(event(2, []))).ok, true);
-  assert.equal((await dispatch(event(3, ['failure']))).ok, false);
-  assert.deepEqual(trace, [['response', 1, 'gravado', 1], ['response', 2, 'sem_registros_validos', undefined],
+  // O ACK é dado após a fila persistir; falha do ingest fica para retry.
+  assert.equal((await dispatch(event(3, ['failure']))).ok, true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual([...trace].sort((a, b) => a[1] - b[1]), [
+    ['response', 1, 'gravado', 1], ['response', 2, 'sem_registros_validos', undefined],
     ['response', 3, 'falha_na_gravação', undefined]]);
+  assert.equal(failedJobs.length, 1);
+  assert.equal(durableQueue.size, 1); // não descartou o lote que falhou
   assert.equal(await dispatch({ type: 'PIS_TEST_GAME_TOAST' }), undefined);
   const popup = { id: 'own', url: 'chrome-extension://own/opportunities.html' };
   assert.equal(await dispatch({ type: 'PIS_TEST_GAME_TOAST' }, popup), undefined);
@@ -58,6 +80,7 @@ test('atribui falhas e vendas repetidas à página certa e nunca dispara avisos 
   assert.equal((await dispatch({ ...query, status: 'enviada' })).ok, true);
   assert.equal(session['pisMarketQuery:orb'].duração_ms, null);
   assert.equal((await dispatch({ type: 'PIS_MARKET_CORE_BATCH', kind: 'sale', rows: ['known'] })).ok, true);
+  await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(trace.at(-1), ['legacy_batch', undefined, 'gravado', 1]);
 });
 

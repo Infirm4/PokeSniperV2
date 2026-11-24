@@ -1,0 +1,46 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Marcadores — navegador real</title><style>
+body{background:#181b26;color:#e8ebef;font:14px system-ui;padding:20px}.cm-card{display:inline-block;position:relative;margin:8px;background:#2a3141;width:240px;height:90px;border:1px solid #555;border-radius:8px;padding:6px}#results{white-space:pre-wrap;}
+</style></head><body>
+<div id="cm-lista"><div class="cm-card" data-anuncio-id="p001"><strong>Pokémon A</strong><div class="cm-rodape"><span class="cm-preco" data-preco="500">💎 500</span></div></div><div class="cm-card" data-anuncio-id="p002"><strong>Pokémon B</strong></div></div>
+<ul id="favs"><li class="cm-card"><button data-fav="p001">Favorito A</button></li></ul><pre id="results">Executando...</pre>
+<script src="../src/icons.js"></script><script src="../src/listing-id.js"></script><script src="../src/storage.js"></script><script src="../src/ui.js"></script>
+<script>
+(async()=>{
+ const results=[]; const check=(title,condition)=>results.push({title,pass:!!condition});
+ try {
+ const data={opportunitySettings:{notify:true}, marketContext:'untouched'};
+ const area={get:async key=>({[key]:data[key]}),set:async update=>Object.assign(data,update)};
+ const store=PIMStorage.create(area);
+ await store.load();
+ const ui=PIMUI.createUI({document,store});
+ let clicks=0;
+ document.querySelector('#cm-lista .cm-card').addEventListener('click',()=>clicks++);
+ const running=ui.start(window);
+ const hosts=()=>[...document.querySelectorAll('[data-pim-host]')];
+ const buttons=card=>[...card.querySelector('[data-pim-host]').shadowRoot.querySelectorAll('button')].map(x=>x.dataset.type);
+ const click=(card,kind)=>card.querySelector(`[data-pim-host]`).shadowRoot.querySelector(`[data-type="${kind}"]`).click();
+ const [a,b,fav]=document.querySelectorAll('.cm-card');
+ check('3 opções em anúncio não marcado',buttons(a).join('|')==='skull|moon|star');
+ check('3 cards, três hosts',hosts().length===3);
+ click(a,'moon');ui.reconcile();
+ check('um ícone ativo',buttons(a).join('|')==='moon');
+ check('mesmo id em favoritos',buttons(fav).join('|')==='moon');
+ check('outro card não muda',buttons(b).length===3);
+ check('click não chega ao card',clicks===0);
+ await store.flush();
+ check('pimMarkers em storage',data.pimMarkers['id:p001']==='moon');
+ check('storage legado não sobrescrito',data.opportunitySettings.notify===true && data.marketContext==='untouched');
+ const newStore=PIMStorage.create(area);await newStore.load();check('leitura após F5',newStore.get('id:p001')==='moon');
+ click(a,'moon');ui.reconcile();check('clique remove marcador',buttons(a).length===3&&buttons(fav).length===3);
+ click(b,'skull');ui.reconcile();const stable=hosts().length;ui.reconcile();ui.reconcile();check('sem duplicar hosts',hosts().length===stable&&stable===3);
+ document.querySelector('#cm-lista').innerHTML='<div class="cm-card" data-anuncio-id="p002"><b>Pokémon B atualizado</b></div>';
+ await new Promise(resolve=>setTimeout(resolve,300));
+ const b2=document.querySelector('#cm-lista .cm-card');
+ check('reinjeta após redraw',buttons(b2).join('|')==='skull');
+ running.stop();
+ } catch(e) {results.push({title:'EXCEPTION '+(e?.stack||e),pass:false});}
+ document.documentElement.dataset.testStatus=results.every(x=>x.pass)?'PASS':'FAIL';
+ document.querySelector('#results').textContent=JSON.stringify(results,null,2);
+})();
+</script>
+</body></html>

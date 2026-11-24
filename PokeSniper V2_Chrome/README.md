@@ -1,4 +1,7 @@
+> Versão do pacote **1.5.4.99**: marcadores no canto superior esquerdo, sem sobreposição com os favoritos. Os dados locais continuam no perfil do navegador.
+
 # PokeSniper para Chrome no Windows
+
 
 Baixe e execute [**PokeSniper.exe**](./PokeSniper.exe) no Windows x64. O
 aplicativo cria o atalho **PokeSniper** na Área de Trabalho e abre o Chrome

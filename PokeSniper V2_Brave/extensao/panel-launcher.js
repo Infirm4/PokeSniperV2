@@ -66,11 +66,18 @@
   launcher.textContent = 'Poke Sniper V2';
   launcher.setAttribute('aria-expanded', 'false');
   root.append(launcher);
-  let frame, open = false;
+  let frame, open = false, panelReady = false;
 
-  const sendVisibility = () => frame.contentWindow?.postMessage({
-    type: 'PIS_V2_PANEL_VISIBILITY', open,
-  }, panelOrigin);
+  const sendVisibility = () => {
+    // iframe recém-criado ainda contém about:blank (origin do jogo).
+    if (!panelReady || !frame?.contentWindow) return;
+    try {
+      frame.contentWindow.postMessage({ type: 'PIS_V2_PANEL_VISIBILITY', open }, panelOrigin);
+    } catch (error) {
+      // Um iframe navegando ou removido não pode derrubar o monitor.
+      console.debug('[PIS] Painel ainda não pronto:', error?.message);
+    }
+  };
 
   function setOpen(value) {
     open = value;
@@ -80,7 +87,7 @@
       frame.id = 'pis-v2-frame';
       frame.title = 'Painel Poke Sniper V2';
       frame.allow = 'clipboard-write';
-      frame.addEventListener('load', sendVisibility);
+      frame.addEventListener('load', () => { panelReady = true; sendVisibility(); });
       frame.src = panelUrl;
       root.append(frame);
       launcher.setAttribute('aria-controls', frame.id);

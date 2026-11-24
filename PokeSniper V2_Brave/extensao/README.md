@@ -1,4 +1,9 @@
-# PokeIdle Market Sniper (v1.5.4.96)
+# PokeIdle Market Sniper (v1.5.4.99)
+
+**Novidade v1.5.4.99:** caveira, lua e estrela ficam no canto superior esquerdo de cada anúncio, sem cobrir favoritos. Consulte [ALTERACOES_v1.5.4.99.md](./ALTERACOES_v1.5.4.99.md).
+
+**Correção MV3:** consulte [ALTERACOES_v1.5.4.97.md](./ALTERACOES_v1.5.4.97.md) para migração não destrutiva, validação e instalação sem perder o banco.
+
 
 O [launcher para Windows](../README.md) cria um atalho na
 área de trabalho, atualiza a extensão e abre o PokéIdle no Chrome.
@@ -709,3 +714,11 @@ Só a configuração do painel: `localStorage['pis_cfg_v2']` (`dryRun`, `discoun
 **v1.1.0** — referência = média de 10 vendedores a partir do 4º anúncio mais novo; painel reduzido (desconto, saldo em milhões, intervalo); saldo único por sessão; `meuNome` e demais opções viraram constantes.
 
 **v1.0.0** — compra de anúncios abaixo da média de 7 dias (`medias[id].gold.media`) com tetos por compra, hora e dia e saldo de reserva.
+
+## Marcadores de anúncios — v1.5.4.98
+
+Agora os anúncios em `.cm-card` mostram ícones de caveira, lua e estrela. Selecione um; apenas o escolhido permanece. Clique nele (ou use o botão direito) para removê-lo. Os dados são guardados na chave independente `pimMarkers` em `chrome.storage.local`, preservando vendas e histórico do Sniper. A persistência funciona na vitrine e nos favoritos **quando ambos apresentam o mesmo ID e um card compatível**.
+
+Os arquivos estão em [`markers/src/`](markers/src/). A extensão autônoma `pokeidle_marcadores` **não deve ser instalada junto**: desative-a para não exibir ícones duplicados. Instale a versão integrada substituindo os arquivos da **mesma pasta da extensão original**, sem desinstalar a extensão, para manter seu ID e o armazenamento anterior.
+
+A implementação foi integrada a partir do ZIP/patch recebido, mas o layout exato da loja/favoritos ainda precisa ser validado no Chrome com o jogo aberto.
